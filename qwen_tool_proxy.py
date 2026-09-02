@@ -837,26 +837,34 @@ class ConcurrencyQueue:
                             "last_gen_time": round(tracker.get("last_gen_time", 0.0), 1)
                         })
 
-                    # 查询 8085 视觉模型在线状态
-                    vision_status = {
-                        "configured": True,
-                        "online": False,
-                        "port": 8085,
-                        "model": "Qwen2.5-VL-3B",
-                        "is_active": False,
-                        "status_text": "⚪ 离线未挂载"
-                    }
+                    is_multimodal = False
+                    mmproj_file = ""
                     try:
-                        req_v = urllib.request.Request("http://127.0.0.1:8085/slots", headers={"Authorization": "Bearer llamacpp"}, method="GET")
-                        with urllib.request.urlopen(req_v, timeout=0.25) as resp_v:
-                            if resp_v.status == 200:
-                                v_data = json.loads(resp_v.read().decode("utf-8"))
-                                v_busy = any(vs.get("is_processing", False) for vs in v_data) if isinstance(v_data, list) else False
-                                vision_status["online"] = True
-                                vision_status["is_active"] = v_busy
-                                vision_status["status_text"] = "🟣 正在 OCR 解析图像..." if v_busy else "🟢 待命监听中 (两阶段图文协同)"
+                        req_props = urllib.request.Request(f"http://127.0.0.1:{backend_port}/props", headers={"Authorization": "Bearer llamacpp"}, method="GET")
+                        with urllib.request.urlopen(req_props, timeout=1.0) as resp_p:
+                            p_data = json.loads(resp_p.read().decode("utf-8"))
+                            detected_alias = p_data.get("model_alias")
+                            if not detected_alias and p_data.get("model_path"):
+                                detected_alias = os.path.splitext(os.path.basename(p_data["model_path"]))[0]
+                            if detected_alias:
+                                model_alias = detected_alias
+                            total_ctx = p_data.get("default_generation_settings", {}).get("n_ctx", total_ctx)
+                            
+                            # 真实感知是否挂载了原生多模态视觉 (mmproj)
+                            modalities = p_data.get("default_generation_settings", {}).get("modalities", [])
+                            if "vision" in modalities or "image" in modalities:
+                                is_multimodal = True
+                            params = p_data.get("default_generation_settings", {}).get("params", {})
+                            if params.get("mmproj"):
+                                is_multimodal = True
+                                mmproj_file = os.path.basename(params.get("mmproj", ""))
+                            elif "vl" in model_alias.lower() or "vision" in model_alias.lower():
+                                is_multimodal = True
                     except Exception:
                         pass
+                    
+                    with self.lock:
+                        self.current_model_alias = model_alias
 
                     st = {
                         "backend_online": True,
@@ -865,7 +873,8 @@ class ConcurrencyQueue:
                         "text_active": active_count,
                         "text_max": len(slots_data),
                         "slots_detail": slots_detail,
-                        "vision_status": vision_status
+                        "is_multimodal": is_multimodal,
+                        "mmproj_file": mmproj_file
                     }
                     with self.lock:
                         self.cached_status = st
@@ -2538,7 +2547,10 @@ function updateSlotsUI(c, gpu) {
   const totalCtx = (c && c.total_ctx) ? (c.total_ctx >= 1024 ? (c.total_ctx/1024)+'K' : c.total_ctx) : '160K';
 
   document.getElementById('active-model-title').innerText = modelName;
-  document.getElementById('active-ctx-desc').innerText = `(${maxSlots} 并发 · ${totalCtx} 共享统一 KV 资源池)`;
+  const isMulti = c && c.is_multimodal;
+  const mmprojInfo = (c && c.mmproj_file) ? ` (${c.mmproj_file})` : '';
+  const modeTag = isMulti ? `<span style="margin-left:8px;padding:2px 8px;border-radius:6px;font-size:11px;background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);">👁️ 原生多模态视觉${mmprojInfo}</span>` : `<span style="margin-left:8px;padding:2px 8px;border-radius:6px;font-size:11px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);">⚡ 纯文本极速矩阵</span>`;
+  document.getElementById('active-ctx-desc').innerHTML = `(${maxSlots} 并发 · ${totalCtx} 共享统一 KV 资源池) ${modeTag}`;
   
   if (!isOnline) {
     slotDot.className = 'dot-orange';
@@ -2556,17 +2568,14 @@ function updateSlotsUI(c, gpu) {
 
   const container = document.getElementById('slots-container');
   let details = (c && c.slots_detail && c.slots_detail.length > 0) ? c.slots_detail : [
-    { slot_num: 1, raw_id: 0, is_active: false, stage: 'idle', n_ctx: 40960, in_tok_s: 0, out_tok_s: 0 },
-    { slot_num: 2, raw_id: 1, is_active: false, stage: 'idle', n_ctx: 40960, in_tok_s: 0, out_tok_s: 0 },
-    { slot_num: 3, raw_id: 2, is_active: false, stage: 'idle', n_ctx: 40960, in_tok_s: 0, out_tok_s: 0 },
-    { slot_num: 4, raw_id: 3, is_active: false, stage: 'idle', n_ctx: 40960, in_tok_s: 0, out_tok_s: 0 }
+    { slot_num: 1, raw_id: 0, is_active: false, stage: 'idle', n_ctx: 73728, in_tok_s: 0, out_tok_s: 0 },
+    { slot_num: 2, raw_id: 1, is_active: false, stage: 'idle', n_ctx: 73728, in_tok_s: 0, out_tok_s: 0 }
   ];
-  const vision = (c && c.vision_status) || {};
   
   let html = details.map((s, idx) => {
     const isBusy = s.is_active;
     const stage = s.stage || (isBusy ? 'generating' : 'idle');
-    const slotCtx = s.n_ctx ? (s.n_ctx >= 1024 ? (s.n_ctx/1024)+'K' : s.n_ctx) : '40K';
+    const slotCtx = s.n_ctx ? (s.n_ctx >= 1024 ? (s.n_ctx/1024)+'K' : s.n_ctx) : '72K';
     
     let badgeHtml = '<span class="slot-badge-idle">🟢 空闲待命</span>';
     let inSpeedStr = '-';
@@ -2631,39 +2640,6 @@ function updateSlotsUI(c, gpu) {
       </div>
     `;
   }).join('');
-
-  // 🌟 追加 8085 视觉眼睛专属卡片
-  if (vision && (vision.online || vision.configured)) {
-    const vOnline = vision.online;
-    const vBusy = vision.is_active;
-    const vBadge = vOnline ? (vBusy ? '<span class="slot-badge-vision-busy">🟣 OCR 识图中...</span>' : '<span class="slot-badge-vision-idle">🟢 待命协同</span>') : '<span class="slot-badge-vision-off">⚪ 离线</span>';
-    
-    html += `
-      <div class="slot-card slot-card-vision ${vBusy ? 'active-vision' : ''}">
-        <div class="slot-card-header">
-          <span style="color: var(--accent-purple);">👁️ 视觉眼睛 <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(8085 侧车)</span></span>
-          ${vBadge}
-        </div>
-        <div class="slot-card-body">
-          <div class="slot-stat-row">
-            <span>🎯 协同模式:</span>
-            <span class="slot-stat-val" style="color: #c084fc;">两阶段级联图文协同</span>
-          </div>
-          <div class="slot-stat-row">
-            <span>🧠 视觉模型:</span>
-            <span class="slot-stat-val" style="color: #e2e8f0;">Qwen2.5-VL-3B (CPU/GPU)</span>
-          </div>
-          <div class="slot-stat-row" style="margin-top: 4px;">
-            <span>⚡ 协同职责:</span>
-            <span class="slot-stat-val" style="color: var(--accent-green); font-size: 11.5px;">纯文本主模型专属 OCR 眼睛</span>
-          </div>
-          <div class="slot-progress-bg">
-            <div class="slot-progress-fill" style="width: ${vOnline ? 100 : 0}%; background: linear-gradient(90deg, #a855f7, #6366f1);"></div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
 
   container.innerHTML = html;
 }
