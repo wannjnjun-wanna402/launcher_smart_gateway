@@ -1720,25 +1720,28 @@ def translate_openai_to_anthropic_response(openai_resp_data, requested_model):
 #  两阶段图文协同流水线 (Vision Pipeline)
 # ============================================================
 def has_image_content(payload):
+    """检测当前请求的【最新一条用户提问】是否包含新图片（避免历史会话中的旧图导致纯文本被误切多模态）"""
     if not isinstance(payload, dict):
         return False
     messages = payload.get("messages", [])
     if isinstance(messages, list):
-        for msg in messages:
+        for msg in reversed(messages):
             if not isinstance(msg, dict):
                 continue
-            content = msg.get("content")
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict):
-                        itype = item.get("type", "")
-                        if itype in ("image_url", "image", "input_image"):
-                            return True
-                        if itype == "text" and "data:image/" in str(item.get("text", "")):
-                            return True
-            elif isinstance(content, str):
-                if "data:image/jpeg;base64," in content or "data:image/png;base64," in content or "data:image/webp;base64," in content:
-                    return True
+            if msg.get("role") == "user":
+                content = msg.get("content")
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict):
+                            itype = item.get("type", "")
+                            if itype in ("image_url", "image", "input_image"):
+                                return True
+                            if itype == "text" and "data:image/" in str(item.get("text", "")):
+                                return True
+                elif isinstance(content, str):
+                    if "data:image/jpeg;base64," in content or "data:image/png;base64," in content or "data:image/webp;base64," in content:
+                        return True
+                break
     return False
 
 def check_backend_is_multimodal(backend_port=8083):
@@ -2882,9 +2885,9 @@ class Qwen27BBackendManager:
         self.mmproj_path = os.path.join(models_dir, "mmproj-Qwen3.8-27B-F16.gguf")
         self.log_dir = os.path.join(root_dir, "logs")
         
-        # 5分钟闲置自适应回归线程（空闲 300 秒自动平滑回归默认双槽 MTP 态）
-        self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
-        self.watchdog_thread.start()
+        # 后台闲置自动重启线程已彻底禁用，确保 8083 进程稳定常驻，绝不打断客户端会话
+        # self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
+        # self.watchdog_thread.start()
 
     def get_today_log(self):
         today = time.strftime("%Y%m%d")
@@ -3354,25 +3357,15 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 cleaned_json["reasoning_effort"] = effort
                 cleaned_json["reasoning_budget"] = budget
                 
-                # 3. 动态思考等级注入与 3 组形态自适应热切换 (有图切原生多模态 27B / 工作切双MTP / 4槽流水线)
+                # 3. 动态思考等级注入与无损图文处理 (8083 主脑常驻运行，绝不在推理请求期间杀进程重启)
                 has_img = has_image_content(cleaned_json)
-                req_model = str(cleaned_json.get("model", "")).lower()
-                
-                if has_img:
-                    # 有图：自适应热切至 27B 原生多模态视觉态 (挂载 mmproj-27B)
-                    backend_manager.ensure_state(backend_manager.STATE_VISION_27B)
-                    is_vision = True
-                elif "pipeline" in req_model or "4并发" in req_model or "4slot" in req_model:
-                    # 4 槽高吞吐流水线态
-                    backend_manager.ensure_state(backend_manager.STATE_PIPELINE_4SLOT)
-                    is_vision = False
-                elif "mtp" in req_model or "双槽" in req_model:
-                    # 双槽 MTP 极速基准态
-                    backend_manager.ensure_state(backend_manager.STATE_MTP_2SLOT)
+                is_backend_multi = check_backend_is_multimodal(target_port)
+                if has_img and not is_backend_multi:
+                    # 8083 主脑当前为纯文本形态（双槽MTP/4并发），通过 GPU 瞬态 3B 提取高精 OCR 图文（用完即焚），0 秒打断 27B 主脑！
+                    cleaned_json, was_modified, v_tokens = process_vision_pipeline(cleaned_json, key_name=key_name)
                     is_vision = False
                 else:
-                    # 默认维持当前状态（若在 MTP 则直接 MTP，若在视觉态且仍在会话中则保持）
-                    is_vision = False
+                    is_vision = has_img
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
