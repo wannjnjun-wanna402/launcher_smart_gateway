@@ -2826,9 +2826,9 @@ class Qwen27BBackendManager:
         self.mmproj_path = os.path.join(models_dir, "mmproj-Qwen3.8-27B-F16.gguf")
         self.log_dir = os.path.join(root_dir, "logs")
         
-        # 启动后台闲置守护线程 (若处于视觉或4并发且空闲>35秒，自动回落到双槽MTP常驻态)
-        self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
-        self.watchdog_thread.start()
+        # 后台闲置守护线程已禁用，避免频繁重启打断客户端连接
+        # self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
+        # self.watchdog_thread.start()
 
     def get_today_log(self):
         today = time.strftime("%Y%m%d")
@@ -3298,24 +3298,9 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 cleaned_json["reasoning_effort"] = effort
                 cleaned_json["reasoning_budget"] = budget
                 
-                # 3. 决定 27B 目标形态 (多模态 / 4并发流水线 / 双槽MTP)
+                # 3. 动态思考等级注入 (low / medium / xhigh)
                 has_img = has_image_content(cleaned_json)
-                if has_img:
-                    is_vision = True
-                    target_state = backend_manager.STATE_VISION_27B
-                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TASK-DISPATCH] 🖼️ 发现图片输入 ➔ 调度【27B 原生多模态态】(思考等级={effort}, 预算={budget})\n")
-                elif concurrency_queue.active_text >= 2:
-                    is_vision = False
-                    target_state = backend_manager.STATE_PIPELINE_4SLOT
-                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TASK-DISPATCH] 🚦 负载并发高 (活跃任务={concurrency_queue.active_text}) ➔ 调度【27B 4并发流水线态】(思考等级={effort}, 预算={budget})\n")
-                else:
-                    is_vision = False
-                    target_state = backend_manager.STATE_MTP_2SLOT
-                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TASK-DISPATCH] 👑 单兵极速 ➔ 调度【27B 双槽MTP常驻态】(思考等级={effort}, 预算={budget})\n")
-                sys.stdout.flush()
-
-                # 执行 4.5 秒内存级无感热切换 (若当前已是目标态则 0 秒直通)
-                backend_manager.ensure_state(target_state)
+                is_vision = has_img
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
