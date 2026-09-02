@@ -259,24 +259,40 @@ def start_selected_profile(key: str):
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, handle_sigint)
 
-    # 连续无缝日志投屏循环（完全脱钩于单一 PID，跨越所有热切换，永不闪退）
+    # 连续无缝日志投屏循环（基于 Windows 增量偏移量轮询，跨越所有热切换，永不停滞，永不闪退）
     try:
-        with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
-            # 先输出末尾最近已有日志
-            lines = f.readlines()
-            tail_lines = lines[-25:] if len(lines) > 25 else lines
-            for line in tail_lines:
-                sys.stdout.write(line)
-            sys.stdout.flush()
+        cur_pos = 0
+        if os.path.exists(daily_log):
+            file_sz = os.path.getsize(daily_log)
+            # 初始输出末尾约 2KB 内容
+            with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
+                if file_sz > 3072:
+                    f.seek(file_sz - 3072)
+                    f.readline()  # 丢弃不完整首行
+                initial_lines = f.readlines()
+                for l in initial_lines:
+                    sys.stdout.write(l)
+                sys.stdout.flush()
+                cur_pos = f.tell()
 
-            # 持续跟随读取新生成的每一行日志（即使后台杀旧开新，日志依然连续写入同一个 daily_log）
-            while True:
-                line = f.readline()
-                if line:
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-                else:
-                    time.sleep(0.06)
+        while True:
+            try:
+                if os.path.exists(daily_log):
+                    cur_size = os.path.getsize(daily_log)
+                    if cur_size > cur_pos:
+                        with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
+                            f.seek(cur_pos)
+                            chunk = f.read()
+                            if chunk:
+                                sys.stdout.write(chunk)
+                                sys.stdout.flush()
+                                cur_pos = f.tell()
+                    elif cur_size < cur_pos:
+                        # 日志文件被截断或重新创建
+                        cur_pos = 0
+                time.sleep(0.04)
+            except Exception:
+                time.sleep(0.1)
     except KeyboardInterrupt:
         handle_sigint(None, None)
 

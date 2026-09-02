@@ -1984,6 +1984,8 @@ def process_vision_pipeline(cleaned_json, key_name="llamacpp"):
                 new_messages.append(msg_copy)
             else:
                 new_messages.append(msg)
+        else:
+            new_messages.append(msg)
     cleaned_json["messages"] = new_messages
     return cleaned_json, True, total_vision_tokens
 
