@@ -2700,7 +2700,7 @@ function updateSlotsUI(c, gpu) {
     return `
       <div class="slot-card ${isBusy ? (stage === 'prefill' ? 'active-prefill' : 'active') : ''}">
         <div class="slot-card-header">
-          <span>槽位 #${s.slot_num} <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(ID ${s.raw_id})</span></span>
+          <span>槽位 #${s.slot_num} <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(ID ${s.raw_id})</span> ${isMulti ? '<span style="font-size:10px;padding:1px 6px;background:rgba(168,85,247,0.2);color:#c084fc;border-radius:4px;margin-left:4px;border:1px solid rgba(168,85,247,0.35);">👁️ 多模态</span>' : ''}</span>
           ${badgeHtml}
         </div>
         <div class="slot-card-body">
@@ -3432,8 +3432,9 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 # 3. 动态思考等级注入与无损图文处理 (8083 主脑常驻运行，绝不在推理请求期间杀进程重启)
                 has_img = has_image_content(cleaned_json)
                 is_backend_multi = check_backend_is_multimodal(target_port)
-                if has_img and not is_backend_multi:
-                    # 8083 主脑当前为纯文本形态（双槽MTP/4并发），通过 GPU 瞬态 3B 提取高精 OCR 图文（用完即焚），0 秒打断 27B 主脑！
+                if not is_backend_multi:
+                    # 8083 主脑当前为纯文本形态（双槽MTP/4并发）：
+                    # 无论最新提问还是历史轮次中含有图片，一律执行安全图文解析与占位转译，彻底清除所有 image_url 对象，绝不报 500！
                     cleaned_json, was_modified, v_tokens = process_vision_pipeline(cleaned_json, key_name=key_name)
                     is_vision = False
                 else:
