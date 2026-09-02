@@ -1499,6 +1499,9 @@ def sanitize_payload(req_data):
             else:
                 break
 
+        if not sanitized_msgs:
+            sanitized_msgs = [{"role": "user", "content": "继续"}]
+
         req_data["messages"] = sanitized_msgs
 
         req_data["messages"], injected = inject_guardrails_and_breaker(req_data["messages"])
@@ -1627,6 +1630,9 @@ def translate_anthropic_to_openai(anthropic_body):
                 }
             })
 
+    if not openai_messages:
+        openai_messages.append({"role": "user", "content": "继续"})
+
     openai_payload = {
         "model": requested_model,
         "messages": openai_messages,
@@ -1650,8 +1656,11 @@ def translate_openai_to_anthropic_response(openai_resp_data, requested_model):
 
     content_blocks = []
     
-    # 文本内容
+    # 文本内容与思考内容提取
     text = msg_obj.get("content")
+    if text is None or text == "":
+        text = msg_obj.get("reasoning_content") or msg_obj.get("reasoning") or msg_obj.get("thought") or ""
+
     if text:
         content_blocks.append({"type": "text", "text": text})
 
@@ -1669,6 +1678,10 @@ def translate_openai_to_anthropic_response(openai_resp_data, requested_model):
             "name": fn.get("name", ""),
             "input": input_args
         })
+
+    # 协议硬约束防御：如果没有任何块，补全空文本块防止客户端报 content required
+    if not content_blocks:
+        content_blocks.append({"type": "text", "text": ""})
 
     stop_reason = "end_turn"
     if finish_reason == "tool_calls" or tool_calls:
@@ -3204,6 +3217,12 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 else:
                     req_json = incoming_json
 
+                if "prompt" in req_json and not "messages" in req_json:
+                    req_json["messages"] = [{"role": "user", "content": str(req_json["prompt"])}]
+
+                if not req_json.get("messages"):
+                    req_json["messages"] = [{"role": "user", "content": "继续"}]
+
                 requested_model = req_json.get("model", "")
                 actual_model = resolve_model_alias(requested_model)
                 req_json["model"] = actual_model
@@ -3213,6 +3232,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 estimated_prompt_tokens = estimate_tokens(msg_str + tools_str)
 
                 cleaned_json, modified = sanitize_payload(req_json)
+                if not cleaned_json.get("messages"):
+                    cleaned_json["messages"] = [{"role": "user", "content": "继续"}]
                 if modified:
                     tools_count = len(cleaned_json.get("tools", []))
                     if tools_count > 0:
@@ -3281,6 +3302,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 raw_json = json.loads(raw_body.decode("utf-8")) if raw_body else {}
                 if is_anthropic_protocol:
                     raw_json = translate_anthropic_to_openai(raw_json)
+                if not raw_json.get("messages"):
+                    raw_json["messages"] = [{"role": "user", "content": "继续"}]
                 forward_body = json.dumps(sanitize_schema(raw_json), ensure_ascii=False).encode("utf-8")
             except Exception:
                 forward_body = raw_body
