@@ -1,0 +1,20 @@
+{
+  "admin": {
+    "name": "Admin 主控机",
+    "enabled": true,
+    "quota_cny": 0,
+    "rpm": 0
+  },
+  "llamacpp": {
+    "name": "llamacpp 测试机",
+    "enabled": true,
+    "quota_cny": 0,
+    "rpm": 0
+  },
+  "v100-32G": {
+    "name": "v100-32G 工作机",
+    "enabled": true,
+    "quota_cny": 0,
+    "rpm": 0
+  }
+}

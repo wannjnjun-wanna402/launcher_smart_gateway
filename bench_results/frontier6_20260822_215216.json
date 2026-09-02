@@ -1,0 +1,388 @@
+{
+  "stamp": "20260822_215216",
+  "benchmarks": [
+    "Terminal-Bench 2.1 (Terminus-2)",
+    "SWE-bench Pro",
+    "SWE-bench Verified",
+    "DeepSWE (长程工程)",
+    "NL2Repo (长程)",
+    "GPQA Diamond",
+    "BrowseComp (深调研)"
+  ],
+  "models": {
+    "nvfp4": {
+      "label": "Qwen3.8-27B-NVFP4",
+      "short_name": "Qwen-NVFP4",
+      "bench_scores": {
+        "Terminal-Bench 2.1 (Terminus-2)": 95.8,
+        "SWE-bench Pro": 100.0,
+        "SWE-bench Verified": 100.0,
+        "DeepSWE (长程工程)": 100.0,
+        "NL2Repo (长程)": 100.0,
+        "GPQA Diamond": 75.0,
+        "BrowseComp (深调研)": 37.5
+      },
+      "overall_score": 86.9,
+      "avg_tps": 40.3,
+      "tasks": [
+        {
+          "id": "TB-01",
+          "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+          "title": "Nginx 日志 5xx 高频 IP 降序提取单行管道",
+          "score": 87.5,
+          "detail": "Bash 管道命令合规度 7/8",
+          "tps": 34.5,
+          "dt_ms": 8525.0,
+          "answer": "```bash\nawk '$9 ~ /^5/ {print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -10\n```"
+        },
+        {
+          "id": "TB-02",
+          "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+          "title": "端口 8081 占用进程优雅退出与 SIGKILL 安全降级脚本",
+          "score": 100.0,
+          "detail": "核心要点覆盖 5/5",
+          "tps": 42.3,
+          "dt_ms": 34460.0,
+          "answer": "```bash\n#!/usr/bin/env bash\nset -uo pipefail\n\nPORT=8081\nWAIT_TIMEOUT=5\n\n# 1. 查找监听该端口的 PID（仅 LISTEN 状态）\npids=$(lsof -t -i :\"$PORT\" -sTCP:LISTEN 2>/dev/null)\n\nif [[ -z \"$pids\" ]]; then\n    echo \"Port $PORT is not in use. Nothing to do.\"\n    exit 0\nfi\n\necho \"Port $PORT occupied by PID(s): $(echo $pids | tr '\\n' ' ')\"\n\n# 2. 发送 SIGTERM 优雅退出\nfor pid in $pids; do\n    kill -TERM \"$pid\" 2>/dev/null || true\ndone\n\n# 3. 等待最多 5 秒\nelapsed=0\nwhile (( elapsed < WAIT_TIMEOUT )); do\n    alive=false\n    for pid in $pids; do\n        if kill -0 \"$pid\" 2>/dev/null; then\n            alive=true\n            break\n        fi\n    done\n    if ! $alive; then\n        echo \"All processes exited gracefully after ${elapsed}s.\"\n        exit 0\n    fi\n    sleep 1\n    ((elapsed++))\ndone\n\n# 4. 超时未退出，强制 SIGKILL\nfor pid in $pids; do\n    if kill -0 \"$pid\" 2>/dev/null; then\n        echo \"Force killing PID $pid (SIGKILL).\"\n        kill -KILL \"$pid\" 2>/dev/null || true\n    fi\ndone\n\n# 5. 最终确认\nsleep 1\nfor pid in $pids; do\n    if kill -0 \"$pid\" 2>/dev/null; then\n        echo \"ERROR: PID $pid still alive after SIGKILL.\" >&2\n        exit 1\n    fi\ndone\n\necho \"Port $PORT has been released.\"\nexit 0\n```"
+        },
+        {
+          "id": "TB-03",
+          "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+          "title": "Git Rebase 冲突安全中止与工作区清理工作流",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 38.7,
+          "dt_ms": 13003.0,
+          "answer": "```bash\n# 1. 确认 rebase 冲突暂停状态\ngit status\n\n# 2. 放弃本次变基，回滚到变基前分支状态\ngit rebase --abort\n\n# 3. 清除全部未跟踪的临时文件（含目录）\ngit clean -fd\n```"
+        },
+        {
+          "id": "SWE-P01",
+          "benchmark": "SWE-bench Pro",
+          "title": "多线程高并发缓存队列 TOCTOU 竞态条件修复",
+          "score": 100.0,
+          "detail": "全部工程类单元测试断言通过",
+          "tps": 40.3,
+          "dt_ms": 8689.0,
+          "answer": "```python\nfrom collections import deque\nimport threading\n\nclass ConcurrentQueue:\n    def __init__(self):\n        self.q = deque()\n        self.lock = threading.Lock()\n\n    def put(self, item):\n        with self.lock:\n            self.q.append(item)\n\n    def get(self):\n        with self.lock:\n            if len(self.q) > 0:\n                return self.q.popleft()\n            return None\n```"
+        },
+        {
+          "id": "SWE-P02",
+          "benchmark": "SWE-bench Pro",
+          "title": "深层嵌套字典循环自引用安全深拷贝修复",
+          "score": 100.0,
+          "detail": "通过 3/3 单元测试",
+          "tps": 41.6,
+          "dt_ms": 32032.0,
+          "answer": "```python\ndef safe_clone_dict(data: dict) -> dict:\n    def _clone(obj, seen):\n        if isinstance(obj, dict):\n            obj_id = id(obj)\n            if obj_id in seen:\n                return '[CIRCULAR_REF]'\n            seen.add(obj_id)\n            result = {k: _clone(v, seen) for k, v in obj.items()}\n            seen.remove(obj_id)\n            return result\n        if isinstance(obj, list):\n            obj_id = id(obj)\n            if obj_id in seen:\n                return '[CIRCULAR_REF]'\n            seen.add(obj_id)\n            result = [_clone(item, seen) for item in obj]\n            seen.remove(obj_id)\n            return result\n        return obj\n\n    return _clone(data, set())\n```\n\n**要点说明：**\n\n- `seen` 集合记录当前递归路径上所有容器的 `id()`。进入 dict/list 前检查，命中则返回 `'[CIRCULAR_REF]'`；处理完 `remove`，保证共享引用（菱形结构）不会被误判为循环。\n- 不可变类型（int、str、float、tuple 等）直接返回，无需拷贝。\n- 若需支持 tuple 的深拷贝，可在 `isinstance(obj, list)` 分支旁加一个 `isinstance(obj, tuple)` 分支，逻辑相同，返回 `tuple(...)` 即可。"
+        },
+        {
+          "id": "SWE-V01",
+          "benchmark": "SWE-bench Verified",
+          "title": "HTTP Content-Type MIME 参数解析与大小写不敏感补丁",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 41.3,
+          "dt_ms": 13215.0,
+          "answer": "```diff\n--- a/mime.py\n+++ b/mime.py\n@@ -1,2 +1,5 @@\n def is_json_mime(content_type: str) -> bool:\n-    return content_type == 'application/json'\n+    if not content_type:\n+        return False\n+    mime = content_type.split(';')[0].strip().lower()\n+    return mime == 'application/json'\n```\n\n完整修复代码：\n\n```python\ndef is_json_mime(content_type: str) -> bool:\n    if not content_type:\n        return False\n    mime = content_type.split(';')[0].strip().lower()\n    return mime == 'application/json'\n```\n\n要点说明：\n\n- `if not content_type` 同时覆盖 `None` 和空字符串，直接返回 `False`。\n- `split(';')[0]` 去掉 `; charset=utf-8` 等参数部分。\n- `.strip().lower()` 处理首尾空白及大小写（`Application/JSON` → `application/json`）。\n- 最终比较返回原生 `bool`，不会因 `None` 比较抛出异常。"
+        },
+        {
+          "id": "SWE-V02",
+          "benchmark": "SWE-bench Verified",
+          "title": "事件监听器弱引用 WeakRef 内存泄漏根治",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 41.0,
+          "dt_ms": 37063.0,
+          "answer": "```python\nimport weakref\nfrom collections import defaultdict\n\n\nclass WeakEventBus:\n    \"\"\"事件分发器，使用弱引用存储订阅者，避免阻止 GC。\"\"\"\n\n    def __init__(self) -> None:\n        # event_name -> list of (weakref.ref, func)\n        #   bound method: (ref(obj), obj_method.__func__)\n        #   普通可调用对象: (ref(obj), obj)  # 调用时 ref()()\n        self._subscribers: dict[str, list[tuple[weakref.ref, object]]] = defaultdict(list)\n\n    def subscribe(self, event_name: str, callback) -> None:\n        \"\"\"注册回调；仅保留弱引用，对象被 GC 后自动失效。\"\"\"\n        if hasattr(callback, \"__self__\") and hasattr(callback, \"__func__\"):\n            # bound method → 弱引用其所属对象\n            obj = callback.__self__\n            func = callback.__func__\n            try:\n                ref = weakref.ref(obj)\n            except TypeError:\n                return\n            self._subscribers[event_name].append((ref, func))\n        else:\n            # 普通函数 / lambda / 类实例等\n            # 普通函数不支持弱引用，直接跳过\n            try:\n                ref = weakref.ref(callback)\n            except TypeError:\n                return\n            self._subscribers[event_name].append((ref, callback))\n\n    def emit(self, event_name: str, *args, **kwargs) -> None:\n        \"\"\"分发事件，自动清理已失效的弱引用。\"\"\"\n        subs = self._subscribers.get(event_name)\n        if not subs:\n            return\n\n        alive = []\n        for ref, func in subs:\n            obj = ref()\n            if obj is None:\n                continue  # 对象已被 GC，跳过\n            if hasattr(func, \"__self__\") or func is not obj:\n                # bound method 场景：func 是底层函数，obj 是所属对象\n                func(obj, *args, **kwargs)\n            else:\n                # 普通可调用对象\n                obj(*args, **kwargs)\n            alive.append((ref, func))\n\n        self._subscribers[event_name] = alive\n```"
+        },
+        {
+          "id": "DSWE-01",
+          "benchmark": "DeepSWE (长程工程)",
+          "title": "长程分布式事务 Saga 编排器与逆序补偿机制",
+          "score": 100.0,
+          "detail": "全部工程类单元测试断言通过",
+          "tps": 43.3,
+          "dt_ms": 35458.0,
+          "answer": "```python\nclass SagaExecutor:\n    \"\"\"A robust distributed-transaction Saga orchestrator.\n\n    Steps are registered in order; actions run sequentially.\n    If any action raises, all previously completed steps are\n    compensated in strict reverse order (best-effort).\n    \"\"\"\n\n    def __init__(self):\n        self._steps: list[dict] = []\n\n    def add_step(self, action, compensate) -> None:\n        \"\"\"Register a step with its forward action and compensation function.\"\"\"\n        if not callable(action):\n            raise TypeError(\"action must be callable\")\n        if not callable(compensate):\n            raise TypeError(\"compensate must be callable\")\n        self._steps.append({\"action\": action, \"compensate\": compensate})\n\n    def execute(self) -> dict:\n        \"\"\"Run all steps in order; on failure, compensate in reverse.\n\n        Returns:\n            {'success': True,  'error': None}\n            {'success': False, 'error': <Exception>, 'rollback_errors': [...]}\n        \"\"\"\n        completed: list[dict] = []\n\n        for step in self._steps:\n            try:\n                step[\"action\"]()\n                completed.append(step)\n            except Exception as exc:\n                # Strict reverse-order compensation (best-effort)\n                rollback_errors: list[Exception] = []\n                for comp_step in reversed(completed):\n                    try:\n                        comp_step[\"compensate\"]()\n                    except Exception as comp_exc:\n                        rollback_errors.append(comp_exc)\n\n                result: dict = {\"success\": False, \"error\": exc}\n                if rollback_errors:\n                    result[\"rollback_errors\"] = rollback_errors\n                return result\n\n        return {\"success\": True, \"error\": None}\n\n    def reset(self) -> None:\n        \"\"\"Clear all registered steps so the executor can be reused.\"\"\"\n        self._steps.clear()\n\n    @property\n    def step_count(self) -> int:\n        return len(self._steps)\n```\n\n**Usage example:**\n\n```python\ndef main():\n    saga = SagaExecutor()\n\n    saga.add_step(\n        action=lambda: print(\"step1: debit account\"),\n        compensate=lambda: print(\"comp1: credit account back\"),\n    )\n    saga.add_step(\n        action=lambda: print(\"step2: credit beneficiary\"),\n        compensate=lambda: print(\"comp2: debit beneficiary back\"),\n    )\n    saga.add_step(\n        action=lambda: (_ for _ in ()).throw(RuntimeError(\"step3 failed\")),\n        compensate=lambda: print"
+        },
+        {
+          "id": "DSWE-02",
+          "benchmark": "DeepSWE (长程工程)",
+          "title": "高并发固定容量无锁环形缓冲区 Lock-Free RingBuffer",
+          "score": 100.0,
+          "detail": "全部工程类单元测试断言通过",
+          "tps": 39.8,
+          "dt_ms": 30169.0,
+          "answer": "```python\nimport threading\n\n\nclass LockFreeRingBuffer:\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"capacity must be a positive integer\")\n        self._capacity = capacity\n        self._buf = [None] * capacity\n        self._head = 0\n        self._tail = 0\n        self._count = 0\n        self._lock = threading.Lock()\n\n    def push(self, item) -> bool:\n        with self._lock:\n            if self._count == self._capacity:\n                return False\n            self._buf[self._tail] = item\n            self._tail = (self._tail + 1) % self._capacity\n            self._count += 1\n            return True\n\n    def pop(self):\n        with self._lock:\n            if self._count == 0:\n                return None\n            item = self._buf[self._head]\n            self._buf[self._head] = None\n            self._head = (self._head + 1) % self._capacity\n            self._count -= 1\n            return item\n```"
+        },
+        {
+          "id": "NLR-01",
+          "benchmark": "NL2Repo (长程)",
+          "title": "一键生成 Typer/Click 现代化命令行工具完整仓库",
+          "score": 100.0,
+          "detail": "核心要点覆盖 4/4",
+          "tps": 43.9,
+          "dt_ms": 35020.0,
+          "answer": "# repokit — 完整多文件代码仓库\n\n## 目录树\n\n```\nrepokit/\n├── pyproject.toml\n├── repokit/\n│   ├── __init__.py\n│   ├── cli.py\n│   ├── scanner.py\n│   ├── formatter.py\n│   └── output.py\n└── tests/\n    ├── __init__.py\n    └── test_cli.py\n```\n\n---\n\n## `pyproject.toml`\n\n```toml\n[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"\n\n[project]\nname = \"repokit\"\nversion = \"0.1.0\"\ndescription = \"A production-grade repository inspection & formatting CLI tool.\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\nlicense = { text = \"MIT\" }\nauthors = [{ name = \"repokit-dev\" }]\ndependencies = [\n    \"typer>=0.12.0\",\n    \"rich>=13.7.0\",\n]\n\n[project.optional-dependencies]\ndev = [\n    \"pytest>=8.0\",\n    \"pytest-cov>=5.0\",\n]\n\n[project.scripts]\nrepokit = \"repokit.cli:app\"\n\n[tool.hatch.build.targets.wheel]\npackages = [\"repokit\"]\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n```\n\n---\n\n## `repokit/__init__.py`\n\n```python\n\"\"\"repokit – repository inspection & formatting toolkit.\"\"\"\n\n__version__ = \"0.1.0\"\n```\n\n---\n\n## `repokit/cli.py`\n\n```python\n\"\"\"Typer CLI entry-point for repokit.\"\"\"\n\nfrom __future__ import annotations\n\nimport pathlib\nfrom typing import Optional\n\nimport typer\n\nfrom . import __version__\nfrom .formatter import check_formatting\nfrom .output import (\n    print_format_report,\n    print_scan_report,\n    print_version,\n)\nfrom .scanner import scan_directory\n\napp = typer.Typer(\n    name=\"repokit\",\n    help=\"Inspect and format repository files.\",\n    no_args_is_help=True,\n)\n\n\n@app.command()\ndef scan(\n    path: pathlib.Path = typer.Argument(\n        ...,\n        help=\"Directory to scan.\",\n        exists=True,\n        file_okay=False,\n        dir_okay=True,\n        readable=True,\n    ),\n    verbose: bool = typer.Option(\n        False,\n        \"--verbose\",\n        \"-v\",\n        help=\"Show per-file details.\",\n    ),\n) -> None:\n    \"\"\"Scan a directory and report file statistics.\"\"\"\n    if not path.is_dir():\n        typer.echo(\"Error: path is not a directory\", err=True)\n        raise typer.Exit(code=1)\n\n    results = scan_directory(path)\n    print_scan_report(results, verbose=verbose)\n\n\n@app.command()\ndef format(\n    path: pathlib.Path = typer.Argument(\n        pathlib.Path(\".\"),\n        help=\"Directory to check.\",\n        exists=True,\n        file_okay=False,\n        dir_okay=True,\n        readable=True,\n    ),\n    check: bool = typer.Option(\n        False,\n        \"--check\",\n        \"-c\",\n        help=\"Only check; exit non-zero if issues found.\",\n    ),\n) -> None:\n    \"\"\"Check (or fix) formatting of files in a directory.\"\"\"\n    if not path.is_dir():\n        typer.echo(\"Error: path is not a directory\", err=True)\n        raise typer.Exit(code=1)\n\n    issues = check_formatting(path)\n    print_format_report(issues)\n\n    if check and issues:\n        raise typer.Exit(code=1)\n\n\n@app.command()\ndef version() -> None:\n    \"\"\"Print the repokit version.\"\"\"\n    print_version(__version__)\n\n\nif __name__ == \"__main__\":\n    app()\n```\n\n---\n\n## `repokit/scanner.py`\n\n```python\n\"\"\"Directory scanning logic.\"\"\"\n\nfrom __future__ import annotations\n\nimport pathlib\nfrom dataclasses import dataclass, field\nfrom typing import List\n\n\n@dataclass\nclass FileEntry:\n    path: pathlib.Path\n    size: int\n    extension: str\n\n\n@dataclass\nclass ScanResult:\n    root: pathlib.Path\n    files: List[FileEntry] = field(default_factory=list)\n    total_size: int = 0\n    file_count: int = 0\n    by_extension: dict = field(default_factory=dict)\n\n    @property\n    def unique_extensions(self) -> int:\n        return len(self"
+        },
+        {
+          "id": "NLR-02",
+          "benchmark": "NL2Repo (长程)",
+          "title": "生成 Redis 分布式任务队列 Worker 守护进程工程",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 41.1,
+          "dt_ms": 37385.0,
+          "answer": "# Redis 分布式异步任务队列微框架\n\n## 目录结构\n\n```\ntaskqueue/\n├── __init__.py\n├── config.py\n├── tasks.py\n├── client.py\n├── worker.py\n├── requirements.txt\n└── README.md\n```\n\n---\n\n## `requirements.txt`\n\n```text\nredis>=5.0.0\n```\n\n---\n\n## `__init__.py`\n\n```python\n\"\"\"Redis-based distributed async task queue micro-framework.\"\"\"\n```\n\n---\n\n## `config.py`\n\n```python\n\"\"\"Central configuration for the task queue framework.\"\"\"\n\nimport os\n\n# ── Redis connection ──────────────────────────────────────────────\nREDIS_HOST = os.getenv(\"REDIS_HOST\", \"127.0.0.1\")\nREDIS_PORT = int(os.getenv(\"REDIS_PORT\", \"6379\"))\nREDIS_DB = int(os.getenv(\"REDIS_DB\", \"0\"))\n\n# ── Queue keys ────────────────────────────────────────────────────\nQUEUE_KEY = \"taskqueue:main\"\nDELAYED_QUEUE_KEY = \"taskqueue:delayed\"   # Sorted Set, score = retry_at (epoch)\nDLQ_KEY = \"taskqueue:dlq\"                 # List of permanently failed tasks\n\n# ── Retry policy ──────────────────────────────────────────────────\nMAX_RETRIES = int(os.getenv(\"MAX_RETRIES\", \"3\"))\nBASE_DELAY = float(os.getenv(\"BASE_DELAY\", \"5\"))   # seconds; actual = BASE_DELAY * 2^retry_count\n\n# ── Worker tuning ─────────────────────────────────────────────────\nBRPOP_TIMEOUT = int(os.getenv(\"BRPOP_TIMEOUT\", \"5\"))  # seconds\nDELAYED_SCAN_INTERVAL = float(os.getenv(\"DELAYED_SCAN_INTERVAL\", \"1.0\"))  # seconds\n```\n\n---\n\n## `tasks.py`\n\n```python\n\"\"\"Computation-intensive example task functions.\n\nEach function is registered by name and looked up by the worker at runtime.\n\"\"\"\n\nimport hashlib\nimport time\nimport random\n\n\ndef heavy_computation(n: int) -> str:\n    \"\"\"CPU-bound: sum of squares up to n.\"\"\"\n    total = 0\n    for i in range(n):\n        total += i * i\n    return f\"sum_sq({n}) = {total}\"\n\n\ndef hash_digest(data: str, rounds"
+        },
+        {
+          "id": "GPQA-01",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】手性催化不对称氢化反应立体构型机制",
+          "score": 100.0,
+          "detail": "官方真题选择正确: 选项 B",
+          "tps": 39.2,
+          "dt_ms": 39183.0,
+          "answer": ")-DIPAMP catalyzed hydrogenation:\n\nFor (R,R)-DIPAMP:\n- The product from hydrogenation of α-acetamidocinnamate would be (S)-methyl 2-acetamido-3-phenylpropanoate\n\nWait, I need to be more careful. Let me think about which carbon gets the hydrogen.\n\nThe substrate is Ph-CH=C(NHAc)-COOCH₃\n\nHydrogenation adds H to the β-carbon (the Ph-CH= carbon) and H to the α-carbon (the C(NHAc)= carbon). Actually, in the migratory insertion step, the hydride from Rh adds to one carbon, and then the other H is delivered.\n\nIn the Halpern mechanism:\n1. Rh-H complex with substrate coordinated\n2. Migratory insertion: Rh-H adds across C=C (hydride to β-carbon, Rh to α-carbon)\n3. Then H₂ oxidative addition and reductive elimination delivers the second H\n\nActually, the mechanism is:\n1. Rh(I) + substrate → Rh(I)-substrate complex\n2. H₂ coordination + oxidative addition → Rh(III)-H₂-substrate\n3. Migratory insertion (one H transfers to substrate) → Rh(III)-alkyl\n4. Reductive elimination → product + Rh(I)\n\nOr alternatively:\n1. Rh(I)-H + substrate → Rh(I)-H-substrate\n2. Migratory insertion → Rh(I)-alkyl\n3. H₂ oxidative addition → Rh(III)-H-alkyl\n4. Reductive elimination → product + Rh(I)\n\nThe key stereochemistry-determining step is the migratory insertion.\n\nFor the Halpern model with (R,R)-DIPAMP:\n\nThe concept of \"anti-reactivity control\" (反反应活性控制) is central. This means:\n- Two diastereomeric intermediates exist (from substrate binding in two orientations)\n- The thermodynamically more stable one is the major intermediate\n- But the less stable (minor) intermediate reacts faster (has lower activation barrier for migratory insertion)\n- The product is determined by the minor intermediate's reaction pathway\n\nThis is option B or C.\n\nNow, for (R,R)-DIPAMP specifically:\n\nIn the classic Halpern work, (R,R)-DIPAMP gives (S)-product for"
+        },
+        {
+          "id": "GPQA-02",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】代数拓扑楔和空间同调群与欧拉示性数",
+          "score": 100.0,
+          "detail": "官方真题选择正确: 选项 B",
+          "tps": 42.6,
+          "dt_ms": 21705.0,
+          "answer": "## 分步推导\n\n### 1. 各因子空间的同调群\n\n**$S^2$（整数系数）：**\n$$H_0(S^2)=\\mathbb{Z},\\quad H_1(S^2)=0,\\quad H_2(S^2)=\\mathbb{Z},\\quad H_i(S^2)=0\\;(i>2)$$\n\n**$S^1$（整数系数）：**\n$$H_0(S^1)=\\mathbb{Z},\\quad H_1(S^1)=\\mathbb{Z},\\quad H_i(S^1)=0\\;(i>1)$$\n\n### 2. 楔和的同调群\n\n对 $i\\ge 1$，楔和的同调群等于各因子同调群的直和（因为楔和的 $i$-链复形在 $i\\ge1$ 层是直和）；$H_0$ 由连通性给出：\n\n$$H_0(X)=\\mathbb{Z}$$\n$$H_1(X)=H_1(S^2)\\oplus H_1(S^1)=0\\oplus\\mathbb{Z}=\\mathbb{Z}$$\n$$H_2(X)=H_2(S^2)\\oplus H_2(S^1)=\\mathbb{Z}\\oplus 0=\\mathbb{Z}$$\n$$H_i(X)=0,\\quad i>2$$\n\n### 3. 欧拉示性数\n\n$$\\chi(X)=\\sum_{i=0}^{2}(-1)^i\\,\\text{rank}\\,H_i(X)=1-1+1=1$$\n\n### 4. 交叉验证（可加性公式）\n\n$$\\chi(S^2\\vee S^1)=\\chi(S^2)+\\chi(S^1)-\\chi(\\text{pt})=2+0-1=1\\;\\checkmark$$\n\n## 最终答案\n\n$$\\boxed{B}$$"
+        },
+        {
+          "id": "GPQA-03",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】强磁场下二维电子气朗道能级轨道简并度",
+          "score": 100.0,
+          "detail": "官方真题选择正确: 选项 A",
+          "tps": 41.8,
+          "dt_ms": 14985.0,
+          "answer": "## 计算\n\n$$N_L = \\frac{eBA}{h} = \\frac{(1.602\\times10^{-19}\\,\\text{C})(10.0\\,\\text{T})(1.0\\times10^{-4}\\,\\text{m}^2)}{6.626\\times10^{-34}\\,\\text{J·s}}$$\n\n**分子：**\n\n$$eBA = 1.602\\times10^{-19}\\times10.0\\times1.0\\times10^{-4} = 1.602\\times10^{-22}\\;\\text{C·T·m}^2$$\n\n**除以 $h$：**\n\n$$N_L = \\frac{1.602\\times10^{-22}}{6.626\\times10^{-34}} = \\frac{1.602}{6.626}\\times10^{12} \\approx 0.2418\\times10^{12} = 2.42\\times10^{11}$$\n\n## 结果\n\n$N_L \\approx 2.42\\times10^{11}$，对应选项 A。\n\n\\boxed{A}"
+        },
+        {
+          "id": "GPQA-04",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】CRISPR-Cas9 种子区错配动力学能垒",
+          "score": 0.0,
+          "detail": "选择错误: 选了 A，期望 B",
+          "tps": 39.3,
+          "dt_ms": 39063.0,
+          "answer": "## 生物物理分析\n\n**核心机制：R-loop 成核与 HNH 结构域的变构偶联**\n\nSpCas9 切割双链 DNA 的完整路径为：\n\n1. **PAM 识别**（RecLob 结构域识别 5′-NGG-3′）→ 局部解链\n2. **R-loop 成核**：sgRNA 从 PAM 近端（种子区 1–8 bp）侵入，逐碱基置换非靶链，形成 RNA:DNA 杂交 + 游离非靶链的 R-loop 结构\n3. **R-loop 延伸**：向远端（9–20 bp）推进\n4. **变构激活**：完整 R-loop 使 HNH 结构域（切割靶链）和 RuvC 结构域（切割非靶链）转入活性构象\n\n**种子区错配为何致命：**\n\n- R-loop 成核需要破坏约 8 bp 的 DNA 双链（每 bp 堆叠 + 氢键贡献约 2–3 kcal/mol），这是一个显著的**自由能壁垒**。\n- 种子区碱基配对提供的热力学驱动力是**克服该壁垒、启动 R-loop 成核**的关键。\n- 一旦种子区出现错配，成核步骤失败 → R-loop 无法建立 → HNH 结构域无法被变构激活 → 切割活性几乎归零。\n- 这是一个**不可逆的变构检查点**：没有 R-loop，催化结构域就停留在非活性构象。\n\n**远端错配为何可容忍：**\n\n- 种子区完整 → R-loop 已成功成核并向远端延伸。\n- 远端（13–20 bp）的错配仅降低 R-loop 末端稳定性，不足以逆转已建立的 R-loop 结构，HNH 仍可获得足够的构象信号执行切割。\n\n**逐项排除：**\n\n| 选项 | 判断 | 理由 |\n|------|------|------|\n| A | ✗ | 单碱基错配不会导致蛋白质变性；RuvC 结构域完整性不受影响 |\n| B | ✓ | 准确描述了种子区碱基配对作为 R-loop 成核热力学驱动力及 HNH 变构激活检查点的角色 |\n| C | ✗ | 远端 9–"
+        },
+        {
+          "id": "BC-01",
+          "benchmark": "BrowseComp (深调研)",
+          "title": "跨源技术演进与架构差异深度调研报告",
+          "score": 50.0,
+          "detail": "核心要点覆盖 2/4",
+          "tps": 38.2,
+          "dt_ms": 40230.0,
+          "answer": "# NVIDIA Blackwell（B200 / GB200）vs Hopper（H100 / H200）核心微架构革新调研\n\n---\n\n## 1. 双 Die 封装与 Die-to-Die 互联\n\n**核心事实：** B200 采用双 reticle-limited die 设计，两 die 之间通过 NVIDIA 自研的 **NV-High Bandwidth Interface** 互联，聚合带宽达 **10 TB/s**。封装工艺为 **TSMC 4NP**（4 nm 第二代），采用 **CoWoS-L**（Chip-on-Wafer-on-Substrate, Local）先进封装。\n\n**对比 Hopper：** H100 为单 die（TSMC 4N，CoWoS-S 封装），不存在 die-to-die 互联问题。Blackwell 的双 die 设计突破了单 reticle 面积上限（~858 mm²），使 B200 单 GPU 集成约 **2080 亿（208B）晶体管**，是 H100（~80B）的 2.6 倍。10 TB/s 的 die-to-die 带宽远高于任何外部互联（HBM3e 总带宽约 8 TB/s），确保两 die 在逻辑上表现为一个统一 GPU，对软件栈透明。\n\n**工程意义：** 10 TB/s 的片内互联带宽意味着跨 die 访问的延迟惩罚极小，CUDA 线程调度、L2 cache 一致性、以及 HBM 控制器分布均可跨 die 无感运行。这是 Blackwell 能在不改变 CUDA 编程模型的前提下实现算力跃升的关键物理基础。\n\n---\n\n## 2. 第二代 Transformer Engine 与 NVFP4 原生支持\n\n**核心事实：** Blackwell 引入 **第二代 Transformer Engine**，原生支持 **NVFP4（NVIDIA 4-bit Floating Point）** 数据格式，精度保障机制为 **Micro-tensor Scaling（微张量缩放）**。\n\n**技术细节：**\n\n- **NVFP4 格式：** 4-bit 浮点（1 sign + 2 exponent + 1 mantissa），是 Blackwell Tensor Core 原生可运算的最低精度格式，相比 Hopper 最低 FP8 再压缩一半。\n- **Micro-tensor Scaling：** 由于 FP4 仅 "
+        },
+        {
+          "id": "BC-02",
+          "benchmark": "BrowseComp (深调研)",
+          "title": "前沿具身智能多模态端到端控制架构调研",
+          "score": 25.0,
+          "detail": "核心要点覆盖 1/4",
+          "tps": 36.9,
+          "dt_ms": 41650.0,
+          "answer": "# 具身智能端到端控制大模型：控制范式演进技术综述\n\n## 1. 动作生成范式：离散 Tokenization vs 连续 Flow Matching / Diffusion\n\n### 1.1 离散动作分词（RT-2 范式）\n\nGoogle RT-2（2023）将连续关节空间动作离散化为文本 token，直接复用 VLM 的自回归生成管线：\n\n- **分词策略**：每个 DOF 的连续值（如关节角度、末端位姿）被量化为固定 bin（典型 256 级），映射到 VLM 词表中的特殊 token。一个 7-DoF 机械臂的单步动作即 7 个 token 的序列。\n- **生成方式**：标准自回归解码，逐 token 采样。\n- **优势**：架构极简——无需额外 action head，VLM 的 next-token prediction 天然适配；可跨 embodiment 共享词表（RT-2-X / Open X-Embodiment）。\n- **核心瓶颈**：\n  - **量化误差**：256 级对 0.01 rad 精度的关节控制已接近极限，高 DoF 空间（如 21-DoF 人形）下误差累积严重。\n  - **自回归延迟**：$T$ 个 DOF × $H$ 步动作序列 = $T \\times H$ 次前向传播，推理频率被锁死在 3–5 Hz 量级。\n  - **多模态分布表达力不足**：自回归 token 序列难以自然表达\"同一指令下存在多条合理动作轨迹\"的多峰分布。\n\n### 1.2 连续动作生成：Diffusion Policy 与 Flow Matching\n\n**Diffusion Policy（Chi et al., 2023）** 将动作序列建模为去噪扩散过程：\n\n$$p_\\theta(a_{t:t+H} \\mid o_t) = \\text{DDPM/DDIM 去噪链}$$\n\n- 训练：对真实动作序列加高斯噪声，学习预测噪声（或 score function）。\n- 推理：$N$ 步去噪（$N=10\\text{–}50$），每步一次网络前向。\n- 天然支持多模态动作分布，无需离散化"
+        }
+      ]
+    },
+    "q5kp": {
+      "label": "Qwen3.8-27B-Q5_K_P",
+      "short_name": "Qwen-Q5KP",
+      "bench_scores": {
+        "Terminal-Bench 2.1 (Terminus-2)": 95.8,
+        "SWE-bench Pro": 100.0,
+        "SWE-bench Verified": 100.0,
+        "DeepSWE (长程工程)": 100.0,
+        "NL2Repo (长程)": 100.0,
+        "GPQA Diamond": 50.0,
+        "BrowseComp (深调研)": 50.0
+      },
+      "overall_score": 85.1,
+      "avg_tps": 42.0,
+      "tasks": [
+        {
+          "id": "TB-01",
+          "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+          "title": "Nginx 日志 5xx 高频 IP 降序提取单行管道",
+          "score": 87.5,
+          "detail": "Bash 管道命令合规度 7/8",
+          "tps": 43.0,
+          "dt_ms": 24871.0,
+          "answer": "```bash\nawk '$9 ~ /^5[0-9]{2}$/ {print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -10\n```"
+        },
+        {
+          "id": "TB-02",
+          "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+          "title": "端口 8081 占用进程优雅退出与 SIGKILL 安全降级脚本",
+          "score": 100.0,
+          "detail": "核心要点覆盖 5/5",
+          "tps": 43.8,
+          "dt_ms": 32025.0,
+          "answer": "```bash\n#!/usr/bin/env bash\nset -u\n\nPORT=8081\nTIMEOUT=5\n\n# --- Locate PIDs listening on the port ---\nif command -v lsof &>/dev/null; then\n    pids=$(lsof -ti \":${PORT}\" 2>/dev/null)\nelif command -v ss &>/dev/null; then\n    pids=$(ss -tlnp \"sport = :${PORT}\" 2>/dev/null \\\n           | grep -oP 'pid=\\K[0-9]+' | sort -u)\nelse\n    echo \"ERROR: neither lsof nor ss is available.\" >&2\n    exit 1\nfi\n\n# No process on the port → nothing to do\nif [[ -z \"${pids}\" ]]; then\n    exit 0\nfi\n\n# --- Graceful shutdown: SIGTERM ---\nfor pid in ${pids}; do\n    kill -TERM \"${pid}\" 2>/dev/null || true\ndone\n\n# --- Poll up to TIMEOUT seconds for exit ---\nelapsed=0\nwhile (( elapsed < TIMEOUT )); do\n    still_alive=0\n    for pid in ${pids}; do\n        if kill -0 \"${pid}\" 2>/dev/null; then\n            still_alive=1\n            break\n        fi\n    done\n    (( still_alive == 0 )) && break\n    sleep 0.5\n    elapsed=$(( elapsed + 1 ))\ndone\n\n# --- Forceful kill for any survivors ---\nfor pid in ${pids}; do\n    if kill -0 \"${pid}\" 2>/dev/null; then\n        kill -KILL \"${pid}\" 2>/dev/null || true\n    fi\ndone\n\nexit 0\n```"
+        },
+        {
+          "id": "TB-03",
+          "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+          "title": "Git Rebase 冲突安全中止与工作区清理工作流",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 40.3,
+          "dt_ms": 9049.0,
+          "answer": "```bash\ngit status\ngit rebase --abort\ngit clean -fd\n```"
+        },
+        {
+          "id": "SWE-P01",
+          "benchmark": "SWE-bench Pro",
+          "title": "多线程高并发缓存队列 TOCTOU 竞态条件修复",
+          "score": 100.0,
+          "detail": "全部工程类单元测试断言通过",
+          "tps": 40.1,
+          "dt_ms": 5780.0,
+          "answer": "```python\nfrom collections import deque\nimport threading\n\nclass ConcurrentQueue:\n    def __init__(self):\n        self.q = deque()\n        self.lock = threading.Lock()\n\n    def put(self, item):\n        with self.lock:\n            self.q.append(item)\n\n    def get(self):\n        with self.lock:\n            if len(self.q) > 0:\n                return self.q.popleft()\n            return None\n```"
+        },
+        {
+          "id": "SWE-P02",
+          "benchmark": "SWE-bench Pro",
+          "title": "深层嵌套字典循环自引用安全深拷贝修复",
+          "score": 100.0,
+          "detail": "通过 3/3 单元测试",
+          "tps": 44.2,
+          "dt_ms": 29158.0,
+          "answer": "```python\ndef safe_clone_dict(data: dict) -> dict:\n    def _clone(obj, seen: set):\n        if isinstance(obj, dict):\n            if id(obj) in seen:\n                return '[CIRCULAR_REF]'\n            seen.add(id(obj))\n            result = {k: _clone(v, seen) for k, v in obj.items()}\n            seen.remove(id(obj))\n            return result\n        elif isinstance(obj, list):\n            if id(obj) in seen:\n                return '[CIRCULAR_REF]'\n            seen.add(id(obj))\n            result = [_clone(item, seen) for item in obj]\n            seen.remove(id(obj))\n            return result\n        else:\n            return obj\n\n    return _clone(data, set())\n```\n\nThe `seen` set tracks `id()`s of containers currently on the recursion path. When a container is encountered that's already being processed (i.e., it's an ancestor in the traversal), it's a cycle — we return the marker string instead of recursing. Removing the id after processing (backtracking) ensures that shared-but-not-circular references (e.g., the same list appearing under two different keys) are cloned independently rather than being falsely flagged."
+        },
+        {
+          "id": "SWE-V01",
+          "benchmark": "SWE-bench Verified",
+          "title": "HTTP Content-Type MIME 参数解析与大小写不敏感补丁",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 42.5,
+          "dt_ms": 9816.0,
+          "answer": "```diff\n--- a/mime.py\n+++ b/mime.py\n@@ -1,2 +1,5 @@\n def is_json_mime(content_type: str) -> bool:\n-    return content_type == 'application/json'\n+    if not content_type:\n+        return False\n+    return content_type.split(';')[0].strip().lower() == 'application/json'\n```\n\n**Why this works:**\n\n- `if not content_type` catches both `None` and `\"\"` (and any other falsy value), returning `False` without raising.\n- `.split(';')[0]` strips the `; charset=utf-8` (or any other MIME parameter) suffix.\n- `.strip().lower()` normalizes surrounding whitespace and case, so `Application/JSON` matches.\n- The final `==` comparison yields a `bool`."
+        },
+        {
+          "id": "SWE-V02",
+          "benchmark": "SWE-bench Verified",
+          "title": "事件监听器弱引用 WeakRef 内存泄漏根治",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 42.5,
+          "dt_ms": 33940.0,
+          "answer": "```python\nimport weakref\nfrom collections import defaultdict\n\n\nclass WeakEventBus:\n    \"\"\"Event dispatcher that holds only weak references to subscribers,\n    allowing subscriber objects to be garbage-collected in long-running\n    processes.\"\"\"\n\n    def __init__(self):\n        self._subscribers: dict[str, list] = defaultdict(list)\n\n    def subscribe(self, event_name: str, callback) -> None:\n        \"\"\"Register *callback* for *event_name* using a weak reference.\n\n        Bound methods are stored via ``weakref.WeakMethod`` so the owning\n        instance can be collected.  Plain callables are stored via\n        ``weakref.ref``.\n        \"\"\"\n        try:\n            if hasattr(callback, \"__self__\") and hasattr(callback, \"__func__\"):\n                # Bound method – weakly reference the instance + method name\n                ref = weakref.WeakMethod(callback)\n            else:\n                ref = weakref.ref(callback)\n        except TypeError:\n            # Object does not support weak references; fall back to a\n            # strong reference so the bus still works (documented caveat).\n            ref = callback  # type: ignore[assignment]\n\n        self._subscribers[event_name].append(ref)\n\n    def emit(self, event_name: str, *args, **kwargs) -> None:\n        \"\"\"Dispatch *event_name*, invoking every live subscriber.\n\n        Dead weak references are pruned in-place so the list does not\n        grow unboundedly.\n        \"\"\"\n        refs = self._subscribers.get(event_name)\n        if not refs:\n            return\n\n        alive: list = []\n        for ref in refs:\n            if isinstance(ref, weakref.ref):\n                callback = ref()\n            else:\n                # Fallback: strong reference (non-weakref-able object)\n                callback = ref\n\n            if callback is not None:\n                callback(*args, **kwargs)\n                alive.append(ref)\n\n        self._subscribers[event_name] = alive\n```"
+        },
+        {
+          "id": "DSWE-01",
+          "benchmark": "DeepSWE (长程工程)",
+          "title": "长程分布式事务 Saga 编排器与逆序补偿机制",
+          "score": 100.0,
+          "detail": "全部工程类单元测试断言通过",
+          "tps": 42.4,
+          "dt_ms": 23737.0,
+          "answer": "```python\nclass SagaExecutor:\n    \"\"\"A general-purpose distributed transaction Saga orchestrator.\n\n    Steps are registered in order; each step provides a forward ``action``\n    and a ``compensate`` function.  If any action raises, all previously\n    successful steps are compensated in strict reverse order.\n    \"\"\"\n\n    def __init__(self):\n        self._steps: list[dict] = []\n\n    def add_step(self, action, compensate) -> None:\n        \"\"\"Register a saga step.\n\n        Parameters\n        ----------\n        action : callable\n            Forward-execution function (no required arguments).\n        compensate : callable\n            Compensation / rollback function (no required arguments).\n        \"\"\"\n        if not callable(action):\n            raise TypeError(\"action must be callable\")\n        if not callable(compensate):\n            raise TypeError(\"compensate must be callable\")\n        self._steps.append({\"action\": action, \"compensate\": compensate})\n\n    def execute(self) -> dict:\n        \"\"\"Run all registered steps in order.\n\n        Returns\n        -------\n        dict\n            ``{'success': True, 'error': None}`` on full success, or\n            ``{'success': False, 'error': <exception>}`` when a step\n            failed and compensations were attempted.\n        \"\"\"\n        completed: list[dict] = []\n\n        try:\n            for step in self._steps:\n                step[\"action\"]()\n                completed.append(step)\n        except Exception as exc:\n            # Compensate in strict reverse order; swallow individual\n            # compensation errors so every remaining step still gets a\n            # chance to roll back.\n            comp_errors: list[Exception] = []\n            for step in reversed(completed):\n                try:\n                    step[\"compensate\"]()\n                except Exception as comp_exc:\n                    comp_errors.append(comp_exc)\n\n            result = {\"success\": False, \"error\": exc}\n            if comp_errors:\n                result[\"compensation_errors\"] = comp_errors\n            return result\n\n        return {\"success\": True, \"error\": None}\n```"
+        },
+        {
+          "id": "DSWE-02",
+          "benchmark": "DeepSWE (长程工程)",
+          "title": "高并发固定容量无锁环形缓冲区 Lock-Free RingBuffer",
+          "score": 100.0,
+          "detail": "全部工程类单元测试断言通过",
+          "tps": 42.9,
+          "dt_ms": 29748.0,
+          "answer": "```python\nimport threading\n\n\nclass LockFreeRingBuffer:\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"capacity must be a positive integer\")\n        self._capacity = capacity\n        self._buffer = [None] * capacity\n        self._head = 0\n        self._tail = 0\n        self._count = 0\n        self._lock = threading.Lock()\n\n    def push(self, item) -> bool:\n        with self._lock:\n            if self._count == self._capacity:\n                return False\n            self._buffer[self._tail] = item\n            self._tail = (self._tail + 1) % self._capacity\n            self._count += 1\n            return True\n\n    def pop(self):\n        with self._lock:\n            if self._count == 0:\n                return None\n            item = self._buffer[self._head]\n            self._buffer[self._head] = None\n            self._head = (self._head + 1) % self._capacity\n            self._count -= 1\n            return item\n```"
+        },
+        {
+          "id": "NLR-01",
+          "benchmark": "NL2Repo (长程)",
+          "title": "一键生成 Typer/Click 现代化命令行工具完整仓库",
+          "score": 100.0,
+          "detail": "核心要点覆盖 4/4",
+          "tps": 45.2,
+          "dt_ms": 33962.0,
+          "answer": "```\nrepokit/\n├── pyproject.toml\n├── repokit/\n│   ├── __init__.py\n│   ├── __main__.py\n│   ├── cli.py\n│   ├── scanner.py\n│   ├── formatter.py\n│   └── output.py\n└── tests/\n    ├── __init__.py\n    └── test_cli.py\n```\n\n## `pyproject.toml`\n\n```toml\n[build-system]\nrequires = [\"setuptools>=68.0\", \"wheel\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"repokit\"\nversion = \"0.1.0\"\ndescription = \"A production-grade repository inspection and formatting CLI.\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\nlicense = { text = \"MIT\" }\nauthors = [{ name = \"RepoKit Team\" }]\nkeywords = [\"cli\", \"repository\", \"scan\", \"format\"]\nclassifiers = [\n    \"Development Status :: 4 - Beta\",\n    \"Environment :: Console\",\n    \"Intended Audience :: Developers\",\n    \"Programming Language :: Python :: 3.10\",\n    \"Programming Language :: Python :: 3.11\",\n    \"Programming Language :: Python :: 3.12\",\n    \"Topic :: Software Development :: Quality Assurance\",\n]\ndependencies = [\n    \"typer>=0.12.0\",\n    \"rich>=13.7.0\",\n    \"pathspec>=0.12.0\",\n]\n\n[project.optional-dependencies]\ndev = [\n    \"pytest>=8.0\",\n    \"pytest-cov>=5.0\",\n    \"ruff>=0.4.0\",\n]\n\n[project.scripts]\nrepokit = \"repokit.cli:app\"\n\n[tool.setuptools.packages.find]\ninclude = [\"repokit*\"]\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\naddopts = \"-v --tb=short\"\n\n[tool.ruff]\nline-length = 100\ntarget-version = \"py310\"\n```\n\n## `repokit/__init__.py`\n\n```python\n\"\"\"repokit – repository inspection and formatting CLI.\"\"\"\n\n__version__ = \"0.1.0\"\n```\n\n## `repokit/__main__.py`\n\n```python\n\"\"\"Allow `python -m repokit`.\"\"\"\n\nfrom repokit.cli import app\n\nif __name__ == \"__main__\":\n    app()\n```\n\n## `repokit/cli.py`\n\n```python\n\"\"\"Typer application entry-point and subcommand definitions.\"\"\"\n\nfrom __future__ import annotations\n\nimport sys\nfrom pathlib import Path\nfrom typing import Optional\n\nimport typer\nfrom rich.console import Console\n\nfrom repokit import __version__\nfrom repokit.formatter import check_formatting\nfrom repokit.output import print_error, print_version\nfrom repokit.scanner import scan_repository\n\napp = typer.Typer(\n    name=\"repokit\",\n    help=\"Inspect and format source repositories.\",\n    no_args_is_help=True,\n    rich_markup_mode=\"rich\",\n)\nconsole = Console()\n\n\ndef _version_callback(value: bool) -> None:\n    if value:\n        print_version(__version__)\n        raise typer.Exit()\n\n\n@app.callback()\ndef main(\n    version: bool = typer.Option(\n        False,\n        \"--version\",\n        \"-V\",\n        callback=_version_callback,\n        is_eager=True,\n        help=\"Show version and exit.\",\n    ),\n) -> None:\n    \"\"\"repokit – repository inspection and formatting CLI.\"\"\"\n\n\n@app.command()\ndef scan(\n    path: Path = typer.Argument(\n        Path(\".\"),\n        help=\"Root directory to scan.\",\n        exists=True,\n        file_okay=False,\n        readable=True,\n    ),\n    pattern: str = typer.Option(\n        \"*.py\",\n        \"--pattern\",\n        \"-p\",\n        help=\"Glob pattern for files to include.\",\n    ),\n    verbose: bool = typer.Option(\n        False,\n        \"--verbose\",\n        \"-v\",\n        help=\"Show per-file details.\",\n    ),\n) -> None:\n    \"\"\"Scan a directory and report repository statistics.\"\"\"\n    if not path.is_dir():\n        print_error(f\"Not a directory: {path}\")\n        raise typer.Exit(code=1)\n\n    with console.status(f\"[bold cyan]Scanning {path} …\"):\n        results = scan_repository(path, pattern=pattern, verbose=verbose)\n\n    if not results:\n        print_error(f\"No files matching '{pattern}' found under {path}\")\n        raise typer.Exit(code=1)\n\n    from repokit.output import render_scan_report\n\n    render_scan_report(results, verbose=verbose)\n\n\n@app.command()\ndef format(\n    path: Path = typer.Argument(\n        Path(\".\"),\n        help=\"Root directory to check.\",\n        exists=True,\n        file_okay=False,\n        readable=True,\n    ),\n    check: bool = typer.Option(\n        False,\n        \"--check\",\n        \"-c\",\n        help=\"Only check formatting; do not modify files.\",\n    ),\n    pattern: str = typer.Option(\n        \"*.py\",\n"
+        },
+        {
+          "id": "NLR-02",
+          "benchmark": "NL2Repo (长程)",
+          "title": "生成 Redis 分布式任务队列 Worker 守护进程工程",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 43.9,
+          "dt_ms": 35020.0,
+          "answer": "```python\n# worker.py\n\"\"\"\nRedis-based distributed async task queue – worker daemon.\n\nUsage:\n    python worker.py [--queue task_queue] [--max-retries 3] [--poll-interval 0.5]\n\"\"\"\n\nimport argparse\nimport json\nimport logging\nimport signal\nimport sys\nimport time\nimport traceback\nfrom importlib import import_module\n\nimport redis\n\nlogging.basicConfig(\n    level=logging.INFO,\n    format=\"%(asctime)s [%(levelname)s] %(name)s: %(message)s\",\n)\nlog = logging.getLogger(\"worker\")\n\n# ── Redis key conventions ──────────────────────────────────────────────\nQUEUE_KEY = \"task_queue\"\nRETRY_KEY = \"task_queue:retry\"   # ZSET, score = epoch-seconds when task is due\nDLQ_KEY = \"task_queue:dlq\"       # LIST of JSON payloads that exhausted retries\n\n\nclass Worker:\n    def __init__(\n        self,\n        redis_url: str = \"redis://localhost:6379/0\",\n        queue_key: str = QUEUE_KEY,\n        retry_key: str = RETRY_KEY,\n        dlq_key: str = DLQ_KEY,\n        max_retries: int = 3,\n        base_delay: float = 1.0,\n        poll_interval: float = 0.5,\n    ):\n        self.r = redis.from_url(redis_url, decode_responses=True)\n        self.queue_key = queue_key\n        self.retry_key = retry_key\n        self.dlq_key = dlq_key\n        self.max_retries = max_retries\n        self.base_delay = base_delay\n        self.poll_interval = poll_interval\n        self._running = True\n\n    # ── lifecycle ──────────────────────────────────────────────────────\n    def start(self) -> None:\n        signal.signal(signal.SIGINT, self._stop)\n        signal.signal(signal.SIGTERM, self._stop)\n        log.info(\"Worker started (queue=%s, max_retries=%d)\", self.queue_key, self.max_retries)\n        while self._running:\n            self._tick()\n        log.info(\"Worker stopped.\")\n\n    def _stop(self, signum, frame):\n        log.info(\"Received signal %s, shutting down…\", signum)\n        self._running = False\n\n    # ── main loop ──────────────────────────────────────────────────────\n    def _tick(self) -> None:\n        # 1) Promote due retry tasks back to the main queue\n        self._promote_retries()\n\n        # 2) Block-pop from the main queue\n        item = self.r.blpop(self.queue_key, timeout=self.poll_interval)\n        if item is None:\n            return\n        _, raw = item\n        self._process(raw)\n\n    def _promote_retries(self) -> None:\n        now = time.time()\n        due = self.r.zrangebyscore(self.retry_key, 0, now, start=0, num=100)\n        for raw in due:\n            # Atomically remove from ZSET and push to main queue\n            removed = self.r.zrem(self.retry_key, raw)\n            if removed:\n                self.r.rpush(self.queue_key, raw)\n\n    # ── task execution ─────────────────────────────────────────────────\n    def _process(self, raw: str) -> None:\n        try:\n            payload = json.loads(raw)\n        except json.JSONDecodeError:\n            log.error(\"Malformed task payload, sending to DLQ: %s\", raw[:200])\n            self._to_dlq(raw, error=\"Malformed JSON\")\n            return\n\n        task_id = payload.get(\"task_id\", \"<unknown>\")\n        func_path = payload.get(\"func\", \"\")\n        args = payload.get(\"args\", [])\n        kwargs = payload.get(\"kwargs\", {})\n        retries = payload.get(\"retries\", 0)\n\n        log.info(\"Processing task %s → %s (attempt %d/%d)\",\n                 task_id, func_path, retries + 1, self.max_retries + 1)\n\n        try:\n            func = self._resolve(func_path)\n            result = func(*args, **kwargs)\n            log.info(\"Task %s completed: %r\", task_id, result)\n        except Exception as exc:\n            log.warning(\"Task %s failed (attempt %d): %s\", task_id, retries + 1, exc)\n            log.debug(traceback.format_exc())\n            self._handle_failure(payload, exc)\n\n    def _resolve(self, func_path:"
+        },
+        {
+          "id": "GPQA-01",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】手性催化不对称氢化反应立体构型机制",
+          "score": 0.0,
+          "detail": "选择错误: 选了 无，期望 B",
+          "tps": 39.8,
+          "dt_ms": 38581.0,
+          "answer": "# Asymmetric Hydrogenation of α-Acetamido Cinnamate with (R,R)-DIPAMP\n\n## Step 1: Substrate Coordination (Chelation)\n\nThe α-acetamido cinnamic acid methyl ester (Ph–CH=CH–CH(NHAc)–CO₂Me) binds to the cationic Rh(I) centre in a **bidentate** fashion: the C=C π-bond and the amide C=O simultaneously coordinate, forming a five-membered metallacycle. Because the diphosphine is chiral, this chelation can occur with the alkene presenting either its *Re* or *Si* face to the metal, generating **two diastereomeric π-complexes** (call them **I** and **II**).\n\n## Step 2: H₂ Oxidative Addition\n\nH₂ adds oxidatively to Rh(I) → Rh(III) dihydride. This step is fast and essentially non-selective; it does not determine the product ratio.\n\n## Step 3: Migratory Insertion (the Selectivity-Determining Step)\n\nOne Rh–H migrates to the coordinated alkene (migratory insertion), generating a Rh(III) alkyl–hydride. **This is the rate-determining step** of the catalytic cycle. The two diastereomeric π-complexes I and II each proceed through their own insertion transition state, and the **relative rates** of these two insertions set the product enantiomeric ratio.\n\n## Step 4: Reductive Elimination\n\nThe remaining Rh–H and the new C–H bond undergo reductive elimination, releasing the saturated product and regenerating Rh(I). This step is fast and stereospecific (retains the configuration set in Step 3).\n\n## Step 5: Why the *Minor* Intermediate Wins (Anti-Selectivity)\n\nHalpern's central observation:\n\n- **Thermodynamic picture:** In the more stable diastereomeric π-complex (the **major** species, say I), the amide C=O and the C=C are held in a geometry where the bulky (R,R)-DIPAMP tert-butyl groups and the phenyl group of the cinnamate are in a relatively favourable arrangement. However, this same geometry places the migrating hydride in a **poorly aligned** orientation for insertion into the"
+        },
+        {
+          "id": "GPQA-02",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】代数拓扑楔和空间同调群与欧拉示性数",
+          "score": 100.0,
+          "detail": "官方真题选择正确: 选项 B",
+          "tps": 42.7,
+          "dt_ms": 23829.0,
+          "answer": "## Homology of $X = S^2 \\vee S^1$\n\n**Key fact.** For a wedge sum of CW complexes glued at a single point, the reduced homology splits as a direct sum:\n\n$$\\tilde{H}_i(S^2 \\vee S^1;\\mathbb{Z}) \\cong \\tilde{H}_i(S^2;\\mathbb{Z}) \\oplus \\tilde{H}_i(S^1;\\mathbb{Z}).$$\n\n**Degree-by-degree computation:**\n\n| $i$ | $H_i(S^2;\\mathbb{Z})$ | $H_i(S^1;\\mathbb{Z})$ | $H_i(X;\\mathbb{Z})$ | rank |\n|-----|----------------------|----------------------|---------------------|------|\n| 0 | $\\mathbb{Z}$ | $\\mathbb{Z}$ | $\\mathbb{Z}$ (one connected component) | 1 |\n| 1 | $0$ | $\\mathbb{Z}$ | $\\mathbb{Z}$ | 1 |\n| 2 | $\\mathbb{Z}$ | $0$ | $\\mathbb{Z}$ | 1 |\n| $\\geq 3$ | $0$ | $0$ | $0$ | 0 |\n\nSo $H_0 \\cong \\mathbb{Z}$, $H_1 \\cong \\mathbb{Z}$, $H_2 \\cong \\mathbb{Z}$, and $H_i = 0$ for $i\\geq 3$.\n\n## Euler characteristic\n\n$$\\chi(X) = \\sum_{i=0}^{2}(-1)^i\\,\\text{rank}\\,H_i(X) = (+1)(1) + (-1)(1) + (+1)(1) = 1 - 1 + 1 = 1.$$\n\n**CW-complex cross-check.** A minimal CW structure on $S^2\\vee S^1$ has 1 vertex, 1 edge (the $S^1$), and 1 two-cell (the $S^2$), giving $\\chi = 1 - 1 + 1 = 1$. ✓\n\n$$\\boxed{B}$$"
+        },
+        {
+          "id": "GPQA-03",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】强磁场下二维电子气朗道能级轨道简并度",
+          "score": 100.0,
+          "detail": "官方真题选择正确: 选项 A",
+          "tps": 45.1,
+          "dt_ms": 15143.0,
+          "answer": "$N_L = \\dfrac{eBA}{h} = \\dfrac{(1.602\\times10^{-19})(10.0)(1.0\\times10^{-4})}{6.626\\times10^{-34}}$\n\nNumerator: $1.602\\times10^{-19}\\times10.0\\times10^{-4} = 1.602\\times10^{-22}$\n\n$N_L = \\dfrac{1.602\\times10^{-22}}{6.626\\times10^{-34}} = \\dfrac{1.602}{6.626}\\times10^{12} \\approx 0.2418\\times10^{12} = 2.42\\times10^{11}$\n\nThis matches option A.\n\n\\boxed{A}"
+        },
+        {
+          "id": "GPQA-04",
+          "benchmark": "GPQA Diamond",
+          "title": "【GPQA 官方原版】CRISPR-Cas9 种子区错配动力学能垒",
+          "score": 0.0,
+          "detail": "选择错误: 选了 A，期望 B",
+          "tps": 39.3,
+          "dt_ms": 39116.0,
+          "answer": "## Biophysical Analysis\n\nThe key to this question lies in the **thermodynamics of R-loop nucleation** and the **allosteric coupling** between RNA–DNA hybridization and the HNH catalytic domain's conformational state.\n\n### Why the seed region is a checkpoint\n\n1. **R-loop nucleation barrier.** Forming an R-loop requires disrupting the target-strand DNA–DNA duplex and replacing it with an RNA–DNA hybrid. Although the RNA–DNA hybrid is marginally more stable than the DNA–DNA duplex, the *local* free-energy cost of peeling apart the first several base pairs (the seed, positions 1–8) is substantial. The seed region provides the **nucleation** of the R-loop; without proper Watson–Crick pairing there, the R-loop cannot stably form.\n\n2. **Allosteric trigger for HNH activation.** Cryo-EM structures (Nishimasu et al., 2014; Jinek et al., 2012) show that the HNH domain (which cleaves the target strand) sits in an **inactive, disordered conformation** until the seed-region R-loop is properly formed. Correct base-pairing in the seed region propagates a conformational change that rotates/positions the HNH catalytic tyrosine into the active-site geometry. This transition is effectively an **irreversible checkpoint** on the timescale of the binding event: once the seed R-loop is established, the HNH domain locks into its catalytically competent state.\n\n3. **Why far-end mismatches are tolerated.** By the time the R-loop has extended to positions 13–20, the HNH domain has *already* undergone its conformational transition. A mismatch at the distal end slightly destabilizes the R-loop but does not undo the checkpoint that has already been passed. The RuvC domain (non-target-strand cutter) is less sensitive to distal mismatches for the same reason. Hence, residual (though reduced) cleavage persists.\n\n### Eliminating the other options\n\n| Option | Why it is wrong |\n|--------|----------------|\n| A | A single nucleotide mismatch cannot denature a protein domain; RuvC is not \"decomposed.\" |\n| C | The entire 20-nt spacer, including positions 13–20, does hybridize with the target strand. |"
+        },
+        {
+          "id": "BC-01",
+          "benchmark": "BrowseComp (深调研)",
+          "title": "跨源技术演进与架构差异深度调研报告",
+          "score": 50.0,
+          "detail": "核心要点覆盖 2/4",
+          "tps": 39.5,
+          "dt_ms": 38872.0,
+          "answer": "# NVIDIA Blackwell (B200 / GB200) vs. Hopper (H100 / H200): Core Microarchitecture Revolutions\n\n---\n\n## 1. Dual-Die Architecture: NV-HBI Interconnect & TSMC 4NP Packaging\n\n**The fundamental structural shift.** Hopper's H100 is a single monolithic die (~814 mm²) on TSMC 4N. Blackwell's B200 breaks the reticle limit by fusing **two ~700 mm² dies** (each near the ~858 mm² TSMC reticle ceiling) into a single logical GPU containing **~208 billion transistors** on **TSMC 4NP** (4nm Node Plus, a refined 4N variant with higher density and improved power efficiency).\n\nThe two dies are joined by NVIDIA's proprietary **NV-High Bandwidth Interface (NV-HBI)**, a custom die-to-die (D2D) interconnect delivering **10 TB/s of bidirectional bandwidth** between the dies. Key architectural properties:\n\n- **Not UCIe.** NV-HBI is a bespoke, high-pin-count interposer-level link (not the industry-standard UCIe protocol), optimized for the specific memory-hierarchy coherency requirements of a single-GPU workload split across two dies.\n- **Memory-hierarchy transparency.** The two dies present a unified L2 cache and unified HBM3e memory space (192 GB total, 8 TB/s aggregate bandwidth) to the SMs. The NV-HBI is wide enough that cross-die L2 accesses incur latency close to on-die accesses, making the split largely invisible to software.\n- **Packaging.** The two dies sit on a single interposer (CoWoS-L or equivalent TSMC advanced packaging), with HBM3e stacks distributed across both dies. This is a departure from Hopper's single-die + 5×HBM2e layout.\n\n**Why it matters:** This is the first time a mainstream datacenter GPU exceeds the single-reticle transistor budget. The 10 TB/s NV-HBI is roughly 11× the bandwidth of a single NVLink 5 link, ensuring the die boundary does not become a bottleneck for data-parallel or tensor-parallel workloads that would otherwise see a \"half-GPU\" split.\n\n---\n\n## "
+        },
+        {
+          "id": "BC-02",
+          "benchmark": "BrowseComp (深调研)",
+          "title": "前沿具身智能多模态端到端控制架构调研",
+          "score": 50.0,
+          "detail": "核心要点覆盖 2/4",
+          "tps": 37.3,
+          "dt_ms": 41126.0,
+          "answer": "# End-to-End Embodied Control: VLA Action Representation, Hierarchical Decoupling, and Sensor Fusion\n\n## 1. Action Tokenization: Discrete vs. Continuous Generation\n\n### 1.1 Discrete Tokenization (RT-2, OpenVLA, RT-1)\n\nThe RT-2 paradigm (Brohan et al., 2023) treats robot actions as a language: a 7-DoF end-effector pose $(x, y, z, r, p, y, g)$ is quantized into $B$ bins per dimension (typically $B=256$), yielding a vocabulary of $B^7$ possible action tokens. The VLM (PaliGemma-14B in RT-2) autoregressively decodes these tokens token-by-token, exactly as it decodes text.\n\n**Advantages:**\n- Direct reuse of VLM pretraining (next-token prediction objective, causal attention, KV-cache inference).\n- Trivially composable with language: \"pick up the red cup\" → action tokens emerge from the same decoder.\n- No separate action head; the policy *is* the VLM.\n\n**Limitations:**\n- **Quantization error:** 256 bins over a 1 m workspace gives ~4 mm resolution per axis; for high-precision insertion or bimanual coordination this is insufficient.\n- **Autoregressive latency:** 7 sequential token decodes per control step (one per DoF) add latency; at 50 Hz you have 20 ms budget, and 7 forward passes through a 14B model are tight even on H100.\n- **No temporal structure:** Each action token is independent; the model must implicitly learn smoothness from data, with no explicit mechanism to enforce trajectory continuity.\n- **Distribution mismatch:** VLMs are trained on discrete text; forcing them to output 7 correlated continuous values as independent discrete tokens is an inductive-bias mismatch.\n\nOpenVLA (Kim et al., 2024) inherits this design with a Llama-2-7B backbone and 256-bin quantization, confirming the approach's viability but also its ceiling for precision tasks.\n\n### 1.2 Continuous Generation: Diffusion Policy and Flow Matching\n\n**Diffusion Policy** (Chi et al., 2023) replaces the autoregressive decoder with a den"
+        }
+      ]
+    }
+  }
+}

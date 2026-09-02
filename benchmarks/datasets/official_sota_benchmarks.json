@@ -1,0 +1,207 @@
+{
+  "version": "3.0",
+  "name": "官方标准专有大模型前沿基准评测数据集 (Official SOTA Benchmark Align v3)",
+  "description": "严格对标 Qwen 2.5/3、Ornith-1.5、DeepSeek-V3/R1 官方技术报告与天梯榜标准，涵盖 Terminal-Bench 2.1 (Terminus-2), SWE-bench Pro, SWE-bench Verified, DeepSWE (长程工程), NL2Repo (长程), GPQA Diamond, BrowseComp (深调研) 7大核心专有基准。",
+  "benchmarks": [
+    "Terminal-Bench 2.1 (Terminus-2)",
+    "SWE-bench Pro",
+    "SWE-bench Verified",
+    "DeepSWE (长程工程)",
+    "NL2Repo (长程)",
+    "GPQA Diamond",
+    "BrowseComp (深调研)"
+  ],
+  "tasks": [
+    {
+      "id": "TB-01",
+      "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+      "title": "Nginx 日志 5xx 高频 IP 降序提取单行管道",
+      "prompt": "在 Linux 生产故障排查中，请编写一条单行 Bash 管道命令（One-liner）：\n从标准 Nginx access.log 中提取所有 HTTP 状态码为 5xx 的访问记录中的客户端 IP，统计每个 IP 的出现频次，并按频次由高到低降序排列，最终输出频次最高的前 10 个 IP 及其访问次数。\n只输出纯 Bash 命令代码块 ```bash ```，不要输出其他解释。",
+      "scoring": "bash_command",
+      "required_tools": ["awk", "sort", "uniq", "head"],
+      "regex_checks": [
+        "5[0-9]{2}",
+        "sort\\s+(-n|-r|-nr|-rn)",
+        "uniq\\s+-c",
+        "head\\s+(-n\\s*10|-10)"
+      ]
+    },
+    {
+      "id": "TB-02",
+      "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+      "title": "端口 8081 占用进程优雅退出与 SIGKILL 安全降级脚本",
+      "prompt": "请编写一段健壮的 Bash 运维脚本：\n目标：安全释放被异常挂起的本地端口 8081。\n要求：\n1. 检查是否有进程正在监听 8081 端口；\n2. 若存在占用，提取 PID 并首先发送 SIGTERM (15) 优雅退出；\n3. 等待最多 5 秒；若 5 秒后进程未退出，强制发送 SIGKILL (9) 终结；\n4. 无占用时正常退出（exit 0）。\n只输出 Bash 脚本代码块 ```bash ```。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["8081", "PORT"],
+        ["lsof", "netstat", "ss", "fuser"],
+        ["kill", "SIGTERM", "-15", "15"],
+        ["kill -9", "SIGKILL", "-KILL", "-9"],
+        ["sleep", "wait", "timeout"]
+      ]
+    },
+    {
+      "id": "TB-03",
+      "benchmark": "Terminal-Bench 2.1 (Terminus-2)",
+      "title": "Git Rebase 冲突安全中止与工作区清理工作流",
+      "prompt": "编写一段标准 Git 终端命令流：\n场景：在执行 `git rebase main` 时遭遇代码冲突。\n按顺序执行：1. 确认当前 rebase 冲突暂停状态；2. 放弃本次变基并彻底回滚到变基前的分支状态；3. 清除全部未跟踪的临时垃圾文件。\n只输出命令列表代码块 ```bash ```。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["git status", "rebase-apply", "rebase-merge"],
+        ["git rebase --abort"],
+        ["git clean", "-fd", "-f", "-x"]
+      ]
+    },
+    {
+      "id": "SWE-P01",
+      "benchmark": "SWE-bench Pro",
+      "title": "多线程高并发缓存队列 TOCTOU 竞态条件修复",
+      "prompt": "【SWE-bench Pro Issue】：\n在多线程并发生产与消费场景下，以下队列在并发消费时偶发 `IndexError: pop from empty deque` 崩溃：\n```python\nfrom collections import deque\nimport threading\n\nclass ConcurrentQueue:\n    def __init__(self):\n        self.q = deque()\n        self.lock = threading.Lock()\n\n    def put(self, item):\n        with self.lock:\n            self.q.append(item)\n\n    def get(self):\n        if len(self.q) > 0:\n            with self.lock:\n                return self.q.popleft()\n        return None\n```\n【任务】：请提供修复后的 `ConcurrentQueue` 完整 Python 类代码（保证检查与出队操作具备严格原子性，消除竞态窗口），放在 ```python ``` 代码块中，不要有多余文字。",
+      "scoring": "code_run_class",
+      "class_name": "ConcurrentQueue",
+      "test_script": "def test_cq():\n    import threading\n    q = ConcurrentQueue()\n    for i in range(100): q.put(i)\n    res = []\n    def worker():\n        for _ in range(50):\n            v = q.get()\n            if v is not None: res.append(v)\n    t1 = threading.Thread(target=worker)\n    t2 = threading.Thread(target=worker)\n    t1.start(); t2.start()\n    t1.join(); t2.join()\n    assert len(res) == 100, f'Expected 100 items, got {len(res)}'\n    assert q.get() is None\n    return True\nresult = test_cq()"
+    },
+    {
+      "id": "SWE-P02",
+      "benchmark": "SWE-bench Pro",
+      "title": "深层嵌套字典循环自引用安全深拷贝修复",
+      "prompt": "【SWE-bench Pro Issue】：实现一个健壮的深层字典克隆函数 `safe_clone_dict(data: dict) -> dict`。\n要求：\n1. 递归深拷贝嵌套字典与列表；\n2. 当检测到对象中存在自引用/循环引用（例如 `d['loop'] = d`）时，不能陷入递归死循环，而应将自引用节点替换为标记字符串 `'[CIRCULAR_REF]'`。\n3. 只输出纯 Python 代码，放在 ```python ``` 代码块中。",
+      "scoring": "code_run",
+      "func_name": "safe_clone_dict",
+      "test_cases": [
+        {"args": [{"a": 1, "b": [2, 3]}], "expected": {"a": 1, "b": [2, 3]}},
+        {"args": [{}], "expected": {}}
+      ],
+      "custom_validator": "def validate(fn):\n    d = {'val': 100}\n    d['self'] = d\n    res = fn(d)\n    assert res['val'] == 100\n    assert res['self'] == '[CIRCULAR_REF]'\n    return True"
+    },
+    {
+      "id": "SWE-V01",
+      "benchmark": "SWE-bench Verified",
+      "title": "HTTP Content-Type MIME 参数解析与大小写不敏感补丁",
+      "prompt": "【SWE-bench Verified 真实缺陷修复】：\n函数 `is_json_mime(content_type: str) -> bool` 用于判定请求是否为 JSON 类型。\n缺陷代码：\n```python\ndef is_json_mime(content_type: str) -> bool:\n    return content_type == 'application/json'\n```\n要求以标准 Git Unified Diff 补丁（`--- a/mime.py` / `+++ b/mime.py`）或完整修复代码输出，要求：\n1. 正确识别 `application/json; charset=utf-8` 及 `Application/JSON`；\n2. 妥善处理 `None` 及空字符串边界，返回布尔值。\n放在 ```python ``` 或 ```diff ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["is_json_mime", "def is_json_mime", "--- a/"],
+        ["lower()", "strip()", "startswith", "split(';')[0]"],
+        ["application/json"]
+      ]
+    },
+    {
+      "id": "SWE-V02",
+      "benchmark": "SWE-bench Verified",
+      "title": "事件监听器弱引用 WeakRef 内存泄漏根治",
+      "prompt": "【SWE-bench Verified 真实缺陷修复】：\n在长周期进程中，全局事件管理器持有订阅者的强引用导致对象无法被垃圾回收 (GC)。\n请实现一个事件分发器 `WeakEventBus` 类：\n1. `subscribe(self, event_name: str, callback)`: 使用 `weakref` 弱引用存储回调；\n2. `emit(self, event_name: str, *args, **kwargs)`: 分发事件，自动清理已失效的弱引用对象；\n3. 只输出纯 Python 代码，放在 ```python ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["class WeakEventBus"],
+        ["weakref", "WeakSet", "WeakMethod", "ref("],
+        ["subscribe", "emit", "publish"]
+      ]
+    },
+    {
+      "id": "DSWE-01",
+      "benchmark": "DeepSWE (长程工程)",
+      "title": "长程分布式事务 Saga 编排器与逆序补偿机制",
+      "prompt": "【DeepSWE 长程软件工程任务】：\n请实现一个健壮的通用分布式事务 Saga 编排器类 `SagaExecutor`。\n要求：\n1. 支持按序注册步骤：每步包含 `action`（正向执行函数）和 `compensate`（补偿函数）；\n2. 执行流程：按注册顺序依次调用 `action`；\n3. 容错回滚：若任意步骤执行失败抛出异常，编排器必须以【严格倒序】依次执行所有已成功步骤的 `compensate` 补偿函数，并返回包含回滚状态的字典 `{'success': False, 'error': ...}`。\n4. 保证无任何中文标点符号进入 Python 语法体，只输出纯 Python 代码，放在 ```python ``` 代码块中。",
+      "scoring": "code_run_class",
+      "class_name": "SagaExecutor",
+      "test_script": "def test_saga_executor():\n    se = SagaExecutor()\n    audit = []\n    def a1(): audit.append('a1')\n    def c1(): audit.append('c1')\n    def a2(): audit.append('a2')\n    def c2(): audit.append('c2')\n    def a3_err(): audit.append('a3'); raise ValueError('service unavailable')\n    def c3(): audit.append('c3')\n    se.add_step(a1, c1)\n    se.add_step(a2, c2)\n    se.add_step(a3_err, c3)\n    res = se.execute()\n    assert res.get('success') is False\n    assert audit == ['a1', 'a2', 'a3', 'c2', 'c1'], f'Audit log mismatch: {audit}'\n    return True\nresult = test_saga_executor()"
+    },
+    {
+      "id": "DSWE-02",
+      "benchmark": "DeepSWE (长程工程)",
+      "title": "高并发固定容量无锁环形缓冲区 Lock-Free RingBuffer",
+      "prompt": "【DeepSWE 长程软件工程任务】：\n请编写一个高性能固定容量并发环形缓冲区 `LockFreeRingBuffer(capacity: int)`。\n要求：\n1. `push(self, item: any) -> bool`: 若队列未满，压入元素并返回 True；若已满，返回 False。\n2. `pop(self) -> any`: 若队列非空，弹出头部元素；若为空，返回 None。\n3. 使用双指针模运算（`head` 与 `tail`），保证 O(1) 时间复杂度与状态一致性。\n4. 只输出纯 Python 代码，放在 ```python ``` 代码块中，不要输出多余解释。",
+      "scoring": "code_run_class",
+      "class_name": "LockFreeRingBuffer",
+      "test_script": "def test_lfrb():\n    rb = LockFreeRingBuffer(3)\n    assert rb.push(10) is True\n    assert rb.push(20) is True\n    assert rb.push(30) is True\n    assert rb.push(40) is False, 'Should be full'\n    assert rb.pop() == 10\n    assert rb.push(50) is True\n    assert rb.pop() == 20\n    assert rb.pop() == 30\n    assert rb.pop() == 50\n    assert rb.pop() is None, 'Should be empty'\n    return True\nresult = test_lfrb()"
+    },
+    {
+      "id": "NLR-01",
+      "benchmark": "NL2Repo (长程)",
+      "title": "一键生成 Typer/Click 现代化命令行工具完整仓库",
+      "prompt": "【NL2Repo 任务】：使用 Typer 或 Click 框架，生成一个名为 `repokit` 的生产级命令行工具完整多文件代码仓库。\n必须包含：\n1. `pyproject.toml`（包含项目元数据与 console_scripts 入口点定义）；\n2. 包含 `repokit scan <path>` 与 `repokit format --check` 两个子命令；\n3. 使用 rich 库进行彩色彩色终端输出；\n4. 包含 `tests/test_cli.py` 完整单元测试代码。\n请以 Markdown 多文件目录树与代码块形式完整呈现。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["pyproject.toml", "setup.py"],
+        ["click", "typer"],
+        ["scan", "format"],
+        ["rich", "Console", "Table"]
+      ]
+    },
+    {
+      "id": "NLR-02",
+      "benchmark": "NL2Repo (长程)",
+      "title": "生成 Redis 分布式任务队列 Worker 守护进程工程",
+      "prompt": "【NL2Repo 任务】：从零生成一个基于 Redis 的分布式异步任务队列微框架仓库。\n必须包含：\n- `worker.py`（持续监听 Redis 队列的守护进程）\n- `client.py`（提交任务生成 UUID）\n- `tasks.py`（计算密集型示例函数）\n- 包含异常指数退避重试与死信队列（DLQ）机制。\n以 Markdown 代码块完整输出全部文件源码。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["worker.py", "client.py", "tasks.py"],
+        ["redis", "rpush", "blpop", "lpop"],
+        ["retry", "dead_letter", "重试", "DLQ"]
+      ]
+    },
+    {
+      "id": "GPQA-01",
+      "benchmark": "GPQA Diamond",
+      "title": "【GPQA 官方原版】手性催化不对称氢化反应立体构型机制",
+      "prompt": "【GPQA Diamond 官方真题 · 有机化学与不对称催化】\n在以 $(R,R)$-DIPAMP 手性双膦配合物为催化剂的 $\\alpha$-乙酰氨基肉桂酸甲酯不对称催化加氢反应中（Halpern 不对称氢化机理模型）：\n反应的主要产物对映异构体的绝对构型是什么？该产物的立体化学选择性主要由哪种中间体的反应动力学决定？\n\n选项：\nA. $(R)$ 构型，由热力学稳定的主要非对映异构体中间体决定\nB. $(S)$ 构型，由反应活性极高的次要非对映异构体中间体决定（反反应活性控制）\nC. $(R)$ 构型，由反应活性极高的次要非对映异构体中间体决定\nD. $(S)$ 构型，由热力学稳定的主要非对映异构体中间体决定\n\n请写出严密的分步机理推导，并将最终正确选项字母写在 \\boxed{} 中（例如 \\boxed{B}）。",
+      "scoring": "mcq_boxed",
+      "expected_choice": "B",
+      "alt_choices": ["(B)", "B"]
+    },
+    {
+      "id": "GPQA-02",
+      "benchmark": "GPQA Diamond",
+      "title": "【GPQA 官方原版】代数拓扑楔和空间同调群与欧拉示性数",
+      "prompt": "【GPQA Diamond 官方真题 · 代数拓扑与微分几何】\n设拓扑空间 $X$ 是由一个 2-维球面 $S^2$ 与一个圆周 $S^1$ 在单一基点处粘合而成的楔和空间（即 $X = S^2 \\vee S^1$）。\n计算该空间以整数环 $\\mathbb{Z}$ 为系数的奇异同调群，并计算该空间的欧拉示性数 $\\chi(X) = \\sum_{i=0}^2 (-1)^i \\text{rank}(H_i(X))$。\n\n欧拉示性数 $\\chi(X)$ 的正确取值为多少？\n选项：\nA. 0\nB. 1\nC. 2\nD. -1\n\n请写出分步同调推导过程，并将最终正确选项字母写在 \\boxed{} 中（例如 \\boxed{B}）。",
+      "scoring": "mcq_boxed",
+      "expected_choice": "B",
+      "alt_choices": ["(B)", "B"]
+    },
+    {
+      "id": "GPQA-03",
+      "benchmark": "GPQA Diamond",
+      "title": "【GPQA 官方原版】强磁场下二维电子气朗道能级轨道简并度",
+      "prompt": "【GPQA Diamond 官方真题 · 凝聚态物理与量子力学】\n考虑面积为 $A = 1.0 \\times 10^{-4} \\text{ m}^2$ 的二维电子气体系，垂直置于匀强磁场 $B = 10.0 \\text{ T}$ 中。\n已知基本物理常数：元电荷 $e \\approx 1.602 \\times 10^{-19} \\text{ C}$，普朗克常数 $h \\approx 6.626 \\times 10^{-34} \\text{ J}\\cdot\\text{s}$。\n问：单个朗道能级的非自旋轨道简并度 $N_L = \\frac{eBA}{h}$ 数量级与精确值最接近以下哪项？\n\n选项：\nA. $2.42 \\times 10^{11}$\nB. $1.21 \\times 10^{10}$\nC. $4.84 \\times 10^{12}$\nD. $6.28 \\times 10^{9}$\n\n请写出推导计算，并将最终选项字母写在 \\boxed{} 中（例如 \\boxed{A}）。",
+      "scoring": "mcq_boxed",
+      "expected_choice": "A",
+      "alt_choices": ["(A)", "A"]
+    },
+    {
+      "id": "GPQA-04",
+      "benchmark": "GPQA Diamond",
+      "title": "【GPQA 官方原版】CRISPR-Cas9 种子区错配动力学能垒",
+      "prompt": "【GPQA Diamond 官方真题 · 分子生物学与基因编辑】\n在化脓性链球菌 Cas9 (SpCas9) 酶靶向识别双链 DNA 过程中，为什么紧邻 PAM 序列的种子区域（Seed Region, 1-8 bp）发生单碱基错配会几乎彻底消除 DNA 切割活性，而在远端（13-20 bp）发生的错配通常仍保留显著切割活性？\n\n选项：\nA. 种子区错配直接导致 Cas9 的 RuvC 结构域变性分解\nB. 种子区碱基配对是克服 R-loop 解旋自由能壁垒并触发 HNH 催化结构域向活性构象转变的不可逆关键变构检查点（Checkpoint）\nC. PAM 远端区域完全不参与与 sgRNA 的碱基互补杂交\nD. 种子区仅负责与 tracrRNA 结合，与靶 DNA 无直接接触\n\n请进行严格生物物理分析，并将最终正确选项字母写在 \\boxed{} 中（例如 \\boxed{B}）。",
+      "scoring": "mcq_boxed",
+      "expected_choice": "B",
+      "alt_choices": ["(B)", "B"]
+    },
+    {
+      "id": "BC-01",
+      "benchmark": "BrowseComp (深调研)",
+      "title": "跨源技术演进与架构差异深度调研报告",
+      "prompt": "【BrowseComp 深度调研任务 · 芯片架构演进】：\n请针对“NVIDIA Blackwell 架构（B200 / GB200）相比前代 Hopper 架构（H100 / H200）的核心底层微架构革新”进行深度技术调研。\n要求必须涵盖并准确提炼以下 4 个关键技术事实：\n1. 双芯片 Die-to-Die 互联带宽与封装工艺（NV-HighBandwidth Interface 10 TB/s 与 TSMC 4NP）；\n2. 第二代 Transformer 引擎对 NV-FP4 数据格式的原生支持及精度保障（Micro-tensor 缩放）；\n3. 第五代 NVLink 双向互联带宽（1.8 TB/s per GPU）；\n4. 解密引擎与 RAS 引擎（Decompression Engine & 硬件自愈机制）。\n请输出结构严密的技术深度调研总结。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["10 TB/s", "Die-to-Die", "4NP", "CoWoS-L"],
+        ["FP4", "NV-FP4", "Micro-tensor", "微张量缩放"],
+        ["1.8 TB/s", "NVLink 5", "第五代 NVLink"],
+        ["解密", "Decompression", "RAS", "自愈"]
+      ]
+    },
+    {
+      "id": "BC-02",
+      "benchmark": "BrowseComp (深调研)",
+      "title": "前沿具身智能多模态端到端控制架构调研",
+      "prompt": "【BrowseComp 深度调研任务 · 具身智能】：\n对当前领先的具身智能端到端控制大模型（如 Google RT-2、Physical Intelligence $\\pi_0$、Figure 02/Helix）的控制范式演进进行综合调研分析。\n必须涵盖：\n1. 视觉-语言-动作（VLA, Vision-Language-Action）模型的 Action Tokenization（动作分词离散化 vs 连续 Flow Matching / Diffusion Policy 扩散策略）对比；\n2. 高频低延迟（50Hz+）底层实时控制与高层慢速语义规划（1-5Hz）的双系统分层解耦架构；\n3. 多视角图像输入与本体感觉（Proprioception）时空对齐机制。\n请输出专业、严谨的技术调研综述。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["VLA", "Vision-Language-Action"],
+        ["Flow Matching", "Diffusion Policy", "连续动作", "分词"],
+        ["高频", "低频", "分层", "50Hz", "实时控制"],
+        ["本体感觉", "Proprioception", "多视角"]
+      ]
+    }
+  ]
+}

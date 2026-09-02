@@ -1,0 +1,336 @@
+{
+  "model_index": 7,
+  "model_name": "Ornith-1.0-35B-UD",
+  "timestamp": "2026-08-03T14:36:16.374878",
+  "results": [
+    {
+      "question_id": 1,
+      "question": "今天最新的AI大模型发布新闻是什么？",
+      "difficulty": "简单",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"AI大模型发布新闻 2026年3月\"}"
+          }
+        ],
+        "reasoning": "用户想了解今天最新的AI大模型发布新闻。我需要搜索最新的信息来回答这个问题。让我使用搜索工具来获取最新的AI大模型相关新闻。\n",
+        "content": "最新的AI大模型发布新闻是**谷歌发布了GEMINI ROBOTICS 2模型**。此外，国内方面，千问（Qwen）与元宝等产品目前整体保持低调，暂无重大新模型发布的公开动态。\n\n由于当前信息中未标注该模型的具体发布日期、版本迭代细节及核心性能指标，如需获取完整的技术参数或官方说明，建议查阅谷歌AI官方公告或权威科技媒体的后续深度报道。",
+        "latency_ms": 2204.7855854034424
+      },
+      "search": {
+        "query": "AI大模型发布新闻 2026年3月",
+        "count": 5,
+        "latency_ms": 83934.75818634033
+      },
+      "scores": {
+        "decision": 20,
+        "query": 25,
+        "answer": 24,
+        "total": 69,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(17字); 包含所有关键实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案与搜索结果高度一致; 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 2,
+      "question": "水的沸点是多少度？在高海拔地区会变化吗？",
+      "difficulty": "简单",
+      "should_call_tool": false,
+      "response": {
+        "tool_calls": [],
+        "reasoning": "用户问的是水的沸点以及高海拔地区是否会变化。这是一个基础的科学常识问题，不需要调用搜索工具，我可以直接回答。\n\n1.  **标准大气压下**：水的沸点是100摄氏度（100°C）。\n2.  **高海拔地区的影响**：随着海拔升高，大气压降低。水的沸点与气压有关，气压越低，沸点越低。所以在高海拔地区，水的沸点会低于100°C。\n\n我需要给出清晰、准确的回答，解释原理（气压与沸点的关系）并给出一个大概",
+        "content": "在标准大气压（1个大气压）下，水的沸点是 **100摄氏度（100°C）**。\n\n**在高海拔地区，水的沸点确实会发生变化，会降低。**\n\n原因如下：\n水的沸点与大气压强密切相关。气压越高，水分子需要更多的能量才能变成气体，沸点就越高；反之，**气压越低，沸点就越低**。\n\n*   **原理**：随着海拔升高，空气变得稀薄，大气压强降低。因此，水在更低的温度下就能沸腾。\n*   **例子**：\n    *   在青藏高原（平均海拔4000米以上），水的沸点大约只有 **85°C - 90°C** 左右。\n    *   在珠穆朗玛峰顶（海拔约8848米），气压极低，水的沸点甚至只有约 **71°C**。\n\n这就是为什么在高原地区用普通锅煮饭或煮鸡蛋比较困难，因为水温虽然沸腾了，但温度达不到100°C，食物不容易煮熟。通常需要用到高压锅来解决这个问题。",
+        "latency_ms": 6217.60106086731
+      },
+      "search": {
+        "query": "",
+        "count": 0,
+        "latency_ms": 0
+      },
+      "scores": {
+        "decision": 20,
+        "query": 25,
+        "answer": 14,
+        "total": 59,
+        "details": {
+          "decision": "✓ 正确抑制工具调用",
+          "query": "正确抑制工具调用，Query分满分",
+          "answer": "回答适中; 无搜索结果，跳过一致性/矛盾检测; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 3,
+      "question": "查一下特斯拉(TSLA)最新的股价和市值。",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"特斯拉 TSLA 最新股价 市值 2025\"}"
+          }
+        ],
+        "reasoning": "用户想要查询特斯拉（TSLA）的最新股价和市值。这是一个实时金融数据查询，我需要搜索最新的股票信息。让我使用搜索工具来获取这些信息。\n",
+        "content": "特斯拉(TSLA)的最新参考股价为**313.03美元**（2026年7月24日收盘价），对应的总市值约为**1.107万亿美元**（约1,107B美元）。\n\n注：该数据为参考资料中提供的最新快照。股票价格随市场实时波动，如需获取今日盘中实时报价与精确市值，建议通过券商软件或主流财经平台查询。",
+        "latency_ms": 1331.305742263794
+      },
+      "search": {
+        "query": "特斯拉 TSLA 最新股价 市值 2025",
+        "count": 5,
+        "latency_ms": 130584.89394187927
+      },
+      "scores": {
+        "decision": 20,
+        "query": 25,
+        "answer": 24,
+        "total": 69,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(21字); 包含所有关键实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案与搜索结果高度一致; 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 4,
+      "question": "2026年世界杯在哪里举办？这个国家的首都是哪里？人口多少？主要语言是什么？",
+      "difficulty": "困难",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"2026 World Cup host country capital population language\"}"
+          }
+        ],
+        "reasoning": "I need to find out where the 2026 FIFA World Cup will be held, then identify the capital of the host country/countries, its population, and the main language(s).\n\n1.  **Search for the 2026 World Cup l",
+        "content": "2026年世界杯将在**美国、加拿大和墨西哥**三国联合举办（这是FIFA历史上首次由三个国家联合承办的世界杯）。\n\n您提供的参考资料仅涉及赛事扩军至48队的赛制与赛程安排，并未提及具体的主办国信息。基于公开权威资料，补充回答如下：\n\n- **首都**：美国——华盛顿哥伦比亚特区（Washington, D.C.）；加拿大——渥太华（Ottawa）；墨西哥——墨西哥城（Mexico City）。\n- **人口**（参考近年联合国及各国统计局数据）：美国约3.35亿；加拿大约4100万；墨西哥约1.29亿。\n- **主要语言**：美国无联邦法定官方语言，实际通用英语，西班牙语使用广泛；加拿大官方语言为英语和法语；墨西哥通用西班牙语（事实上的官方语言）。\n\n（注：三国联合申办方案于2018年由FIFA正式批准，赛事将于2026年6月至7月举行，开幕式与决赛均安排在美国境内。）",
+        "latency_ms": 9202.059268951416
+      },
+      "search": {
+        "query": "2026 World Cup host country capital population language",
+        "count": 5,
+        "latency_ms": 51956.3684463501
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 24,
+        "total": 66,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(55字); 包含1/5个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答适中; 包含时效信息; 答案部分与搜索结果一致(1/5); 无明显事实矛盾; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 5,
+      "question": "比较NVIDIA H100和V100的核心参数差异，哪个更适合训练大语言模型？",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"NVIDIA H100 vs V100 specifications comparison GPU parameters\"}"
+          }
+        ],
+        "reasoning": "用户想要比较NVIDIA H100和V100的核心参数差异，并了解哪个更适合训练大语言模型。这是一个关于硬件规格和技术细节的问题。\n\n我可以基于我已有的知识来回答这个问题，因为H100和V100是NVIDIA的GPU，它们的规格信息是公开且稳定的。不过，为了确保信息的准确性和完整性，我也可以搜索一下最新的对比信息。\n\n让我先搜索一下相关信息。\n",
+        "content": "提供的参考资料主要涉及NVIDIA驱动更新、企业虚拟化产品及公司动态，**未包含H100与V100的硬件规格数据，因此搜索结果不足以回答该问题**。但基于公开的芯片技术信息，两者的核心参数差异及大模型训练适用性对比如下：\n\n### 一、核心参数差异\n| 参数 | NVIDIA V100（Volta架构, 2017） | NVIDIA H100（Hopper架构, 2022） |\n|:---|:---|:---|\n| **CUDA核心数** | 5,120 | 16,896 |\n| **张量核心** | 第1代（640个，支持FP16/TF32） | 第4代（528个，原生支持FP8/FP6/INT4） |\n| **显存类型与容量** | HBM2 / 16GB或32GB | HBM3 / 80GB（SXM版） |\n| **显存带宽** | 900 GB/s | 3.35 TB/s（提升约3.7倍） |\n| **BF16/TF32算力** | ~112 TFLOPS（稀疏加速~224） | ~989 TFLOPS（稀疏加速~1,979） |\n| **NVLink互联** | 4条NVLi",
+        "latency_ms": 2124.0241527557373
+      },
+      "search": {
+        "query": "NVIDIA H100 vs V100 specifications comparison GPU parameters",
+        "count": 5,
+        "latency_ms": 955.9125900268555
+      },
+      "scores": {
+        "decision": 20,
+        "query": 19,
+        "answer": 21,
+        "total": 60,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(60字); 包含3/4个实体; 搜索命中5条结果",
+          "answer": "回答充实; 答案部分与搜索结果一致(1/4); 无明显事实矛盾; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 6,
+      "question": "写一首关于春天的短诗，要求包含：桃花、燕子、微风。",
+      "difficulty": "简单",
+      "should_call_tool": false,
+      "response": {
+        "tool_calls": [],
+        "reasoning": "Here's a thinking process that leads to the poem:\n\n1.  **Analyze the Request:**\n    *   **Topic:** Spring (春天).\n    *   **Format:** Short poem (短诗).\n    *   **Required Elements:** Peach blossoms (桃花),",
+        "content": "这是一首为您创作的关于春天的短诗：\n\n**《春的信笺》**\n\n**微风**提笔，\n在柳梢写下一行温柔的序。\n\n**桃花**读罢，\n羞红了脸，\n开满了一树烂漫。\n\n**燕子**循着暖意归来，\n剪开云层，\n把春天衔进了屋檐。",
+        "latency_ms": 17405.142068862915
+      },
+      "search": {
+        "query": "",
+        "count": 0,
+        "latency_ms": 0
+      },
+      "scores": {
+        "decision": 20,
+        "query": 25,
+        "answer": 9,
+        "total": 54,
+        "details": {
+          "decision": "✓ 正确抑制工具调用",
+          "query": "正确抑制工具调用，Query分满分",
+          "answer": "回答较短; 无搜索结果，跳过一致性/矛盾检测; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 7,
+      "question": "本周科技圈有什么重大新闻？给我一个标题和简要内容。",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"2026年7月科技新闻\"}"
+          }
+        ],
+        "reasoning": "用户想了解本周科技圈的 major news。现在是2026年7月14日，所以我需要搜索最近一周的科技新闻。让我搜索一下最新的科技新闻。\n",
+        "content": "很抱歉，当前资料均为2026年综合日程（如经济半年报、世界杯赛程、节假日安排等），并未涵盖本周科技领域的最新动态。因此无法为您生成相关的新闻标题与简要内容。如果您能提供具体的科技新闻线索或关注方向（如人工智能、半导体、消费电子、航天等），我将很乐意为您进一步整理与分析。",
+        "latency_ms": 1220.102071762085
+      },
+      "search": {
+        "query": "2026年7月科技新闻",
+        "count": 5,
+        "latency_ms": 1492.626667022705
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 19,
+        "total": 61,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(11字); 包含3/4个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案部分与搜索结果一致(1/4); 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 8,
+      "question": "请搜索最新的开源AI编程助手，对比它们的主要功能、支持语言和使用限制。",
+      "difficulty": "困难",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"2025年最新开源AI编程助手对比\"}"
+          },
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"open source AI coding assistant 2025 comparison\"}"
+          }
+        ],
+        "reasoning": "用户要求搜索最新的开源AI编程助手，并对比它们的主要功能、支持语言和使用限制。我需要先搜索最新的信息来了解当前有哪些主要的开源AI编程助手。\n\n让我搜索相关信息。\n",
+        "content": "目前资料仅覆盖一款开源AI编程助手的详细信息，无法完成多款产品的横向对比。以下是已知信息的整理及对比限制说明：\n\n### 已明确产品：Continue\n| 维度 | 信息 |\n|:---|:---|\n| **主要功能** | 支持自由接入任意AI大模型（“想接哪个模型就接哪个”），提供代码补全、对话问答、上下文理解等能力。在Cursor尚未普及阶段，是少数支持多模型灵活切换的开源选择。 |\n| **最新版本状态** | 已发布 **2.0.0** 版本，随后将仓库设置为 **只读（read-only）** 并正式停止更新。项目累计获得 **3.5万颗星**，产生 **5100多个Fork**。 |\n| **支持语言/环境** | 资料未列出具体编程语言清单，但明确指出其核心插件环境为 **VS Code**。实际覆盖的语言取决于用户自行接入的模型能力，通常可兼容主流编程语言。 |\n| **使用限制** | ① 仓库已设为只读，官方不再提供新功能迭代与安全补丁；② 多模型接入需用户自行配置API Key与模型端点，对非技术用户有一定门槛；③ 无官方商业支持兜底。 |\n\n### 无法完成全",
+        "latency_ms": 1792.4308776855469
+      },
+      "search": {
+        "query": "2025年最新开源AI编程助手对比",
+        "count": 5,
+        "latency_ms": 112703.74703407288
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 30,
+        "total": 72,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(17字); 包含3/4个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答充实; 包含时效信息; 答案与搜索结果高度一致; 无明显事实矛盾; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 9,
+      "question": "解释Transformer架构中的自注意力机制是如何工作的。",
+      "difficulty": "中等",
+      "should_call_tool": false,
+      "response": {
+        "tool_calls": [],
+        "reasoning": "用户问的是关于Transformer架构中的自注意力机制（Self-Attention Mechanism）的工作原理。这是一个深度学习领域的经典问题，不需要调用搜索工具，我可以直接基于我的知识来详细解释。\n\n我需要涵盖以下关键点：\n1. 自注意力机制的基本概念和目的\n2. 输入表示（词嵌入+位置编码）\n3. 三个关键向量：Query (Q), Key (K), Value (V)\n4. 计算步骤",
+        "content": "# Transformer 中的自注意力机制详解\n\n## 一、核心思想\n\n自注意力机制（Self-Attention）让序列中的每个词都能与**所有其他词**建立直接联系，从而捕捉任意位置之间的依赖关系，无论它们相距多远。这是 RNN/LSTM 逐步传递信息的根本改进。\n\n---\n\n## 二、计算流程\n\n### 1. 输入表示\n```\n输入序列 → 词嵌入 + 位置编码 → 向量序列 X ∈ ℝ^(n×d_model)\n```\n\n### 2. 生成 Q、K、V 三个矩阵\n通过三个不同的线性变换：\n\n| 矩阵 | 含义 | 作用 |\n|------|------|------|\n| **Q** (Query) | \"我在找什么\" | 作为查询向量 |\n| **K** (Key)   | \"我有什么\"   | 作为被查询的键 |\n| **V** (Value) | \"我的内容\"   | 携带实际信息 |\n\n```\nQ = X · W_Q,  K = X · W_K,  V = X · W_V\n```\n其中 W_Q, W_K, W_V ∈ ℝ^(d_model × d_k)\n\n### 3. ",
+        "latency_ms": 16131.224393844604
+      },
+      "search": {
+        "query": "",
+        "count": 0,
+        "latency_ms": 0
+      },
+      "scores": {
+        "decision": 20,
+        "query": 25,
+        "answer": 15,
+        "total": 60,
+        "details": {
+          "decision": "✓ 正确抑制工具调用",
+          "query": "正确抑制工具调用，Query分满分",
+          "answer": "回答充实; 无搜索结果，跳过一致性/矛盾检测; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 10,
+      "question": "2026年全球半导体行业有什么重大变化？",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"global semiconductor industry forecast major changes 2026\"}"
+          },
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"WSTS semiconductor market forecast 2026\"}"
+          }
+        ],
+        "reasoning": "I need to identify major changes in the global semiconductor industry projected for 2026.\n\n1.  **Search queries:**\n    *   \"global semiconductor industry forecast 2026\"\n    *   \"semiconductor trends 2",
+        "content": "基于目前提供的资料，无法准确回答2026年全球半导体行业的重大变化。所提供的信息仅为部分市场研究报告的标题或简介（如全球大硅片市场、半导体IP市场2020-2026年预测分析），并未包含具体的技术路线演进、产能投资规模、供应链重构细节、政策管制动态或市场规模预测等关键数据。因此，缺乏足够依据来归纳该年度行业的重大变革。\n\n如需获取准确信息，建议参考专业机构（如WSTS、SEMI、Gartner、IC Insights）发布的2025-2026年半导体行业白皮书或季度市场追踪报告。",
+        "latency_ms": 4267.911911010742
+      },
+      "search": {
+        "query": "global semiconductor industry forecast major changes 2026",
+        "count": 5,
+        "latency_ms": 38654.93988990784
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 21,
+        "total": 63,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(57字); 包含1/4个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答适中; 包含时效信息; 答案部分与搜索结果一致(2/4); 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    }
+  ],
+  "average_scores": {
+    "decision": 20.0,
+    "query": 23.2,
+    "answer": 20.1,
+    "total": 63.3
+  }
+}

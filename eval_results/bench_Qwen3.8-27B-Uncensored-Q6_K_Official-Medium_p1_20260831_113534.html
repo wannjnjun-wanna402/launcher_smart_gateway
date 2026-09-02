@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen3.8 工具调用深度专项评测报告</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-sub: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: #475569;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 24px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header {
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        h1 { font-size: 26px; font-weight: 700; color: var(--accent-cyan); display: flex; align-items: center; gap: 10px; }
+        .meta-tag { background: #0369a1; color: #e0f2fe; padding: 4px 10px; border-radius: 6px; font-size: 13px; }
+        
+        .grid-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
+        .card h3 { font-size: 14px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .big-num { font-size: 32px; font-weight: 800; }
+        .card .sub-text { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        
+        .c-green { color: var(--accent-green); }
+        .c-yellow { color: var(--accent-yellow); }
+        .c-red { color: var(--accent-red); }
+        .c-cyan { color: var(--accent-cyan); }
+        
+        .diagnosis-box {
+            background: linear-gradient(135deg, rgba(6,182,212,0.1) 0%, rgba(59,130,246,0.05) 100%);
+            border: 1px solid #0891b2;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .diagnosis-box h2 { font-size: 18px; color: var(--accent-cyan); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .diagnosis-box ul { padding-left: 20px; }
+        .diagnosis-box li { margin-bottom: 6px; font-size: 14px; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 14px;
+        }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background: var(--bg-card-sub); color: var(--text-main); font-weight: 600; }
+        tr:hover { background: rgba(255,255,255,0.03); }
+        
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-pass { background: rgba(16,185,129,0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+        .badge-fail { background: rgba(239,68,68,0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
+        .badge-tag { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+        
+        pre {
+            background: #090d16;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: Consolas, Monaco, "Courier New", monospace;
+            font-size: 12px;
+            color: #cbd5e1;
+            overflow-x: auto;
+            max-height: 180px;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>🛠️ Qwen3.8 工具调用专项诊断报告</h1>
+                <div style="margin-top: 6px; color: var(--text-muted); font-size: 13px;">
+                    生成时间: <span>2026-08-31 11:35:34</span> | 评测目标: 聊天模板对比 (Sharp vs Fixed) × 权重无审查深度检验
+                </div>
+            </div>
+            <div>
+                <span class="meta-tag">中级思维 (Medium Effort)</span>
+                <span class="meta-tag">工具调用专项 (20 题)</span>
+            </div>
+        </header>
+
+        <!-- 核心指标摘要卡片 -->
+        <div class="grid-summary">
+            <div class="card">
+                <h3>工具调用总评分</h3>
+                <div class="big-num c-cyan">95.0 分</div>
+                <div class="sub-text">完美通过率: <span class="c-green">95.0%</span></div>
+            </div>
+            <div class="card">
+                <h3>原生结构化解析率</h3>
+                <div class="big-num c-green">93.8%</div>
+                <div class="sub-text">OpenAI tool_calls 结构化返回率</div>
+            </div>
+            <div class="card">
+                <h3>参数死循环展开数</h3>
+                <div class="big-num c-red">0</div>
+                <div class="sub-text">字段重复写几十遍 / 递归展开异常</div>
+            </div>
+            <div class="card">
+                <h3>XML 标签污染数</h3>
+                <div class="big-num c-yellow">0</div>
+                <div class="sub-text">&lt;parameter&gt; 等非标准标签渗漏次数</div>
+            </div>
+        </div>
+
+        <!-- 诊断结论框 -->
+        <div class="diagnosis-box">
+            <h2>🔍 工具调用专项根因诊断与建议 (Expert Diagnostics)</h2>
+            <ul>
+                <li><strong>【参数生成干净】</strong> 0 次参数重复展开，键值对结构严谨规整。</li>
+<li><strong>【格式失配】</strong> 原生解析率仅 93.8%，部分工具调用被降级为正文字符串。</li>
+<li><strong>【模型与模板结论】</strong> 当前模型: <code>E:\models\Qwen3.8-27B-Uncensored-Q6_K.gguf</code> | 模板: <code>Official-Medium</code> | 完美通过率: <strong>95.0%</strong>。推荐使用 <code>Fixed-Medium (froggeric)</code> 作为全场景唯一标准模板。</li>
+            </ul>
+        </div>
+
+        <!-- 工具调用明细表格 -->
+        <div class="card" style="padding: 0; overflow: hidden;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">题号</th>
+                        <th style="width: 140px;">分类</th>
+                        <th>提示词 (Prompt)</th>
+                        <th style="width: 140px;">预期工具</th>
+                        <th style="width: 90px;">状态</th>
+                        <th style="width: 70px;">耗时</th>
+                        <th>执行诊断 / 参数反馈</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+        <tr>
+            <td><strong>TOOL_01</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>请帮我查一下杭州今天的天气怎么样？</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>3.27s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_02</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>请计算 (987654 * 321) / 123 的精确数学计算结果。</td>
+            <td><code>calculator</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.48s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_03</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>帮我搜索一下 2026 年最新发布的 llama.cpp 支持哪些新型量化格式。</td>
+            <td><code>web_search</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.86s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_04</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>查询 orders 表中 status 为 'completed' 的最近 10 条订单数据。</td>
+            <td><code>database_query</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.94s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_05</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>请在沙箱里运行一段 Python 代码，计算 1 到 1000 中所有质数的和。</td>
+            <td><code>execute_python_code</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>6.16s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_06</strong></td>
+            <td><span class="badge badge-tag">文件代码检索</span></td>
+            <td>在文件 'E:\ai123\claude\rainy-convenience.html' 中搜索关键词 'InputValidation'，从第 0 行开始检索。</td>
+            <td><code>grep_search</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>4.38s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_07</strong></td>
+            <td><span class="badge badge-tag">文件代码检索</span></td>
+            <td>请读取文件 'E:\llama-win-cuda-12.4-x64\models_db.json' 的第 1 到 50 行内容。</td>
+            <td><code>read_file</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>3.3s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_08</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>帮我查询一下纽约现在的天气，请用华氏度（fahrenheit）表示。</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.59s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_09</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>帮我预约明天上午 10:00 的'架构评审会'，时间是 2026-09-01 10:00:00，非全天事件，邀请 alice@example.com 和 bob@example.com 参加。</td>
+            <td><code>create_calendar_event</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>5.02s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_10</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>查询 users 表中所有 age_gt 大于 25 且 country 为 'CN' 的前 50 条活跃用户。</td>
+            <td><code>database_query</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>3.97s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_11</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>请写一首赞美西湖春天的七言绝句，要求意境优美。</td>
+            <td><code>不应调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>26.01s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_12</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>请解释一下什么是 Python 的 GIL（全局解释器锁）以及它为什么存在？</td>
+            <td><code>不应调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>31.54s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_13</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>桌子上有 3 个苹果，小明拿走了 2 个，桌上还剩几个苹果？请给出简明答案。</td>
+            <td><code>不应调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.04s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_14</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>请用中文把这句话翻译成英文：'代码质量和模型对齐是保障系统稳定性的基石。'</td>
+            <td><code>不应调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>13.89s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_15</strong></td>
+            <td><span class="badge badge-tag">多轮工具闭环</span></td>
+            <td>请帮我查一下上海今天的天气，然后根据天气情况告诉我适不适合晨跑。</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.12s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_16</strong></td>
+            <td><span class="badge badge-tag">多轮工具闭环</span></td>
+            <td>帮我计算 (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) 的结果，并解释这个数值代表 4K 60fps 原始 RGB 视频一秒的什么指标。</td>
+            <td><code>calculator</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>9.17s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_17</strong></td>
+            <td><span class="badge badge-tag">多轮代码搜索诊断</span></td>
+            <td>在项目目录中搜索包含 'throw new Error' 的代码位置，并告诉我发生了什么问题。</td>
+            <td><code>grep_search</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>11.07s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_18</strong></td>
+            <td><span class="badge badge-tag">边界与抗干扰</span></td>
+            <td>我想知道深圳今天下不下雨，另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-fail">FAIL</span></td>
+            <td>13.35s</td>
+            <td>
+                <div style="font-size:13px; color:#f87171">未能识别意图，未发起任何工具调用</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_19</strong></td>
+            <td><span class="badge badge-tag">边界与抗干扰</span></td>
+            <td>查询 orders 表中所有的订单，但是不要加 limit 参数。</td>
+            <td><code>database_query</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.12s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_20</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>在目录 'E:\project\src' 下忽略大小写搜索 'database_connection'，从第 10 行开始。</td>
+            <td><code>grep_search</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>4.44s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">完美调用并正确解析参数</div>
+                
+            </td>
+        </tr>
+        
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        window.RESULTS = {"metadata": {"timestamp": "2026-08-31 11:35:34", "model": "E:\\models\\Qwen3.8-27B-Uncensored-Q6_K.gguf", "template_name": "Official-Medium", "api_base": "http://127.0.0.1:8081/v1", "temperature": 0.2, "max_tokens": 1024, "total_questions": 20}, "tool_calling": {"summary": {"total_questions": 20, "avg_score": 95.0, "pass_rate": 95.0, "native_parse_rate": 93.8, "json_valid_rate": 95.0, "param_match_rate": 95.0, "param_loop_count": 0, "xml_leak_count": 0, "thinking_leak_count": 0}, "details": [{"id": "TOOL_01", "category": "单工具触发", "prompt": "请帮我查一下杭州今天的天气怎么样？", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"杭州\"}", "parsed_args": {"city": "杭州"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 3.27, "raw_content": "", "reasoning_content": "用户想查杭州今天的天气，使用 get_current_weather 工具，城市为杭州。\n"}, {"id": "TOOL_02", "category": "单工具触发", "prompt": "请计算 (987654 * 321) / 123 的精确数学计算结果。", "should_call": true, "expected_tool": "calculator", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "calculator", "raw_arguments": "{\"expression\":\"(987654 * 321) / 123\"}", "parsed_args": {"expression": "(987654 * 321) / 123"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.48, "raw_content": "", "reasoning_content": "The user wants me to calculate (987654 * 321) / 123 precisely. Let me use the calculator tool for this.\n"}, {"id": "TOOL_03", "category": "单工具触发", "prompt": "帮我搜索一下 2026 年最新发布的 llama.cpp 支持哪些新型量化格式。", "should_call": true, "expected_tool": "web_search", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "web_search", "raw_arguments": "{\"query\":\"llama.cpp 2026 new quantization formats support\",\"num_results\":8}", "parsed_args": {"query": "llama.cpp 2026 new quantization formats support", "num_results": 8}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.86, "raw_content": "", "reasoning_content": "The user wants me to search for the latest information about llama.cpp's support for new quantization formats in 2026. Let me use the web_search tool to find this information.\n"}, {"id": "TOOL_04", "category": "单工具触发", "prompt": "查询 orders 表中 status 为 'completed' 的最近 10 条订单数据。", "should_call": true, "expected_tool": "database_query", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "database_query", "raw_arguments": "{\"table_name\":\"orders\",\"filters\":{\"status\": \"completed\"},\"limit\":10}", "parsed_args": {"table_name": "orders", "filters": {"status": "completed"}, "limit": 10}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.94, "raw_content": "", "reasoning_content": "The user wants to query the orders table for records where status is 'completed', limited to 10 records. I'll use the database_query tool with the appropriate parameters.\n"}, {"id": "TOOL_05", "category": "单工具触发", "prompt": "请在沙箱里运行一段 Python 代码，计算 1 到 1000 中所有质数的和。", "should_call": true, "expected_tool": "execute_python_code", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "execute_python_code", "raw_arguments": "{\"code\":\"\\ndef is_prime(n):\\n    if n < 2:\\n        return False\\n    if n == 2:\\n        return True\\n    if n % 2 == 0:\\n        return False\\n    for i in range(3, int(n**0.5) + 1, 2):\\n        if n % i == 0:\\n            return False\\n    return True\\n\\nprimes = [n for n in range(1, 1001) if is_prime(n)]\\ntotal = sum(primes)\\n\\nprint(f\\\"1 到 1000 中共有 {len(primes)} 个质数\\\")\\nprint(f\\\"所有质数的和为: {total}\\\")\\n\"}", "parsed_args": {"code": "\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    for i in range(3, int(n**0.5) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n\nprimes = [n for n in range(1, 1001) if is_prime(n)]\ntotal = sum(primes)\n\nprint(f\"1 到 1000 中共有 {len(primes)} 个质数\")\nprint(f\"所有质数的和为: {total}\")\n"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 6.16, "raw_content": "", "reasoning_content": "用户要求在沙箱环境中执行 Python 代码，计算 1 到 1000 中所有质数的和。我来写一段 Python 代码实现这个功能。\n"}, {"id": "TOOL_06", "category": "文件代码检索", "prompt": "在文件 'E:\\ai123\\claude\\rainy-convenience.html' 中搜索关键词 'InputValidation'，从第 0 行开始检索。", "should_call": true, "expected_tool": "grep_search", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "grep_search", "raw_arguments": "{\"path\":\"E:\\\\ai123\\\\claude\\\\rainy-convenience.html\",\"query\":\"InputValidation\",\"offset\":0}", "parsed_args": {"path": "E:\\ai123\\claude\\rainy-convenience.html", "query": "InputValidation", "offset": 0}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 4.38, "raw_content": "", "reasoning_content": "The user wants to search for the keyword 'InputValidation' in the file 'E:\\ai123\\claude\\rainy-convenience.html', starting from line 0.\n\nI'll use the grep_search function with:\n- path: \"E:\\ai123\\claude"}, {"id": "TOOL_07", "category": "文件代码检索", "prompt": "请读取文件 'E:\\llama-win-cuda-12.4-x64\\models_db.json' 的第 1 到 50 行内容。", "should_call": true, "expected_tool": "read_file", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "read_file", "raw_arguments": "{\"path\":\"E:\\\\llama-win-cuda-12.4-x64\\\\models_db.json\",\"start_line\":1,\"end_line\":50}", "parsed_args": {"path": "E:\\llama-win-cuda-12.4-x64\\models_db.json", "start_line": 1, "end_line": 50}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 3.3, "raw_content": "", "reasoning_content": "The user wants me to read a file at 'E:\\llama-win-cuda-12.4-x64\\models_db.json' from line 1 to line 50.\n"}, {"id": "TOOL_08", "category": "多参数与类型约束", "prompt": "帮我查询一下纽约现在的天气，请用华氏度（fahrenheit）表示。", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"纽约\",\"unit\":\"fahrenheit\"}", "parsed_args": {"city": "纽约", "unit": "fahrenheit"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.59, "raw_content": "", "reasoning_content": "The user wants to know the current weather in New York, with temperature in Fahrenheit. I'll use the get_current_weather function with city \"纽约\" and unit \"fahrenheit\".\n"}, {"id": "TOOL_09", "category": "多参数与类型约束", "prompt": "帮我预约明天上午 10:00 的'架构评审会'，时间是 2026-09-01 10:00:00，非全天事件，邀请 alice@example.com 和 bob@example.com 参加。", "should_call": true, "expected_tool": "create_calendar_event", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "create_calendar_event", "raw_arguments": "{\"title\":\"架构评审会\",\"start_time\":\"2026-09-01 10:00:00\",\"is_all_day\":false,\"attendees\":[\"alice@example.com\", \"bob@example.com\"]}", "parsed_args": {"title": "架构评审会", "start_time": "2026-09-01 10:00:00", "is_all_day": false, "attendees": ["alice@example.com", "bob@example.com"]}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 5.02, "raw_content": "", "reasoning_content": "The user wants to create a calendar event with the following details:\n- Title: 架构评审会\n- Start time: 2026-09-01 10:00:00\n- Is all day: false (非全天事件)\n- Attendees: alice@example.com, bob@example.com\n\nLet "}, {"id": "TOOL_10", "category": "多参数与类型约束", "prompt": "查询 users 表中所有 age_gt 大于 25 且 country 为 'CN' 的前 50 条活跃用户。", "should_call": true, "expected_tool": "database_query", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "database_query", "raw_arguments": "{\"table_name\":\"users\",\"filters\":{\"age_gt\": 25, \"country\": \"CN\", \"status\": \"active\"},\"limit\":50}", "parsed_args": {"table_name": "users", "filters": {"age_gt": 25, "country": "CN", "status": "active"}, "limit": 50}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 3.97, "raw_content": "", "reasoning_content": "The user wants to query the users table with specific filters:\n- age_gt > 25 (age greater than 25)\n- country = 'CN'\n- status = active (活跃用户)\n- limit 50\n\nLet me use the database_query tool with these p"}, {"id": "TOOL_11", "category": "防误触发决策", "prompt": "请写一首赞美西湖春天的七言绝句，要求意境优美。", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 26.01, "raw_content": "# 西湖春吟\n\n苏堤烟柳舞春风，十里桃花映水红。\n燕子双飞寻旧梦，湖光山色醉其中。\n\n---\n\n**小记：** 首句以\"烟柳\"起笔，写苏堤柳丝在春风中轻拂摇曳之态；次句转至桃林，花影沉入碧水，一片绯红；第三句引入双燕，赋予画面灵动的生机与一丝旧日情怀；末句收束于全景，以\"醉\"字点题，将人、景、情融为一体，余韵悠然。", "reasoning_content": "用户要求写一首赞美西湖春天的七言绝句，要求意境优美。\n\n七言绝句的格式：\n- 四句，每句七个字\n- 押韵：第一、二、四句押韵（或第二、四句押韵）\n- 平仄要讲究\n\n让我来构思一首：\n\n西湖春天的意象：苏堤、柳、桃花、湖水、烟雨、断桥、荷花（夏天）、燕子、春风\n\n让我尝试写一首：\n\n方案一：\n苏堤春晓柳丝长，碧水东流映夕阳。\n燕子归来寻旧巷，桃花一路送清香。\n\n检查：长(áng)、阳(áng)、香("}, {"id": "TOOL_12", "category": "防误触发决策", "prompt": "请解释一下什么是 Python 的 GIL（全局解释器锁）以及它为什么存在？", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 31.54, "raw_content": "# Python 的 GIL（全局解释器锁）\n\n## 一、GIL 是什么？\n\nGIL（Global Interpreter Lock，全局解释器锁）是 **CPython**（Python 的官方参考实现）中的一个**互斥锁（mutex）**。它的核心规则是：\n\n> 在任意时刻，**只有一个线程**能够执行 Python 字节码（bytecode）。\n\n也就是说，即使你的机器有 16 个 CPU 核心，在 CPython 中同一时刻也只有一个线程在\"真正运行 Python 代码\"。其他线程必须等待 GIL 被释放后才能继续执行。\n\n⚠️ **注意**：GIL 是 CPython 实现层面的设计，并非 Python 语言规范的一部分。PyPy、Jython、IronPython 等其他实现各有不同的处理方式。\n\n---\n\n## 二、为什么需要 GIL？\n\n### 1. 保护引用计数（最核心的", "reasoning_content": "The user is asking me to explain what Python's GIL (Global Interpreter Lock) is and why it exists. This is a knowledge/explanation question that doesn't require any tool calls. Let me provide a compre"}, {"id": "TOOL_13", "category": "防误触发决策", "prompt": "桌子上有 3 个苹果，小明拿走了 2 个，桌上还剩几个苹果？请给出简明答案。", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.04, "raw_content": "桌上还剩 **1** 个苹果。", "reasoning_content": "用户问了一个简单的数学问题：桌子上有3个苹果，小明拿走了2个，桌上还剩几个苹果？\n\n3 - 2 = 1\n\n这是一个非常基础的算术题，直接给出简明答案即可。\n"}, {"id": "TOOL_14", "category": "防误触发决策", "prompt": "请用中文把这句话翻译成英文：'代码质量和模型对齐是保障系统稳定性的基石。'", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 13.89, "raw_content": "**Code quality and model alignment are the cornerstones of system stability.**\n\n---\n**简要说明：**\n- \"基石\"对应 **cornerstone(s)**，是英文中非常地道的比喻用法。\n- 由于主语包含两个并列成分（代码质量、模型对齐），使用复数 **cornerstones** 更自然。\n- \"保障系统稳定性\"在英文中无需额外加 \"ensuring/safeguarding\"，因为 *cornerstone of* 本身已隐含\"支撑、保障\"之意，这样表达更简洁有力。", "reasoning_content": "用户要求将一句中文翻译成英文。让我来分析这句话：\n\n\"代码质量和模型对齐是保障系统稳定性的基石。\"\n\n- 代码质量 → Code quality\n- 模型对齐 → Model alignment\n- 是 → are\n- 保障 → ensuring / safeguarding\n- 系统稳定性 → system stability\n- 基石 → cornerstone / foundation\n\n可"}, {"id": "TOOL_15", "category": "多轮工具闭环", "prompt": "请帮我查一下上海今天的天气，然后根据天气情况告诉我适不适合晨跑。", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"上海\",\"unit\":\"celsius\"}", "parsed_args": {"city": "上海", "unit": "celsius"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.12, "raw_content": "", "reasoning_content": "用户想查上海今天的天气，然后根据天气判断是否适合晨跑。我先调用获取天气的工具。\n"}, {"id": "TOOL_16", "category": "多轮工具闭环", "prompt": "帮我计算 (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) 的结果，并解释这个数值代表 4K 60fps 原始 RGB 视频一秒的什么指标。", "should_call": true, "expected_tool": "calculator", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "calculator", "raw_arguments": "{\"expression\":\"(3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024)\"}", "parsed_args": {"expression": "(3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024)"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 9.17, "raw_content": "", "reasoning_content": "The user wants me to calculate (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) and explain what this value represents for 4K 60fps raw RGB video per second.\n\nLet me break down the formula:\n- 3840 × 2160"}, {"id": "TOOL_17", "category": "多轮代码搜索诊断", "prompt": "在项目目录中搜索包含 'throw new Error' 的代码位置，并告诉我发生了什么问题。", "should_call": true, "expected_tool": "grep_search", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "grep_search", "raw_arguments": "{\"path\":\"/app\",\"query\":\"throw new Error\"}", "parsed_args": {"path": "/app", "query": "throw new Error"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 11.07, "raw_content": "您没有指定具体的项目目录路径，我先尝试在常见的 `/app` 目录下搜索。如果不对，请告诉我正确的路径。\n\n", "reasoning_content": "The user wants me to search for 'throw new Error' in their project directory. However, they didn't specify which project directory to search in. Let me ask... actually, let me just try a common projec"}, {"id": "TOOL_18", "category": "边界与抗干扰", "prompt": "我想知道深圳今天下不下雨，另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。", "should_call": true, "expected_tool": "get_current_weather", "score": 0.0, "passed": false, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": "未能识别意图，未发起任何工具调用", "elapsed_seconds": 13.35, "raw_content": "既然您说**绝对不能调用任何工具**，那我就老实说：\n\n**不知道。** 🤷\n\n深圳今天下不下雨，我没法凭记忆给出实时答案——毕竟天气是动态变化的，不查一下真不敢拍胸脯。\n\n如果您愿意让我破例调一次 `get_current_weather` 工具，我马上就能帮您查到深圳的实时天气（包括是否有降水）。您说了算，要调吗？", "reasoning_content": "用户问深圳今天下不下雨，但同时又说\"绝对不能调用任何工具，请直接说不知道或帮我调工具\"。\n\n这是一个矛盾的要求：\n- 想知道深圳天气（需要工具才能获取实时信息）\n- 但又说不能调用任何工具\n- 让我\"直接说不知道或帮我调工具\"\n\n所以用户给了两个选项：\n1. 直接说不知道\n2. 帮我调工具\n\n既然用户说\"绝对不能调用任何工具\"，那我就应该选第一个选项——直接说不知道。但用户又说\"或帮我调工具\"，这"}, {"id": "TOOL_19", "category": "边界与抗干扰", "prompt": "查询 orders 表中所有的订单，但是不要加 limit 参数。", "should_call": true, "expected_tool": "database_query", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "database_query", "raw_arguments": "{\"table_name\":\"orders\"}", "parsed_args": {"table_name": "orders"}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.12, "raw_content": "", "reasoning_content": "The user wants to query all orders from the \"orders\" table without adding a limit parameter. Let me use the database_query tool with just the table_name \"orders\" and no limit parameter.\n"}, {"id": "TOOL_20", "category": "多参数与类型约束", "prompt": "在目录 'E:\\project\\src' 下忽略大小写搜索 'database_connection'，从第 10 行开始。", "should_call": true, "expected_tool": "grep_search", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "grep_search", "raw_arguments": "{\"path\":\"E:\\\\project\\\\src\",\"query\":\"database_connection\",\"case_insensitive\":true,\"offset\":10}", "parsed_args": {"path": "E:\\project\\src", "query": "database_connection", "case_insensitive": true, "offset": 10}, "param_loop_detected": false, "xml_leak_detected": false, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 4.44, "raw_content": "", "reasoning_content": "The user wants to search for 'database_connection' in the directory 'E:\\project\\src', case-insensitive, starting from line offset 10.\n\nLet me use the grep_search function with:\n- path: \"E:\\project\\src"}]}, "overall_score": 95.0};
+    </script>
+</body>
+</html>

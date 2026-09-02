@@ -1,0 +1,660 @@
+{
+  "model_index": 3,
+  "model_name": "Qwen3VL-8B",
+  "timestamp": "2026-08-03T10:01:11.031422",
+  "questions_count": 10,
+  "average_scores": {
+    "behavior": 18.0,
+    "dynamic": 21.0,
+    "answer": 37.6,
+    "total": 76.6
+  },
+  "stage_results": [
+    {
+      "question_id": 1,
+      "question": "请搜索今天全球AI大模型的最新发布新闻，给我3条关键进展。",
+      "should_use_tool": true,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 工具名称正确 (search)",
+            "✓ query 格式正确: '今日全球AI大模型最新发布新闻'",
+            "✓ 关键词覆盖率高 (3/4)",
+            "延迟: 618ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 8.75,
+          "max_score": 10,
+          "details": [
+            "ℹ Tavily 未配置，基于 query 质量评分",
+            "  query: '今日全球AI大模型最新发布新闻'",
+            "  关键词覆盖: 3/4 (75%)",
+            "延迟: 407ms"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 283 字符",
+            "延迟: 1910ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 7,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 回答内容充实",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 30.0,
+        "dynamic": 23.6,
+        "answer": 40.0,
+        "total": 93.6
+      }
+    },
+    {
+      "question_id": 2,
+      "question": "什么是Transformer架构？请解释它的核心组件和工作原理。",
+      "should_use_tool": false,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 0,
+          "max_score": 10,
+          "details": [
+            "❌ 未调用任何工具",
+            "延迟: 9525ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 5,
+          "max_score": 10,
+          "details": [
+            "⚠ 无有效工具调用，跳过搜索评估"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 436 字符",
+            "延迟: 2909ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 7,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 回答内容充实",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 0.0,
+        "dynamic": 18.0,
+        "answer": 40.0,
+        "total": 58.0
+      }
+    },
+    {
+      "question_id": 3,
+      "question": "查一下今天特斯拉(TSLA)的股价、成交量和市值。",
+      "should_use_tool": true,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 工具名称正确 (search)",
+            "✓ query 格式正确: '特斯拉 TSLA 今日股价 成交量 市值'",
+            "✓ 关键词覆盖率高 (4/4)",
+            "延迟: 596ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 10.0,
+          "max_score": 10,
+          "details": [
+            "ℹ Tavily 未配置，基于 query 质量评分",
+            "  query: '特斯拉 TSLA 今日股价 成交量 市值'",
+            "  关键词覆盖: 4/4 (100%)",
+            "延迟: 393ms"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 243 字符",
+            "延迟: 1635ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 7,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 回答内容充实",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 30.0,
+        "dynamic": 25.5,
+        "answer": 40.0,
+        "total": 95.5
+      }
+    },
+    {
+      "question_id": 4,
+      "question": "我想了解量子计算的最新进展，请帮我规划一个搜索策略，应该搜索哪些关键词？",
+      "should_use_tool": false,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 0,
+          "max_score": 10,
+          "details": [
+            "❌ 未调用任何工具",
+            "延迟: 4184ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 5,
+          "max_score": 10,
+          "details": [
+            "⚠ 无有效工具调用，跳过搜索评估"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 725 字符",
+            "延迟: 3942ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 7,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 回答内容充实",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 0.0,
+        "dynamic": 18.0,
+        "answer": 40.0,
+        "total": 58.0
+      }
+    },
+    {
+      "question_id": 5,
+      "question": "2026年世界杯在哪里举办？这个国家的首都是哪里？人口多少？",
+      "should_use_tool": true,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 工具名称正确 (search)",
+            "✓ query 格式正确: '2026年世界杯举办国家及首都和人口'",
+            "✓ 关键词覆盖率高 (3/4)",
+            "延迟: 483ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 8.75,
+          "max_score": 10,
+          "details": [
+            "ℹ Tavily 未配置，基于 query 质量评分",
+            "  query: '2026年世界杯举办国家及首都和人口'",
+            "  关键词覆盖: 3/4 (75%)",
+            "延迟: 379ms"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 289 字符",
+            "延迟: 2119ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 6,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "⚠ 回答内容一般",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 30.0,
+        "dynamic": 22.1,
+        "answer": 40.0,
+        "total": 92.1
+      }
+    },
+    {
+      "question_id": 6,
+      "question": "帮我比较NVIDIA H100和V100的性能差异，哪个更适合大模型训练？",
+      "should_use_tool": true,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 工具名称正确 (search)",
+            "✓ query 格式正确: 'NVIDIA H100 vs V100 性能对比 大模型训练适用性'",
+            "✓ 关键词覆盖率高 (4/4)",
+            "延迟: 568ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 10.0,
+          "max_score": 10,
+          "details": [
+            "ℹ Tavily 未配置，基于 query 质量评分",
+            "  query: 'NVIDIA H100 vs V100 性能对比 大模型训练适用性'",
+            "  关键词覆盖: 4/4 (100%)",
+            "延迟: 477ms"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 347 字符",
+            "延迟: 2600ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 7,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 回答内容充实",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 30.0,
+        "dynamic": 25.5,
+        "answer": 40.0,
+        "total": 95.5
+      }
+    },
+    {
+      "question_id": 7,
+      "question": "水的沸点是多少度？在高海拔地区会变化吗？",
+      "should_use_tool": false,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 0,
+          "max_score": 10,
+          "details": [
+            "❌ 未调用任何工具",
+            "延迟: 2204ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 5,
+          "max_score": 10,
+          "details": [
+            "⚠ 无有效工具调用，跳过搜索评估"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 8,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答内容充实",
+            "回答长度: 205 字符",
+            "延迟: 1708ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 6,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "⚠ 回答内容一般",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 0.0,
+        "dynamic": 16.5,
+        "answer": 32.0,
+        "total": 48.5
+      }
+    },
+    {
+      "question_id": 8,
+      "question": "搜索本周科技圈最大的新闻，给我一个标题和摘要。",
+      "should_use_tool": true,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 工具名称正确 (search)",
+            "✓ query 格式正确: '本周科技圈最大新闻'",
+            "✓ 关键词覆盖率高 (3/4)",
+            "延迟: 455ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 8.75,
+          "max_score": 10,
+          "details": [
+            "ℹ Tavily 未配置，基于 query 质量评分",
+            "  query: '本周科技圈最大新闻'",
+            "  关键词覆盖: 3/4 (75%)",
+            "延迟: 374ms"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 8,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答内容充实",
+            "回答长度: 227 字符",
+            "延迟: 1832ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 6,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "⚠ 回答内容一般",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 30.0,
+        "dynamic": 22.1,
+        "answer": 32.0,
+        "total": 84.1
+      }
+    },
+    {
+      "question_id": 9,
+      "question": "请搜索最新的AI编程助手排行榜，并分析它们各自的优势和劣势。",
+      "should_use_tool": true,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 工具名称正确 (search)",
+            "✓ query 格式正确: '最新AI编程助手排行榜 优势 劣势 分析'",
+            "✓ 关键词覆盖率高 (3/4)",
+            "延迟: 538ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 8.75,
+          "max_score": 10,
+          "details": [
+            "ℹ Tavily 未配置，基于 query 质量评分",
+            "  query: '最新AI编程助手排行榜 优势 劣势 分析'",
+            "  关键词覆盖: 3/4 (75%)",
+            "延迟: 448ms"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 10,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答包含时效信息",
+            "✓ 回答内容充实",
+            "回答长度: 221 字符",
+            "延迟: 1607ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 7,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 回答内容充实",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 30.0,
+        "dynamic": 23.6,
+        "answer": 40.0,
+        "total": 93.6
+      }
+    },
+    {
+      "question_id": 10,
+      "question": "写一首关于春天的短诗，要求包含意象：桃花、燕子、微风。",
+      "should_use_tool": false,
+      "stages": {
+        "stage1_tool_call": {
+          "stage": 1,
+          "name": "工具调用",
+          "score": 0,
+          "max_score": 10,
+          "details": [
+            "❌ 未调用任何工具",
+            "延迟: 1087ms"
+          ],
+          "error": null
+        },
+        "stage2_search": {
+          "stage": 2,
+          "name": "联网搜索",
+          "score": 5,
+          "max_score": 10,
+          "details": [
+            "⚠ 无有效工具调用，跳过搜索评估"
+          ],
+          "error": null
+        },
+        "stage3_rag": {
+          "stage": 3,
+          "name": "RAG",
+          "score": 8,
+          "max_score": 10,
+          "details": [
+            "✓ 回答包含引用标记",
+            "✓ 回答内容充实",
+            "回答长度: 337 字符",
+            "延迟: 2729ms"
+          ],
+          "error": null
+        },
+        "stage4_agent_search": {
+          "stage": 4,
+          "name": "智能体搜索",
+          "score": 5,
+          "max_score": 10,
+          "details": [
+            "✓ 成功生成回答",
+            "✓ 完成自我验证",
+            "总迭代: 3 轮"
+          ],
+          "error": null,
+          "iterations": []
+        }
+      },
+      "scores": {
+        "behavior": 0.0,
+        "dynamic": 15.0,
+        "answer": 32.0,
+        "total": 47.0
+      }
+    }
+  ]
+}

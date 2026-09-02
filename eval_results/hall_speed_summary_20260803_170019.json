@@ -1,0 +1,23 @@
+{
+  "timestamp": "20260803_170019",
+  "speed_test_config": {
+    "prompt_preview": "请写一篇关于人工智能在医疗领域应用前景的论述文，要求结构清晰、论点充分、有具体案例。包含引言、三个核心论点（每点不少于 ...",
+    "rounds_per_model": 5,
+    "method": "平均 tok/s（completion_tokens / gen_time），不含峰值"
+  },
+  "hallucination_config": {
+    "total_questions": 10,
+    "method": "模型指出虚构=100分；未确认陷阱=80分；落入陷阱=0分"
+  },
+  "models": {
+    "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 59.6,
+      "min_tok_s": 59.2,
+      "max_tok_s": 59.9,
+      "speed_rounds": 5
+    }
+  }
+}

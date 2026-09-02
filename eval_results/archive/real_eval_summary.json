@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-08-03T12:25:47.271563",
+  "models": {
+    "Gemma-4-E4B": {
+      "decision": 18.0,
+      "query": 20.7,
+      "answer": 14.6,
+      "total": 53.3
+    },
+    "Qwen3VL-8B": {
+      "decision": 18.0,
+      "query": 21.1,
+      "answer": 12.1,
+      "total": 51.2
+    },
+    "Qwen3.6-27B-UC": {
+      "decision": 16.0,
+      "query": 17.9,
+      "answer": 14.9,
+      "total": 48.8
+    },
+    "Qwen3.6-27B-711-MTP": {
+      "decision": 20.0,
+      "query": 23.2,
+      "answer": 13.8,
+      "total": 57.0
+    },
+    "Qwen3.6-35B-UC": {
+      "decision": 14.3,
+      "query": 15.7,
+      "answer": 16.4,
+      "total": 46.4
+    },
+    "Qwen3.6-35B-MTP": {
+      "decision": 14.0,
+      "query": 16.0,
+      "answer": 15.3,
+      "total": 45.3
+    }
+  }
+}

@@ -1,0 +1,291 @@
+{
+  "version": "1.0",
+  "name": "前沿6大专有基准大模型专业评测题库 (Frontier SOTA 6-Benchmark Suite)",
+  "description": "专为对标国际前沿AI天梯榜打造：涵盖 Terminal-Bench 2.1, SWE-bench Pro, DeepSWE (长程软件工程), NL2Repo, GPQA Diamond, HLE (Humanity's Last Exam) 6大专有项目。",
+  "benchmarks": [
+    "Terminal-Bench 2.1",
+    "SWE-bench Pro",
+    "DeepSWE (长程软件工程)",
+    "NL2Repo",
+    "GPQA Diamond",
+    "HLE"
+  ],
+  "tasks": [
+    {
+      "id": "TB-01",
+      "benchmark": "Terminal-Bench 2.1",
+      "title": "Nginx 日志高频 5xx 错误 IP 管道排查与排序",
+      "prompt": "在 Linux 生产服务器排错中，请编写一条单行 Bash 管道命令（One-liner）：\n从标准 Nginx access.log 中筛选出所有 HTTP 状态码为 5xx（500 至 599）的访问记录，提取客户端 IP 地址，统计每个异常 IP 的出现频次，并按频次由高到低降序排序，最终只输出出现频次最高的前 10 个 IP 及其请求次数。\n要求：\n1. 使用 awk/grep/sort/uniq/head 等标准 Linux CLI 工具组合。\n2. 格式规范，只输出单行命令，放在 ```bash ``` 代码块中，不要输出其他文字解释。",
+      "scoring": "bash_command",
+      "required_tools": ["awk", "sort", "uniq", "head"],
+      "regex_checks": [
+        "5[0-9]{2}",
+        "sort\\s+(-n|-r|-nr|-rn)",
+        "uniq\\s+-c",
+        "head\\s+(-n\\s*10|-10)"
+      ]
+    },
+    {
+      "id": "TB-02",
+      "benchmark": "Terminal-Bench 2.1",
+      "title": "僵尸进程定位与端口冲突占用安全清理流水线",
+      "prompt": "请编写一段健壮的 Bash 脚本：\n目标：安全释放被异常挂起的本地端口 8081。\n要求：\n1. 检查是否有进程正在监听 8081 端口。\n2. 如果存在占用，提取对应的 PID，并首先尝试发送 SIGTERM (15) 优雅退出。\n3. 等待最多 5 秒；如果 5 秒后该进程仍未退出，则强制发送 SIGKILL (9) 终结进程。\n4. 确保在没有进程占用时不会发生报错（exit code 0）。\n只输出 Bash 代码，放在 ```bash ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["8081", "PORT"],
+        ["lsof", "netstat", "ss", "fuser"],
+        ["kill", "SIGTERM", "-15", "15"],
+        ["kill -9", "SIGKILL", "-KILL", "-9"],
+        ["sleep", "wait", "timeout"]
+      ]
+    },
+    {
+      "id": "TB-03",
+      "benchmark": "Terminal-Bench 2.1",
+      "title": "Git 分支变基冲突自动中止与安全恢复脚本",
+      "prompt": "请编写一段 Git 终端命令流：\n场景：在执行 `git rebase main` 时发生合并冲突。\n要求按顺序执行：\n1. 检查当前是否处于 rebase 冲突暂停状态；\n2. 若处于冲突状态，查看当前冲突文件列表；\n3. 决定彻底放弃本次变基并安全回滚到 rebase 前的分支 HEAD 状态；\n4. 清理所有未跟踪的临时垃圾文件。\n只输出命令列表，放在 ```bash ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["git status", "rebase-apply", "rebase-merge"],
+        ["git rebase --abort"],
+        ["git clean", "-fd", "-f", "-x"]
+      ]
+    },
+    {
+      "id": "TB-04",
+      "benchmark": "Terminal-Bench 2.1",
+      "title": "Docker 多容器共享卷权限与 UID 映射排错",
+      "prompt": "场景：Docker 容器内非 root 用户（UID 1001）挂载宿主机目录 `/data/app` 遭遇 `Permission denied` 写入拒绝。\n请给出在宿主机和 Dockerfile/docker-compose 中从根本上解决权限与安全合规问题的完整配置与执行命令。\n只输出配置与命令，不要冗长闲聊。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["chown", "1001:1001", "chmod"],
+        ["user:", "1001", "USER 1001"],
+        ["usermod", "groupadd", "subuid", "subgid"]
+      ]
+    },
+    {
+      "id": "SWE-01",
+      "benchmark": "SWE-bench Pro",
+      "title": "Python 并发生成器竞态条件与锁失效 Bug 修复",
+      "prompt": "【Issue 描述】：\n在多线程环境下使用以下线程安全缓存队列时，在高并发消费时偶发 `IndexError: pop from empty deque`：\n```python\nfrom collections import deque\nimport threading\n\nclass SafeQueue:\n    def __init__(self):\n        self.q = deque()\n        self.lock = threading.Lock()\n\n    def put(self, item):\n        with self.lock:\n            self.q.append(item)\n\n    def get(self):\n        if len(self.q) > 0:\n            # Bug发生点：检查与pop之间未加锁保护/条件检查脱节\n            with self.lock:\n                return self.q.popleft()\n        return None\n```\n【任务】：请提供修复后的 `SafeQueue` 完整 Python 类代码（保证检查与消费原子性，支持高并发多线程），放在 ```python ``` 代码块中。",
+      "scoring": "code_run_class",
+      "class_name": "SafeQueue",
+      "test_script": "def test_safe_queue():\n    import threading\n    q = SafeQueue()\n    for i in range(100): q.put(i)\n    res = []\n    def worker():\n        for _ in range(50):\n            v = q.get()\n            if v is not None: res.append(v)\n    t1 = threading.Thread(target=worker)\n    t2 = threading.Thread(target=worker)\n    t1.start(); t2.start()\n    t1.join(); t2.join()\n    assert len(res) == 100, f'Expected 100 items, got {len(res)}'\n    assert q.get() is None\n    return True\nresult = test_safe_queue()"
+    },
+    {
+      "id": "SWE-02",
+      "benchmark": "SWE-bench Pro",
+      "title": "递归深层嵌套 JSON 循环引用反序列化崩溃修复",
+      "prompt": "【Issue 描述】：编写一个安全的深层字典克隆与循环引用检测器 `safe_deep_clone(data: dict) -> dict`。\n要求：\n1. 递归深拷贝嵌套字典与列表；\n2. 当检测到对象中存在自引用/循环引用（例如 `d['self'] = d`）时，不能递归死循环（`RecursionError`），而应将循环引用节点替换为标记字符串 `'[CIRCULAR_REF]'`。\n3. 只输出纯 Python 代码，放在 ```python ``` 代码块中。",
+      "scoring": "code_run",
+      "func_name": "safe_deep_clone",
+      "test_cases": [
+        {"args": [{"a": 1, "b": [2, 3]}], "expected": {"a": 1, "b": [2, 3]}},
+        {"args": [{}] , "expected": {}}
+      ],
+      "custom_validator": "def validate(fn):\n    d = {'x': 10}\n    d['loop'] = d\n    res = fn(d)\n    assert res['x'] == 10\n    assert res['loop'] == '[CIRCULAR_REF]'\n    return True"
+    },
+    {
+      "id": "SWE-03",
+      "benchmark": "SWE-bench Pro",
+      "title": "Git Unified Diff 补丁生成与版本冲突修复",
+      "prompt": "【Bug 报告】：某 Web 框架在解析 HTTP `Content-Type` 时，未正确处理带有分号和大小写的 MIME（如 `application/json; charset=utf-8`），导致 `is_json()` 判断失效。\n原有代码：\n```python\ndef is_json(content_type: str) -> bool:\n    return content_type == 'application/json'\n```\n【任务】：请以标准的 Git Unified Diff (`--- a/utils.py` / `+++ b/utils.py`) 补丁格式输出修复代码，使 `is_json` 能正确匹配所有包含 `application/json` 的变体（如 `Application/JSON; charset=utf-8`）且处理 None/空字符串边界。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["---", "+++", "@@"],
+        ["lower()", "strip()", "startswith", "split(';')[0]"],
+        ["application/json"]
+      ]
+    },
+    {
+      "id": "SWE-04",
+      "benchmark": "SWE-bench Pro",
+      "title": "高负载内存泄漏与 WeakValueDictionary 弱引用修复",
+      "prompt": "在长生命周期服务中，全局事件监听器导致大量回调对象无法被 GC 回收引发内存溢出 (OOM)。\n请实现一个事件分发器 `EventBus`，使用 `weakref`（弱引用）管理订阅者对象，当订阅者在外部被销毁后，事件总线能自动释放对应引用，不再向其分发事件。\n请输出完整的 Python 类代码，放在 ```python ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["class EventBus"],
+        ["weakref", "WeakSet", "WeakValueDictionary", "ref("],
+        ["subscribe", "register", "emit", "publish", "dispatch"]
+      ]
+    },
+    {
+      "id": "DSWE-01",
+      "benchmark": "DeepSWE (长程软件工程)",
+      "title": "长程跨模块依赖注入与 Clean Architecture 架构重构",
+      "prompt": "【长程工程设计】：将一个高耦合的订单结算单体函数重构为遵循整洁架构（Clean Architecture / 依赖倒置 DIP）的多层模块设计。\n要求定义以下接口与实体：\n1. `OrderRepositoryInterface`: 包含 `save_order(order: Order) -> bool`。\n2. `PaymentGatewayInterface`: 包含 `process_payment(amount: float) -> bool`。\n3. `NotificationServiceInterface`: 包含 `send_receipt(user_id: str, message: str) -> bool`。\n4. `CheckoutUseCase`: 业务用例层，通过构造函数注入上述三个抽象接口，实现 `execute(order_data: dict) -> dict`，包含支付失败时的回滚机制。\n请输出完整的 Python 模块代码（含类型注解与异常处理），放在 ```python ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["OrderRepositoryInterface", "PaymentGatewayInterface", "NotificationServiceInterface"],
+        ["CheckoutUseCase"],
+        ["__init__", "self.payment", "self.repo"],
+        ["rollback", "except", "回滚", "False"]
+      ]
+    },
+    {
+      "id": "DSWE-02",
+      "benchmark": "DeepSWE (长程软件工程)",
+      "title": "分布式事务 Saga 编排器设计与补偿事务机制",
+      "prompt": "请设计并实现一个通用的分布式事务 Saga 编排器 `SagaOrchestrator`。\n要求：\n1. 支持按顺序注册步骤：每个步骤包含 `action`（正向执行函数）和 `compensate`（补偿/回滚函数）；\n2. 执行流程：按注册顺序依次执行各步骤的 `action`；\n3. 容错回滚：若任意步骤执行失败（抛出异常），编排器必须以【严格倒序】依次执行所有已成功步骤的 `compensate` 补偿函数，并返回包含详细失败原因与回滚状态的总结字典。\n请输出完整的 Python 实现代码，放在 ```python ``` 代码块中。",
+      "scoring": "code_run_class",
+      "class_name": "SagaOrchestrator",
+      "test_script": "def test_saga():\n    so = SagaOrchestrator()\n    log = []\n    def a1(): log.append('a1')\n    def c1(): log.append('c1')\n    def a2(): log.append('a2')\n    def c2(): log.append('c2')\n    def a3_fail(): log.append('a3'); raise RuntimeError('a3 error')\n    def c3(): log.append('c3')\n    so.add_step(a1, c1)\n    so.add_step(a2, c2)\n    so.add_step(a3_fail, c3)\n    res = so.execute()\n    assert res.get('success') is False\n    assert log == ['a1', 'a2', 'a3', 'c2', 'c1'], f'Unexpected saga log: {log}'\n    return True\nresult = test_saga()"
+    },
+    {
+      "id": "DSWE-03",
+      "benchmark": "DeepSWE (长程软件工程)",
+      "title": "无锁环形缓冲区 Lock-Free RingBuffer 并发实现",
+      "prompt": "请编写一个高性能固定容量的无锁并发环形缓冲区 `RingBuffer(capacity: int)`。\n要求：\n1. `push(item: any) -> bool`: 若队列未满，压入元素并返回 True；若已满，返回 False。\n2. `pop() -> any`: 若队列非空，弹出最先入队的元素；若为空，返回 None。\n3. 使用原子操作或双指针模运算（`head` 与 `tail`），保证在多线程/单写多读场景下的数据一致性与 O(1) 吞吐量。\n4. 只输出 Python 代码，放在 ```python ``` 代码块中。",
+      "scoring": "code_run_class",
+      "class_name": "RingBuffer",
+      "test_script": "def test_rb():\n    rb = RingBuffer(3)\n    assert rb.push(1) is True\n    assert rb.push(2) is True\n    assert rb.push(3) is True\n    assert rb.push(4) is False, 'Buffer full check'\n    assert rb.pop() == 1\n    assert rb.push(5) is True\n    assert rb.pop() == 2\n    assert rb.pop() == 3\n    assert rb.pop() == 5\n    assert rb.pop() is None, 'Buffer empty check'\n    return True\nresult = test_rb()"
+    },
+    {
+      "id": "DSWE-04",
+      "benchmark": "DeepSWE (长程软件工程)",
+      "title": "异步数据库连接池生命周期与健康巡检状态机",
+      "prompt": "请实现一个异步连接池管理器 `AsyncConnectionPool(min_size=2, max_size=10, timeout=5.0)`：\n要求包含：\n1. 连接获取与释放上下文管理器 `async with pool.acquire() as conn:`；\n2. 空闲连接超时回收（Idle Timeout）与健康心跳探活（Ping Check）；\n3. 当连接池耗尽且等待超时后抛出 `PoolTimeoutError`。\n请输出结构完整的 Python 异步代码（使用 `asyncio`），放在 ```python ``` 代码块中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["class AsyncConnectionPool"],
+        ["async def acquire", "__aenter__", "__aexit__"],
+        ["asyncio.Semaphore", "asyncio.Queue", "max_size"],
+        ["timeout", "PoolTimeoutError", "TimeoutError"]
+      ]
+    },
+    {
+      "id": "NLR-01",
+      "benchmark": "NL2Repo",
+      "title": "生成企业级 JWT 鉴权 FastAPI 微服务脚手架",
+      "prompt": "【需求】：请为名为 `auth-service` 的微服务生成完整的项目代码仓库文件树及核心文件源码。\n项目结构必须包含：\n- `pyproject.toml` 或 `requirements.txt`\n- `Dockerfile`\n- `app/main.py`（FastAPI 入口）\n- `app/core/security.py`（JWT 编码与解码）\n- `app/api/v1/auth.py`（登录获取 Token 与受保护端点）\n- `tests/test_auth.py`（pytest 单元测试）\n请以清晰的 Markdown 多文件结构输出全部文件内容。",
+      "scoring": "multi_file_repo",
+      "required_files": ["pyproject.toml", "requirements.txt", "Dockerfile", "main.py", "security.py", "auth.py", "test_auth.py"]
+    },
+    {
+      "id": "NLR-02",
+      "benchmark": "NL2Repo",
+      "title": "生成现代化 CLI 命令行工具完整包结构",
+      "prompt": "【需求】：请使用 Typer 或 Click 框架，生成一个名为 `repocli` 的生产级命令行工具完整仓库。\n要求包含：\n1. `setup.py` 或 `pyproject.toml`（配置 `[project.scripts]` 入口点）；\n2. 包含两个子命令：`repocli analyze <dir>` 与 `repocli clean --dry-run`；\n3. 终端富文本输出（使用 rich 库打印彩色彩色表格）；\n4. 包含完整单元测试与目录结构。\n以 Markdown 代码块清晰列出各个文件的路径与代码。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["pyproject.toml", "setup.py"],
+        ["click", "typer"],
+        ["analyze", "clean"],
+        ["rich", "Table", "Console"]
+      ]
+    },
+    {
+      "id": "NLR-03",
+      "benchmark": "NL2Repo",
+      "title": "生成轻量本地 RAG 知识库检索微服务仓库",
+      "prompt": "【需求】：生成一个基于 SQLite + SentenceTransformers 向量存储的端到端 RAG 问答服务仓库。\n项目结构需包含：\n- `rag_engine/chunker.py`（文本分块器）\n- `rag_engine/vector_store.py`（向量嵌入与余弦相似度计算）\n- `api/server.py`（上传文档与提问接口）\n- `README.md`（安装与启动说明）\n请输出全部文件源码与目录结构。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["chunker.py", "vector_store.py", "server.py"],
+        ["cosine", "similarity", "embed"],
+        ["sqlite", "chroma", "numpy"],
+        ["FastAPI", "Flask", "uvicorn"]
+      ]
+    },
+    {
+      "id": "NLR-04",
+      "benchmark": "NL2Repo",
+      "title": "生成分布式异步任务队列 Worker 守护进程工程",
+      "prompt": "【需求】：请从零构建一个基于 Redis 的分布式后台任务队列微框架（命名为 `pytask-queue`）。\n要求包含：\n- `worker.py`（守护进程，持续轮询 Redis 队列并执行任务）\n- `client.py`（向队列提交任务并获取任务 UUID）\n- `tasks.py`（示例计算密集型任务定义）\n- 包含异常重试与死信队列（Dead Letter Queue）机制。\n以 Markdown 形式输出完整多文件仓库源码。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["worker.py", "client.py", "tasks.py"],
+        ["redis", "rpush", "blpop", "lpop"],
+        ["retry", "dead_letter", "重试", "DLQ"]
+      ]
+    },
+    {
+      "id": "GPQA-01",
+      "benchmark": "GPQA Diamond",
+      "title": "量子霍尔效应与朗道能级简并度计算",
+      "prompt": "【GPQA 钻石级数理题】：\n考虑一个面积为 $A = 1.0 \\times 10^{-4} \\text{ m}^2$ 的二维二维电子气体系，处于垂直向下的匀强强磁场 $B = 10.0 \\text{ T}$ 中。\n已知基本物理常数：\n- 电子电荷量 $e \\approx 1.602 \\times 10^{-19} \\text{ C}$\n- 普朗克常数 $h \\approx 6.626 \\times 10^{-34} \\text{ J}\\cdot\\text{s}$\n【问题】：单个朗道能级（Landau Level）的非自旋轨道简并度 $N_L = \\frac{e B A}{h}$ 是多少？（请计算该数值并给出四舍五入到科学计数法有效数字，例如 $2.42 \\times 10^{11}$）。\n请写出分步物理推导，并将最终数值结果写在 \\boxed{} 中。",
+      "scoring": "boxed_number",
+      "expected_number": 2.418,
+      "expected_alt": [2.42, 2.418, 2.4177],
+      "tolerance": 0.05
+    },
+    {
+      "id": "GPQA-02",
+      "benchmark": "GPQA Diamond",
+      "title": "手性催化不对称合成产物立体构型判定",
+      "prompt": "【GPQA 钻石级有机化学题】：\n在使用 $(R,R)$-DIPAMP 手性膦配体修饰的铑催化剂进行 $\\alpha$-乙酰氨基肉桂酸甲酯的不对称催化氢化反应中：\n1. 氢化生成的主要产物对映异构体的绝对立体构型是 $(R)$ 构型还是 $(S)$ 构型？\n2. 依据 Halpern 提出的机理，产物立体化学是由低浓度高活性的“次要非对映异构体中间体（Minor Intermediate）”决定，还是由“主要非对映异构体中间体”决定？\n请写出机理分析，并将最终构型与机理关键结论写入 \\boxed{} 中（例如 \\boxed{(R)构型, 次要中间体决定}）。",
+      "scoring": "exact_keywords",
+      "required_groups": [
+        ["(S)", "(S)构型", "(S)-对映异构体", "S构型", "S enantiomer"],
+        ["次要中间体", "Minor intermediate", "低浓度高活性", "反反应活性控制"]
+      ]
+    },
+    {
+      "id": "GPQA-03",
+      "benchmark": "GPQA Diamond",
+      "title": "代数拓扑 CW-复形同调群与贝蒂数推导",
+      "prompt": "【GPQA 钻石级数学题】：\n设空间 $X$ 是由一个 2-球面 $S^2$ 与一个圆周 $S^1$ 在一点粘合而成的楔和空间（即 $X = S^2 \\vee S^1$）。\n1. 计算空间 $X$ 的各阶奇异同调群 $H_0(X), H_1(X), H_2(X), H_3(X)$（系数取整数环 $\\mathbb{Z}$）；\n2. 计算该空间的欧拉示性数 $\\chi(X) = b_0 - b_1 + b_2 - b_3$（其中 $b_k = \\text{rank}(H_k(X))$ 为第 $k$ 阶贝蒂数）。\n请给出严密推导，并将欧拉示性数 $\\chi(X)$ 的整数值写在 \\boxed{} 中。",
+      "scoring": "boxed_number",
+      "expected_number": 1,
+      "tolerance": 0.01
+    },
+    {
+      "id": "GPQA-04",
+      "benchmark": "GPQA Diamond",
+      "title": "CRISPR-Cas9 靶向解旋自由能与脱靶动力学",
+      "prompt": "【GPQA 钻石级分子生物学题】：\n在 CRISPR-Cas9 系统中，sgRNA 与靶 DNA 杂交形成 R-loop 结构。\n已知在紧邻 PAM 序列的 1-8 bp 区域（称为“种子序列 Seed Region”），单碱基错配会导致 R-loop 解旋自由能剧烈升高，从而极大阻断 Cas9 构象由非活性态向具有切割活性的 HNH/RuvC 结构域构象转变。\n问题：为什么种子区域（Seed region）的错配对切割活性的抑制作用显著强于 PAM 远端（非种子区 13-20 bp）的错配？请从自由能壁垒与构象激活门控（Checkpoint）的角度给出权威解释。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["种子序列", "种子区", "Seed region", "1-8"],
+        ["R-loop", "解旋", "自由能", "能量壁垒"],
+        ["构象转变", "HNH", "RuvC", "变构激活", "Checkpoint"]
+      ]
+    },
+    {
+      "id": "HLE-01",
+      "benchmark": "HLE",
+      "title": "跨学科形式认识论与模态认知逻辑反证证明",
+      "prompt": "【人类终极考试 HLE - 哲学与模态逻辑题】：\n在认识逻辑系统（Epistemic Logic S5 系统）中，算子 $K_i \\phi$ 表示“主体 $i$ 知道命题 $\\phi$”。已知公理：\n- 真理公理 (T 公理): $K_i \\phi \\to \\phi$\n- 正自省公理 (4 公理): $K_i \\phi \\to K_i K_i \\phi$\n- 知识闭包公理 (K 公理): $K_i(\\phi \\to \\psi) \\to (K_i \\phi \\to K_i \\psi)$\n【证明命题】：证明“如果不可知命题存在（即存在某个命题 $p$，使得 $p$ 为真但主体 $i$ 不知道 $p$，记为 $p \\land \\neg K_i p$），则主体 $i$ 绝对不可能知道该事实（即必然有 $\\neg K_i(p \\land \\neg K_i p)$）”。（此为著名的菲奇认知悖论 Fitch's Paradox of Knowability 核心引理）。\n请写出严谨的符号化演绎反证法推导步骤，并将最终结论写在 \\boxed{} 中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["反证法", "假设", "K(p \\land \\neg K p)"],
+        ["T公理", "分配律", "K p \\land K \\neg K p", "矛盾"],
+        ["\\neg K(p \\land \\neg K p)"]
+      ]
+    },
+    {
+      "id": "HLE-02",
+      "benchmark": "HLE",
+      "title": "Kerr 旋转黑洞能层能量提取彭罗斯过程极限",
+      "prompt": "【人类终极考试 HLE - 广义相对论题】：\n在克尔（Kerr）旋转黑洞时空中，黑洞质量为 $M$，自旋参数为 $a = J/M$（极端黑洞 $a = M$）。\n利用彭罗斯过程（Penrose Process）在能层（Ergosphere）中分裂粒子提取黑洞的旋转能量。\n【问题】：理论上，通过彭罗斯过程能够从极端克尔黑洞中提取出的最大能量占黑洞初始总质能 $M$ 的理论最大百分比（即能量转换效率 $\\eta_{\\text{max}}$）是多少？（精确到百分数小数点后一位，例如 29.3%）。\n请写出基于不可逆质量（Irreducible Mass $M_{\\text{irr}}$）的严格推导，并将最终百分比写入 \\boxed{} 中。",
+      "scoring": "boxed_number",
+      "expected_number": 29.3,
+      "expected_alt": [0.293, 29.29, 29.3],
+      "tolerance": 0.2
+    },
+    {
+      "id": "HLE-03",
+      "benchmark": "HLE",
+      "title": "算法博弈论 VCG 机制真实报价占优策略证明",
+      "prompt": "【人类终极考试 HLE - 算法博弈论题】：\n考虑广义 Vickrey-Clarke-Groves (VCG) 拍卖机制：每个参与者 $i$ 拥有私有真实估值函数 $v_i(k)$，提交报价函数 $b_i(k)$。机制选择使得社会福利最大的分配结果 $k^* = \\arg\\max_k \\sum_j b_j(k)$，并收取参与者 $i$ 的费用为：\n$$p_i = \\max_k \\sum_{j \\ne i} b_j(k) - \\sum_{j \\ne i} b_j(k^*)$$\n【任务】：证明真实报价（即 $b_i(k) = v_i(k)$）是每个参与者 $i$ 的严格弱占优策略（Dominant Strategy Incentive Compatible, DSIC），即不论其他参与者如何报价，如实申报自己的估值永远能最大化自己的净效用 $u_i = v_i(k^*) - p_i$。\n请写出分步数学推导，并将核心占优结论写入 \\boxed{} 中。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["净效用", "u_i = v_i(k^*) - p_i", "\\sum_{j \\ne i} b_j(k^*) + v_i(k^*)"],
+        ["argmax", "社会福利最大化", "占优策略", "DSIC"],
+        ["真实报价", "b_i = v_i"]
+      ]
+    },
+    {
+      "id": "HLE-04",
+      "benchmark": "HLE",
+      "title": "神经信息整合理论 IIT 全局整合信息量 Φ 计算",
+      "prompt": "【人类终极考试 HLE - 神经信息学与前沿意识科学题】：\n在托诺尼（Giulio Tononi）的信息整合理论（IIT 3.0/4.0）中：\n1. 核心度量指标 $\\Phi^{\\text{max}}$（整合信息量）代表什么物理与认知意义？\n2. 为什么一个纯粹的前馈神经网络（Feedforward Neural Network），无论其包含多少亿个神经元与连接，其理论 $\\Phi$ 值恒等于 0？\n3. 说明为什么“不可被最小信息分区（MIP）无损割裂的循环反馈因果拓扑（Recurrent Causal Structure）”是产生非零 $\\Phi$ 的必要条件。\n请写出严谨的系统动力学分析。",
+      "scoring": "semantic_multi",
+      "required_aspects": [
+        ["\\Phi", "整合信息量", "不可约化", "整体大于部分之和"],
+        ["前馈", "无反馈", "无循环回路", "可无损分割", "\\Phi=0"],
+        ["最小信息分区", "MIP", "反馈回路", "双向因果"]
+      ]
+    }
+  ]
+}

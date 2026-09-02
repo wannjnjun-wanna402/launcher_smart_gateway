@@ -1,0 +1,9 @@
+config,task,tok_s,accept
+A_budget2048,code,87.23,None
+A_budget2048,factual,97.43,None
+A_budget2048,json,113.55,None
+A_budget2048,reasoning,99.91,None
+B_budgetUnbounded,code,104.57,None
+B_budgetUnbounded,factual,87.2,None
+B_budgetUnbounded,json,109.49,None
+B_budgetUnbounded,reasoning,96.51,None

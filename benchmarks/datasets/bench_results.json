@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Qwen3VL-8B-Instruct-Q4_K_M",
+    "file": "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+    "cold_start_s": 11.0,
+    "ttft_s": null,
+    "prompt_tps": 215.0,
+    "gen_tps": 87.1,
+    "bestfor": "视觉理解 图文对话",
+    "status": "ok"
+  },
+  {
+    "name": "Qwen3.6-27B-MTP-IQ4_XS-Q8nextn",
+    "file": "Qwen3.6-27B-MTP-IQ4_XS-Q8nextn.gguf",
+    "cold_start_s": 38.0,
+    "ttft_s": null,
+    "prompt_tps": 71.6,
+    "gen_tps": 45.0,
+    "bestfor": "越狱文本 轻量投机",
+    "status": "ok"
+  },
+  {
+    "name": "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P",
+    "file": "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
+    "cold_start_s": 41.1,
+    "ttft_s": null,
+    "prompt_tps": 51.9,
+    "gen_tps": 26.0,
+    "bestfor": "深度自由 长文创作",
+    "status": "ok"
+  },
+  {
+    "name": "Qwen3.6-35B-A3B-APEX-MTP-I-Compact",
+    "file": "Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf",
+    "cold_start_s": 28.0,
+    "ttft_s": null,
+    "prompt_tps": 37.7,
+    "gen_tps": 70.3,
+    "bestfor": "极速思考 投机加速",
+    "status": "ok"
+  },
+  {
+    "name": "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M",
+    "file": "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+    "cold_start_s": 36.2,
+    "ttft_s": 0.0,
+    "prompt_tps": 75.7,
+    "gen_tps": 75.0,
+    "bestfor": "极速自由 图文畅聊",
+    "status": "ok"
+  },
+  {
+    "name": "Ornith-1.0-35B-UD-Q4_K_XL",
+    "file": "Ornith-1.0-35B-UD-Q4_K_XL.gguf",
+    "cold_start_s": 38.1,
+    "ttft_s": null,
+    "prompt_tps": 72.3,
+    "gen_tps": 71.7,
+    "bestfor": "深度对话 精准回答",
+    "status": "ok"
+  }
+]

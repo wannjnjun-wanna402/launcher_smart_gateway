@@ -1,0 +1,27 @@
+llama.cpp 输出速度测速汇总 (v2)
+模型: Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf
+GPU: Tesla V100-PCIE-32GB | 驱动模式: unknown
+生成长度: n_predict=1024 | 任务数: 5 | 配置数: 17
+测量: /completion timings.predicted_per_second (解码 tok/s)
+================================================================
+
+排名  配置                        平均        最高        最低
+----------------------------------------------------
+1   ron_mtpn3            104.60    118.53     79.81
+2   roff_mtpn3           103.85    117.20     79.88
+3   ron_mtpn2            103.61    111.51     88.32
+4   ron_mtp4_c32768      103.61    120.64     72.02
+5   roff_mtpn2           103.24    110.74     87.71
+6   ron_mtpn4            103.18    119.58     71.65
+7   roff_mtpn4           103.14    119.84     72.18
+8   ron_mtp4_b4096       102.13    118.54     71.60
+9   ron_mtpn5             98.23    120.91     62.22
+10  roff_mtpn5            97.80    119.43     61.81
+11  ron_mtpn6             95.01    117.34     56.91
+12  roff_mtpn6            94.93    117.45     56.67
+13  roff_mtpoff           80.70     81.19     80.31
+14  ron_mtpoff            80.69     81.27     80.27
+15  ron_mtpn8             76.50    110.69     43.05
+16  roff_mtpn8            76.50    111.31     42.82
+
+（ron_=思考开 roff_=思考关 | mtpN=MTP n-max=N | mtpoff=关MTP | bN=batch | c32768=ctx 32768 | flashoff=关flash-attn）

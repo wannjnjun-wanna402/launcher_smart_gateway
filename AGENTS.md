@@ -1,0 +1,112 @@
+# 项目编码规则
+
+## 中文编码格式标准
+
+本项目所有含中文的文本文件统一遵守以下编码标准：
+
+| 文件类型 | 编码格式 | 说明 |
+|:---------|:---------|:------|
+| `.bat` / `.cmd` | **UTF-8 without BOM** + `chcp 65001` | cmd.exe 用 65001 代码页正确显示中文 |
+| `.ps1` | **UTF-8 with BOM** | Windows PowerShell 5.1 需要 BOM 识别中文 |
+| `.py` | **UTF-8 without BOM** | Python 标准，PEP 8 规范 |
+| `.md` / `.json` / `.yaml` / `.toml` | **UTF-8 without BOM** | 通用标准 |
+
+### 实际文件对照
+
+| 文件 | 当前编码 | 状态 |
+|:-----|:---------|:-----|
+| `启动奇迹API网关.bat` | UTF-8 + chcp 65001 | ✅ |
+| `launcher_main.ps1` | UTF-8 with BOM | ✅ |
+| `miracle_api.py` | UTF-8 | ✅ |
+| `hermes_llama_proxy.py` | UTF-8 | ✅ |
+
+### 注意事项
+
+- 创建或修改含中文的文件时，写入前显式指定编码
+- 读取含中文文件时优先用 utf-8-sig 以兼容有无 BOM
+- 禁止使用 GBK/GB2312/CP936 编码写入新文件
+- 遇到 GBK 旧文件时转换为 UTF-8（.bat 转 UTF-8 + chcp 65001）
+
+---
+
+## 🔴 多模型顺序测评 — 不可犯的错误
+
+> 2026-08-03 真实事故复盘：旧脚本因清理不彻底导致两个 llama-server 同时占用 GPU，GPU 占用 31.6%，测试数据无效。
+
+### 1. 多模型切换时，必须彻底清理
+
+- ❌ 错误做法：只杀端口 8081（`Get-NetTCPConnection -LocalPort 8081`）
+  - 原因：llama-server 先加载模型到显存，再监听端口。加载期间端口未开，杀端口无效。
+- ✅ 正确做法：
+  1. `Get-Process | Where-Object { $_.ProcessName -match 'llama' }` 杀所有 llama 进程
+  2. 再杀端口 8081 占用
+  3. **循环检查 GPU 显存**（`nvidia-smi --query-gpu=memory.used`），低于 500MB 才算干净
+  4. 最多等 60 秒，超时打印警告但不阻塞
+
+### 2. 结果文件禁止同名覆盖
+
+- ❌ 错误做法：`Qwen3.5-4B_real_eval.json`（每次覆盖）
+- ✅ 正确做法：`Qwen3.5-4B_real_eval_20260803_103910.json`（加时间戳）
+
+### 3. RAG 回传搜索结果 — 不用 tool role
+
+- ❌ 错误做法：用 `role: "tool"` 回传，llama.cpp 不识别，返回空响应
+- ✅ 正确做法：把搜索结果作为新的 `user` 消息注入
+- ✅ 同时：RAG 阶段**不提供 tools**（`tools=None`），强制模型生成文本
+
+### 4. 搜索引擎 — 国内可用才用
+
+| 搜索引擎 | 国内可用 | 中文质量 | 用法 |
+|:---------|:--------:|:--------:|:-----|
+| 搜狗 | ✅ | ✅ | 首选 |
+| 360 | ✅ | ✅ | 备用 |
+| Bing HTML | ✅ | ⚠️ 差 | 兜底（全球内容） |
+| DuckDuckGo | ❌ 被墙 | — | 不要用 |
+| 百度 | ✅ | ✅ | 反爬严重，纯爬取解析不到 |
+
+### 5. 评分系统 — 不该调工具的题也要给 tools
+
+- ❌ 错误：`should_call_tool=False` 的题不给 `tools` → 模型当然不调，但这测不出决策能力
+- ✅ 正确：所有题目都给 `tools=[SEARCH_TOOL]`，让模型自己决定调不调
+
+### 6. Windows 特定陷阱
+
+| 陷阱 | 正确做法 |
+|:-----|:---------|
+| 正则里的 `\"` 在 PowerShell 中截断 | 正则中避免使用 `\"`，改用 `[^\"]` 或其他写法 |
+| 直接用 `python` 命令 | 用完整路径 `C:\...\Python313\python.exe` |
+| BAT 脚本中文 | UTF-8 + `chcp 65001`，或者纯英文输出 |
+| 启动器调用 | 用 `powershell -NoProfile -ExecutionPolicy Bypass -File launcher_main.ps1` |
+
+### 7. 全模型测评前必做检查
+
+```powershell
+# 确认无残留进程
+Get-Process -Name llama* | Format-Table Id, ProcessName, Handles
+
+# 确认显存正常
+nvidia-smi --query-gpu=name,memory.used,utilization.gpu --format=csv
+
+# 如果有残留，清理
+Get-Process -Name llama* | Stop-Process -Force
+```
+
+---
+
+## 📋 服务日志命名与单日累加标准（严格遵守）
+
+未来新增任何后端端口、网关、侧挂引擎或额外功能，其产生的日志必须**严格遵守以下规范**：
+
+### 1. 命名格式规范
+- **标准格式**：`[端口号]_[功能名]_[YYYYMMDD].log`（端口号在最前，功能中缀在中间，年月日后缀在最后）。
+- **标准对照示例**：
+  - `8081_proxy_20260902.log`：8081 智能协同网关日志（计费/协议转译/流水）
+  - `8083_llama_20260902.log`：8083 主脑推理引擎日志
+  - `8085_sidecar_20260902.log`：8085 视觉侧挂眼睛日志
+  - `8087_locate_20260902.log`：（如未来新增 8087 定位专项引擎）
+
+### 2. 单日单一文件持续累加规则
+- ❌ **严禁拆分**：禁止按时间点分割多个文件，禁止拆分为 `.out.log` 与 `.err.log`。
+- ✅ **唯一累加**：同类服务在当天只允许产生**唯一一个** `.log` 文件，每次重启或产生新日志均以 `append`（追加）模式写入。
+- ✅ **自动落盘**：Python 服务内置 `DailyProxyLogger` 双写控制台与当日日志；`llama-server` 统一挂载 `--log-file` 参数。
+

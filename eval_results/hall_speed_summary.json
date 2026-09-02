@@ -1,0 +1,95 @@
+{
+  "timestamp": "20260803_182126",
+  "speed_test_config": {
+    "prompt_preview": "请写一篇关于人工智能在医疗领域应用前景的论述文，要求结构清晰、论点充分、有具体案例。包含引言、三个核心论点（每点不少于 ...",
+    "rounds_per_model": 5,
+    "method": "平均 tok/s（completion_tokens / gen_time），不含峰值"
+  },
+  "hallucination_config": {
+    "total_questions": 10,
+    "method": "模型指出虚构=100分；未确认陷阱=80分；落入陷阱=0分"
+  },
+  "models": {
+    "Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 87.8,
+      "min_tok_s": 87.4,
+      "max_tok_s": 88.1,
+      "speed_rounds": 5
+    },
+    "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 60.0,
+      "min_tok_s": 59.9,
+      "max_tok_s": 60.0,
+      "speed_rounds": 5
+    },
+    "Qwen3VL-8B-Instruct-Q4_K_M": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 84.4,
+      "min_tok_s": 84.1,
+      "max_tok_s": 84.5,
+      "speed_rounds": 5
+    },
+    "Qwen3.6-27B-Fable-Fus-711-UnHeretic-NM-DAU-NEO-MAX-NEO-MTP-Q5_K_M": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 32.4,
+      "min_tok_s": 30.1,
+      "max_tok_s": 34.4,
+      "speed_rounds": 5
+    },
+    "Qwen3.6-27B-MTP-IQ4_XS-Q8nextn": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 45.1,
+      "min_tok_s": 43.6,
+      "max_tok_s": 46.6,
+      "speed_rounds": 5
+    },
+    "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 28.0,
+      "min_tok_s": 27.9,
+      "max_tok_s": 28.2,
+      "speed_rounds": 5
+    },
+    "Ornith-1.0-35B-UD-Q4_K_XL": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 72.1,
+      "min_tok_s": 71.7,
+      "max_tok_s": 72.6,
+      "speed_rounds": 5
+    },
+    "Qwen3.6-35B-A3B-APEX-MTP-I-Compact": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 82.7,
+      "min_tok_s": 80.3,
+      "max_tok_s": 84.2,
+      "speed_rounds": 5
+    },
+    "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M": {
+      "hallucination_score": 0.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10,
+      "avg_tok_s": 77.7,
+      "min_tok_s": 77.0,
+      "max_tok_s": 78.3,
+      "speed_rounds": 5
+    }
+  }
+}

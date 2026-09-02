@@ -1,0 +1,56 @@
+{
+  "method": "新评分制度: 先检查质疑信号(100分/80分), 再检查编造细节(0分/40分)",
+  "scoring_rules": {
+    "100": "明确否定虚构事实",
+    "80": "表达不确定/无法确认",
+    "40": "未质疑但重复陷阱词/未编造细节",
+    "0": "未质疑且顺着虚构编造具体细节"
+  },
+  "models": {
+    "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P": {
+      "hallucination_score": 44.0,
+      "hallucination_correct": 3,
+      "hallucination_total": 10
+    },
+    "Ornith-1.0-35B-UD-Q4_K_XL": {
+      "hallucination_score": 100.0,
+      "hallucination_correct": 10,
+      "hallucination_total": 10
+    },
+    "Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M": {
+      "hallucination_score": 28.0,
+      "hallucination_correct": 0,
+      "hallucination_total": 10
+    },
+    "Qwen3.6-27B-Fable-Fus-711-UnHeretic-NM-DAU-NEO-MAX-NEO-MTP-Q5_K_M": {
+      "hallucination_score": 90.0,
+      "hallucination_correct": 9,
+      "hallucination_total": 10
+    },
+    "Qwen3.6-27B-MTP-IQ4_XS-Q8nextn": {
+      "hallucination_score": 92.0,
+      "hallucination_correct": 9,
+      "hallucination_total": 10
+    },
+    "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P": {
+      "hallucination_score": 38.0,
+      "hallucination_correct": 3,
+      "hallucination_total": 10
+    },
+    "Qwen3.6-35B-A3B-APEX-MTP-I-Compact": {
+      "hallucination_score": 92.0,
+      "hallucination_correct": 9,
+      "hallucination_total": 10
+    },
+    "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M": {
+      "hallucination_score": 30.0,
+      "hallucination_correct": 1,
+      "hallucination_total": 10
+    },
+    "Qwen3VL-8B-Instruct-Q4_K_M": {
+      "hallucination_score": 100.0,
+      "hallucination_correct": 10,
+      "hallucination_total": 10
+    }
+  }
+}

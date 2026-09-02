@@ -1,0 +1,7 @@
+Timestamp,Config_Label,Config_Desc,Task_ID,Task_Category,Prompt_Tokens,Completion_Tokens,Prompt_Speed_TokS,Gen_Speed_TokS,Elapsed_Sec,Draft_N,Draft_Accepted,Draft_Accept_Rate,Success
+2026-08-28 23:33:55,DFlash2_n4,DFlash2 单项定制测试 (n-max=4),gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,102.9,45.88,11.97,512,,N/A,True
+2026-08-28 23:34:11,DFlash2_n4,DFlash2 单项定制测试 (n-max=4),python_code,代码编写 (High Regularity),205,512,102.5,34.62,15.62,700,,N/A,True
+2026-08-28 23:34:25,DFlash2_n4,DFlash2 单项定制测试 (n-max=4),json_structured,结构化数据 (JSON Schema),234,512,117.09,43.34,12.78,554,,N/A,True
+2026-08-28 23:34:36,DFlash2_n4,DFlash2 单项定制测试 (n-max=4),translation_en2zh,文献翻译 (Linguistic Conversion),240,384,121.98,46.25,9.3,382,,N/A,True
+2026-08-28 23:34:54,DFlash2_n4,DFlash2 单项定制测试 (n-max=4),creative_long,开放长文 (Low Predictability),214,512,125.47,29.88,17.91,811,,N/A,True
+2026-08-28 23:35:13,DFlash2_n4,DFlash2 单项定制测试 (n-max=4),template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,122.61,29.94,17.92,802,,N/A,True

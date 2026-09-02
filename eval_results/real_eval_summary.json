@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-08-03T14:55:30.711969",
+  "models": {
+    "Qwen3.5-4B": {
+      "decision": 20.0,
+      "query": 23.5,
+      "answer": 19.3,
+      "total": 62.8
+    },
+    "Gemma-4-E4B": {
+      "decision": 18.0,
+      "query": 20.7,
+      "answer": 19.7,
+      "total": 58.4
+    },
+    "Qwen3VL-8B": {
+      "decision": 18.0,
+      "query": 21.1,
+      "answer": 17.5,
+      "total": 56.6
+    },
+    "Qwen3.6-27B-UC": {
+      "decision": 14.0,
+      "query": 16.4,
+      "answer": 17.0,
+      "total": 47.4
+    },
+    "Qwen3.6-27B-MTP-IQ4": {
+      "decision": 20.0,
+      "query": 22.6,
+      "answer": 20.7,
+      "total": 63.3
+    },
+    "Qwen3.6-27B-711-MTP": {
+      "decision": 20.0,
+      "query": 23.2,
+      "answer": 20.2,
+      "total": 63.4
+    },
+    "Ornith-1.0-35B-UD": {
+      "decision": 20.0,
+      "query": 23.2,
+      "answer": 20.1,
+      "total": 63.3
+    },
+    "Qwen3.6-35B-UC": {
+      "decision": 12.0,
+      "query": 13.5,
+      "answer": 16.6,
+      "total": 42.1
+    },
+    "Qwen3.6-35B-MTP": {
+      "decision": 12.0,
+      "query": 14.1,
+      "answer": 17.5,
+      "total": 43.6
+    }
+  }
+}

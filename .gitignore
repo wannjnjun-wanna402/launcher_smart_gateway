@@ -1,0 +1,44 @@
+# ============================================================
+#  Git 忽略规则清单 (.gitignore)
+#  严禁将庞大的二进制文件、大模型、编译库及日志提交到 Git 仓库中
+# ============================================================
+
+# 1. 大模型与权重文件
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.onnx
+
+# 2. 二进制可执行文件与动态链接库
+*.exe
+*.dll
+*.lib
+*.so
+*.dylib
+*.pyd
+
+# 3. 日志与运行时临时文件
+logs/
+*.log
+*.tmp
+*.bak
+temp_*.txt
+*.lnk
+
+# 4. Python 编译缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 5. Node.js 依赖与各 IDE 隐藏配置
+node_modules/
+.vscode/
+.atomcode/
+.reasonix/
+.trae/
+.workbuddy/
+
+# 6. 动态变化的数据账本（按需可忽略）
+token_billing_stats.json
+miracle_api_stats.json

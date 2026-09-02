@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "anytxt-mcp": {
+      "command": "C:\\Users\\wanna402\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "args": ["E:\\llama-win-cuda-12.4-x64\\anytxt_mcp.py"]
+    },
+    "bing-cn-mcp-server": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "bing-cn-mcp"],
+      "timeout_ms": 30000
+    },
+    "excel-mcp": {
+      "command": "uvx",
+      "args": ["excel-mcp-server", "stdio"]
+    },
+    "bilibili-mcp": {
+      "command": "C:\\Users\\wanna402\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "args": ["E:\\llama-win-cuda-12.4-x64\\bilibili_mcp\\mcp_server.py"]
+    },
+    "hotnews-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@wopal/mcp-server-hotnews"],
+      "timeout_ms": 30000
+    },
+    "cn-funds-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "cn-funds-mcp"],
+      "timeout_ms": 30000
+    }
+  }
+}

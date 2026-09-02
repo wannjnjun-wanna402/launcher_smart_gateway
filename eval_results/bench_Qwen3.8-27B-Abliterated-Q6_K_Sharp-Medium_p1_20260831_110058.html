@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen3.8 编程能力与工具调用专项测评报告</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-sub: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: #475569;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 24px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header {
+            margin-bottom: 28px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        h1 { font-size: 26px; font-weight: 700; color: var(--accent-cyan); display: flex; align-items: center; gap: 10px; }
+        .meta-tag { background: #0369a1; color: #e0f2fe; padding: 4px 10px; border-radius: 6px; font-size: 13px; }
+        
+        .grid-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
+        .card h3 { font-size: 15px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .big-num { font-size: 32px; font-weight: 800; }
+        .card .sub-text { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        
+        .c-green { color: var(--accent-green); }
+        .c-yellow { color: var(--accent-yellow); }
+        .c-red { color: var(--accent-red); }
+        .c-cyan { color: var(--accent-cyan); }
+        
+        .diagnosis-box {
+            background: linear-gradient(135deg, rgba(6,182,212,0.1) 0%, rgba(59,130,246,0.05) 100%);
+            border: 1px solid #0891b2;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .diagnosis-box h2 { font-size: 18px; color: var(--accent-cyan); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .diagnosis-box ul { padding-left: 20px; }
+        .diagnosis-box li { margin-bottom: 6px; font-size: 14px; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 14px;
+        }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background: var(--bg-card-sub); color: var(--text-main); font-weight: 600; }
+        tr:hover { background: rgba(255,255,255,0.03); }
+        
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-pass { background: rgba(16,185,129,0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+        .badge-fail { background: rgba(239,68,68,0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
+        .badge-tag { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+        
+        .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 15px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn.active { background: var(--accent-cyan); color: #000; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        pre {
+            background: #090d16;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-family: Consolas, Monaco, "Courier New", monospace;
+            font-size: 12px;
+            color: #cbd5e1;
+            overflow-x: auto;
+            max-height: 240px;
+        }
+        .code-detail { margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>⚡ Qwen3.8 编程能力与工具调用专项测评报告</h1>
+                <div style="margin-top: 6px; color: var(--text-muted); font-size: 13px;">
+                    生成时间: <span id="report-time">2026-08-31 11:00:58</span> | 评测范围: 聊天模板对比 (Official / Sharp / Fixed) × 模型权重 (A-Q6_K / Uncensored / NVFP4)
+                </div>
+            </div>
+            <div>
+                <span class="meta-tag">中级思维 (Medium Thinking)</span>
+                <span class="meta-tag">双并发与单并发隔离测试</span>
+            </div>
+        </header>
+
+        <!-- 核心指标摘要卡片 -->
+        <div class="grid-summary">
+            <div class="card">
+                <h3>工具调用平均分 (Tool Score)</h3>
+                <div class="big-num c-cyan" id="avg-tool-score">92.2</div>
+                <div class="sub-text">完美通过率: <span id="tool-pass-rate">81.2</span>% | 原生格式解析: <span id="native-parse-rate">100.0</span>%</div>
+            </div>
+            <div class="card">
+                <h3>编程能力 Pass@1 (Coding)</h3>
+                <div class="big-num c-green" id="avg-code-pass">100.0%</div>
+                <div class="sub-text">语法错误率: <span class="c-red" id="syntax-err-rate">0.0%</span> | 断言失败率: <span class="c-yellow" id="assert-fail-rate">0.0%</span></div>
+            </div>
+            <div class="card">
+                <h3>模板与格式兼容性</h3>
+                <div class="big-num c-yellow" id="thinking-leak-count">0</div>
+                <div class="sub-text">思维链泄露次数 (导致 JSON 截断/伪 XML 文本残留)</div>
+            </div>
+            <div class="card">
+                <h3>综合能力得分</h3>
+                <div class="big-num c-green" id="overall-score">96.1</div>
+                <div class="sub-text">评估配置: <span id="config-desc">E:\models\Qwen3.8-27B-Abliterated-Q6_K.gguf (Sharp-Medium, parallel-1)</span></div>
+            </div>
+        </div>
+
+        <!-- 诊断结论框 -->
+        <div class="diagnosis-box">
+            <h2>🔍 专项测评根因诊断与建议 (Expert Diagnostics)</h2>
+            <ul id="diagnostics-list">
+                <li><strong>【工具格式良好】</strong> 原生工具解析率达到 100.0%，Jinja 聊天模板与后端提取器配合稳定。</li>
+<li><strong>【编程性能优异】</strong> 单元测试 Pass@1 达到 100.0%，算法与工程代码生成质量极高。</li>
+<li><strong>【综合建议】</strong> 当前模型: <code>E:\models\Qwen3.8-27B-Abliterated-Q6_K.gguf</code> | 模板: <code>Sharp-Medium</code> | 建议在 PowerShell 脚本中按顺序对比 Official-Medium vs Sharp-Medium vs Fixed-Medium 选出最佳组合。</li>
+            </ul>
+        </div>
+
+        <!-- Tab 切换 -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('tab-tools')">🛠️ 工具调用逐题明细 (16 题)</button>
+            <button class="tab-btn" onclick="switchTab('tab-coding')">💻 编程能力逐题明细 (16 题)</button>
+            <button class="tab-btn" onclick="switchTab('tab-raw')">📦 原始 JSON 数据</button>
+        </div>
+
+        <!-- Tab 1: 工具调用明细 -->
+        <div id="tab-tools" class="tab-content active">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">题号</th>
+                        <th style="width: 140px;">类别</th>
+                        <th>提示词 (Prompt)</th>
+                        <th style="width: 120px;">预期工具</th>
+                        <th style="width: 100px;">状态</th>
+                        <th style="width: 70px;">耗时</th>
+                        <th>执行结果 / 错误诊断</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+        <tr>
+            <td><strong>TOOL_01</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>请帮我查一下杭州今天的天气怎么样？</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>4.24s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_02</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>请计算 (987654 * 321) / 123 的精确数学计算结果。</td>
+            <td><code>calculator</code></td>
+            <td><span class="badge badge-fail">FAIL</span></td>
+            <td>29.76s</td>
+            <td><div style="font-size:13px; color:#f87171">工具参数 JSON 解析失败: Unterminated string starting at: line 1 column 15 (char 14)</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_03</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>帮我搜索一下 2026 年最新发布的 llama.cpp 支持哪些新型量化格式。</td>
+            <td><code>web_search</code></td>
+            <td><span class="badge badge-fail">FAIL</span></td>
+            <td>29.68s</td>
+            <td><div style="font-size:13px; color:#f87171">工具参数 JSON 解析失败: Unterminated string starting at: line 1 column 10 (char 9)</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_04</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>查询 orders 表中 status 为 'completed' 的最近 10 条订单数据。</td>
+            <td><code>database_query</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>3.52s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_05</strong></td>
+            <td><span class="badge badge-tag">单工具触发</span></td>
+            <td>请在沙箱里运行一段 Python 代码，计算 1 到 1000 中所有质数的和。</td>
+            <td><code>execute_python_code</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>4.93s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_06</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>帮我查询一下纽约现在的天气，请用华氏度（fahrenheit）表示。</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.53s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_07</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>帮我预约明天上午 10:00 的'架构评审会'，时间是 2026-09-01 10:00:00，非全天事件，邀请 alice@example.com 和 bob@example.com 参加。</td>
+            <td><code>create_calendar_event</code></td>
+            <td><span class="badge badge-fail">FAIL</span></td>
+            <td>5.74s</td>
+            <td><div style="font-size:13px; color:#f87171">参数值不匹配: ["attendees=['alice@example.com', 'bob@example.com'](预期包含['alice@example.com', 'bob@example.com'])"]</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_08</strong></td>
+            <td><span class="badge badge-tag">多参数与类型约束</span></td>
+            <td>查询 users 表中所有 age_gt 大于 25 且 country 为 'CN' 的前 50 条活跃用户。</td>
+            <td><code>database_query</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>6.54s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_09</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>请写一首赞美西湖春天的七言绝句，要求意境优美。</td>
+            <td><code>不调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>28.74s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_10</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>请解释一下什么是 Python 的 GIL（全局解释器锁）以及它为什么存在？</td>
+            <td><code>不调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>23.03s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_11</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>桌子上有 3 个苹果，小明拿走了 2 个，桌上还剩几个苹果？请给出简明答案。</td>
+            <td><code>不调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>1.07s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_12</strong></td>
+            <td><span class="badge badge-tag">防误触发决策</span></td>
+            <td>请用中文把这句话翻译成英文：'代码质量和模型对齐是保障系统稳定性的基石。'</td>
+            <td><code>不调用</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>4.52s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_13</strong></td>
+            <td><span class="badge badge-tag">多轮工具闭环</span></td>
+            <td>请帮我查一下上海今天的天气，然后根据天气情况告诉我适不适合晨跑。</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>2.86s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_14</strong></td>
+            <td><span class="badge badge-tag">多轮工具闭环</span></td>
+            <td>帮我计算 (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) 的结果，并解释这个数值代表 4K 60fps 原始 RGB 视频一秒的什么指标。</td>
+            <td><code>calculator</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>9.17s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_15</strong></td>
+            <td><span class="badge badge-tag">边界与抗干扰</span></td>
+            <td>我想知道深圳今天下不下雨，另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。</td>
+            <td><code>get_current_weather</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>15.53s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>TOOL_16</strong></td>
+            <td><span class="badge badge-tag">边界与抗干扰</span></td>
+            <td>查询 orders 表中所有的订单，但是不要加 limit 参数。</td>
+            <td><code>database_query</code></td>
+            <td><span class="badge badge-pass">PASS</span></td>
+            <td>3.24s</td>
+            <td><div style="font-size:13px; color:#10b981">完美调用并解析参数</div></td>
+        </tr>
+        
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab 2: 编程测试明细 -->
+        <div id="tab-coding" class="tab-content">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">题号</th>
+                        <th style="width: 140px;">分类</th>
+                        <th>题目名称</th>
+                        <th style="width: 100px;">Pass@1</th>
+                        <th style="width: 70px;">耗时</th>
+                        <th>沙箱执行反馈 / 错误原因</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+        <tr>
+            <td><strong>CODE_01</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>两数之和 (Two Sum)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>11.11s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_02</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>有效括号匹配 (Valid Parentheses)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>6.49s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_03</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>合并区间 (Merge Intervals)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>12.18s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_04</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>LRU 缓存机制 (LRU Cache)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>19.97s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_05</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>字符串压缩 (String Compression)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>11.88s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_06</strong></td>
+            <td><span class="badge badge-tag">工程数据处理</span></td>
+            <td><strong>扁平化嵌套字典 (Flatten Nested Dict)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>22.42s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_07</strong></td>
+            <td><span class="badge badge-tag">工程数据处理</span></td>
+            <td><strong>正则提取与清洗 (Regex Extractor)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>24.61s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_08</strong></td>
+            <td><span class="badge badge-tag">工程数据处理</span></td>
+            <td><strong>JSON 深度安全合并 (Deep Merge Dicts)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>23.07s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_09</strong></td>
+            <td><span class="badge badge-tag">工程数据处理</span></td>
+            <td><strong>指数退避重试装饰器 (Retry Decorator)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>20.34s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_10</strong></td>
+            <td><span class="badge badge-tag">工程数据处理</span></td>
+            <td><strong>分页切片生成器 (Chunk Generator)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>4.82s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_11</strong></td>
+            <td><span class="badge badge-tag">代码Debug与修复</span></td>
+            <td><strong>修复二分查找边界 Bug</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>15.83s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_12</strong></td>
+            <td><span class="badge badge-tag">代码Debug与修复</span></td>
+            <td><strong>修复字典迭代中修改 Bug</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>6.9s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_13</strong></td>
+            <td><span class="badge badge-tag">代码Debug与修复</span></td>
+            <td><strong>修复矩阵转置维度不一致 Bug</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>17.12s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_14</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>最长连续序列 (Longest Consecutive Sequence)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>5.73s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_15</strong></td>
+            <td><span class="badge badge-tag">算法实现</span></td>
+            <td><strong>版本号比对 (Compare Version Numbers)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>6.63s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+
+        <tr>
+            <td><strong>CODE_16</strong></td>
+            <td><span class="badge badge-tag">工程数据处理</span></td>
+            <td><strong>安全 Token 桶限流器 (Rate Limiter)</strong></td>
+            <td><span class="badge badge-pass">PASS@1</span></td>
+            <td>17.68s</td>
+            <td>
+                <div style="font-size:13px; color:#10b981">单元测试全部通过</div>
+                
+            </td>
+        </tr>
+        
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab 3: JSON 数据 -->
+        <div id="tab-raw" class="tab-content">
+            <pre><code id="json-viewer">{
+  "metadata": {
+    "timestamp": "2026-08-31 11:00:58",
+    "model": "E:\\models\\Qwen3.8-27B-Abliterated-Q6_K.gguf",
+    "template_name": "Sharp-Medium",
+    "concurrency_mode": "parallel-1",
+    "api_base": "http://127.0.0.1:8081/v1",
+    "temperature": 0.2,
+    "max_tokens": 2048
+  },
+  "tool_calling": {
+    "summary": {
+      "total_questions": 16,
+      "avg_score": 92.2,
+      "pass_rate": 81.2,
+      "native_parse_rate": 100.0,
+      "json_valid_rate": 87.5,
+      "param_match_rate": 81.2,
+      "thinking_leak_count": 0
+    },
+    "details": [
+      {
+        "id": "TOOL_01",
+        "category": "单工具触发",
+        "prompt": "请帮我查一下杭州今天的天气怎么样？",
+        "should_call": true,
+        "expected_tool": "get_current_weather",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "get_current_weather",
+        "raw_arguments": "{\"city\":\"杭州\",\"unit\":\"celsius\"}",
+        "parsed_args": {
+          "city": "杭州",
+          "unit": "celsius"
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 4.24,
+        "raw_content": "",
+        "reasoning_content": "User wants to know today's weather in Hangzhou (杭州). I'll use the get_current_weather tool.\n"
+      },
+      {
+        "id": "TOOL_02",
+        "category": "单工具触发",
+        "prompt": "请计算 (987654 * 321) / 123 的精确数学计算结果。",
+        "should_call": true,
+        "expected_tool": "calculator",
+        "score": 50.0,
+        "passed": false,
+        "native_tool_called": true,
+        "tool_name": "calculator",
+        "raw_arguments": "{\"expression\":\"(987654 * 321) / 123\\n</think>\\n\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name",
+        "parsed_args": null,
+        "thinking_leak": false,
+        "error_reason": "工具参数 JSON 解析失败: Unterminated string starting at: line 1 column 15 (char 14)",
+        "elapsed_seconds": 29.76,
+        "raw_content": "",
+        "reasoning_content": "Simple calculation. Let me use the calculator tool.\n"
+      },
+      {
+        "id": "TOOL_03",
+        "category": "单工具触发",
+        "prompt": "帮我搜索一下 2026 年最新发布的 llama.cpp 支持哪些新型量化格式。",
+        "should_call": true,
+        "expected_tool": "web_search",
+        "score": 50.0,
+        "passed": false,
+        "native_tool_called": true,
+        "tool_name": "web_search",
+        "raw_arguments": "{\"query\":\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats",
+        "parsed_args": null,
+        "thinking_leak": false,
+        "error_reason": "工具参数 JSON 解析失败: Unterminated string starting at: line 1 column 10 (char 9)",
+        "elapsed_seconds": 29.68,
+        "raw_content": "",
+        "reasoning_content": "The user wants me to search for the latest llama.cpp release in 2026 and what new quantization formats it supports. Let me use the web_search tool to find this information.\n"
+      },
+      {
+        "id": "TOOL_04",
+        "category": "单工具触发",
+        "prompt": "查询 orders 表中 status 为 'completed' 的最近 10 条订单数据。",
+        "should_call": true,
+        "expected_tool": "database_query",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "database_query",
+        "raw_arguments": "{\"table_name\":\"orders\",\"filters\":{\"status\": \"completed\"},\"limit\":10}",
+        "parsed_args": {
+          "table_name": "orders",
+          "filters": {
+            "status": "completed"
+          },
+          "limit": 10
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 3.52,
+        "raw_content": "",
+        "reasoning_content": "The user wants to query the orders table for records where status is 'completed', limited to 10 records. I'll use the database_query tool.\n"
+      },
+      {
+        "id": "TOOL_05",
+        "category": "单工具触发",
+        "prompt": "请在沙箱里运行一段 Python 代码，计算 1 到 1000 中所有质数的和。",
+        "should_call": true,
+        "expected_tool": "execute_python_code",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "execute_python_code",
+        "raw_arguments": "{\"code\":\"def is_prime(n):\\n    if n < 2:\\n        return False\\n    for i in range(2, int(n**0.5) + 1):\\n        if n % i == 0:\\n            return False\\n    return True\\n\\ntotal = sum(i for i in range(1, 1001) if is_prime(i))\\nprint(total)\\n\\\"\"}",
+        "parsed_args": {
+          "code": "def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n\ntotal = sum(i for i in range(1, 1001) if is_prime(i))\nprint(total)\n\""
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 4.93,
+        "raw_content": "",
+        "reasoning_content": "User wants me to run Python code in the sandbox to calculate the sum of all primes from 1 to 1000.\n"
+      },
+      {
+        "id": "TOOL_06",
+        "category": "多参数与类型约束",
+        "prompt": "帮我查询一下纽约现在的天气，请用华氏度（fahrenheit）表示。",
+        "should_call": true,
+        "expected_tool": "get_current_weather",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "get_current_weather",
+        "raw_arguments": "{\"city\":\"纽约\",\"unit\":\"fahrenheit\"}",
+        "parsed_args": {
+          "city": "纽约",
+          "unit": "fahrenheit"
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 2.53,
+        "raw_content": "",
+        "reasoning_content": "User wants current weather in New York in Fahrenheit.\n"
+      },
+      {
+        "id": "TOOL_07",
+        "category": "多参数与类型约束",
+        "prompt": "帮我预约明天上午 10:00 的'架构评审会'，时间是 2026-09-01 10:00:00，非全天事件，邀请 alice@example.com 和 bob@example.com 参加。",
+        "should_call": true,
+        "expected_tool": "create_calendar_event",
+        "score": 75.0,
+        "passed": false,
+        "native_tool_called": true,
+        "tool_name": "create_calendar_event",
+        "raw_arguments": "{\"title\":\"架构评审会\",\"start_time\":\"2026-09-01 10:00:00\",\"is_all_day\":false,\"attendees\":[\"alice@example.com\", \"bob@example.com\"]}",
+        "parsed_args": {
+          "title": "架构评审会",
+          "start_time": "2026-09-01 10:00:00",
+          "is_all_day": false,
+          "attendees": [
+            "alice@example.com",
+            "bob@example.com"
+          ]
+        },
+        "thinking_leak": false,
+        "error_reason": "参数值不匹配: [\"attendees=['alice@example.com', 'bob@example.com'](预期包含['alice@example.com', 'bob@example.com'])\"]",
+        "elapsed_seconds": 5.74,
+        "raw_content": "",
+        "reasoning_content": "The user wants to create a calendar event with the following details:\n- Title: 架构评审会\n- Start time: 2026-09-01 10:00:00\n- Not all day (is_all_day: false)\n- Attendees: alice@example.com, bob@example.com"
+      },
+      {
+        "id": "TOOL_08",
+        "category": "多参数与类型约束",
+        "prompt": "查询 users 表中所有 age_gt 大于 25 且 country 为 'CN' 的前 50 条活跃用户。",
+        "should_call": true,
+        "expected_tool": "database_query",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "database_query",
+        "raw_arguments": "{\"table_name\":\"users\",\"filters\":{\"age_gt\": 25, \"country\": \"CN\", \"status\": \"active\"},\"limit\":50}",
+        "parsed_args": {
+          "table_name": "users",
+          "filters": {
+            "age_gt": 25,
+            "country": "CN",
+            "status": "active"
+          },
+          "limit": 50
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 6.54,
+        "raw_content": "",
+        "reasoning_content": "The user wants to query the users table with filters: age_gt > 25, country = 'CN', and they want active users (status = \"active\"), limited to 50 records.\n\nLooking at the database_query tool:\n- table_n"
+      },
+      {
+        "id": "TOOL_09",
+        "category": "防误触发决策",
+        "prompt": "请写一首赞美西湖春天的七言绝句，要求意境优美。",
+        "should_call": false,
+        "expected_tool": null,
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": false,
+        "tool_name": null,
+        "raw_arguments": null,
+        "parsed_args": null,
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 28.74,
+        "raw_content": "春水初生柳色新，桃花十里映湖滨。\n轻舟载得三分醉，烟雨西湖最可人。",
+        "reasoning_content": "The user asks for a seven-character quatrain (七言绝句) praising the spring at West Lake, with beautiful imagery. This is a creative writing task — no tools needed.\n\nLet me compose one:\n\nRequirements:\n- 七"
+      },
+      {
+        "id": "TOOL_10",
+        "category": "防误触发决策",
+        "prompt": "请解释一下什么是 Python 的 GIL（全局解释器锁）以及它为什么存在？",
+        "should_call": false,
+        "expected_tool": null,
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": false,
+        "tool_name": null,
+        "raw_arguments": null,
+        "parsed_args": null,
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 23.03,
+        "raw_content": "## 什么是 GIL\n\nGIL（Global Interpreter Lock，全局解释器锁）是 CPython 解释器中的一把互斥锁。在任意时刻，**只有一个线程能执行 Python 字节码**。即使机器有多核 CPU，CPython 中的多线程也无法让多个线程真正并行地执行 Python 代码。\n\n## 为什么存在\n\n核心原因是 **CPython 的内存管理模型**：\n\n1. **引用计数**：CPython 用引用计数来管理对象生命周期。每个对象内部有一个 `ob_refcnt` 字段，每次赋值、传参、删除都会修改它。如果两个线程同时读写同一个对象的引用计数，不加保护就会出现竞态条件（比如计数从 1 变成 0 后对象被释放，另一个线程还在用——use-after-free）。\n\n2. **简化 C 层实现**：CPython 的底层是 C 代码，大量数据结构（字典、列表、字符串等）",
+        "reasoning_content": "The user asks about Python's GIL (Global Interpreter Lock) and why it exists. This is a knowledge question that I can answer directly without any tools. Let me provide a clear, accurate explanation.\n\n"
+      },
+      {
+        "id": "TOOL_11",
+        "category": "防误触发决策",
+        "prompt": "桌子上有 3 个苹果，小明拿走了 2 个，桌上还剩几个苹果？请给出简明答案。",
+        "should_call": false,
+        "expected_tool": null,
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": false,
+        "tool_name": null,
+        "raw_arguments": null,
+        "parsed_args": null,
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 1.07,
+        "raw_content": "1 个。",
+        "reasoning_content": "Simple math: 3 - 2 = 1.\n"
+      },
+      {
+        "id": "TOOL_12",
+        "category": "防误触发决策",
+        "prompt": "请用中文把这句话翻译成英文：'代码质量和模型对齐是保障系统稳定性的基石。'",
+        "should_call": false,
+        "expected_tool": null,
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": false,
+        "tool_name": null,
+        "raw_arguments": null,
+        "parsed_args": null,
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 4.52,
+        "raw_content": "\"Code quality and model alignment are the cornerstones of system stability.\"",
+        "reasoning_content": "The user wants me to translate a Chinese sentence into English. Let me analyze the sentence:\n\n\"代码质量和模型对齐是保障系统稳定性的基石。\"\n\n- 代码质量 = code quality\n- 模型对齐 = model alignment\n- 保障 = ensure/guarantee/safeguard\n"
+      },
+      {
+        "id": "TOOL_13",
+        "category": "多轮工具闭环",
+        "prompt": "请帮我查一下上海今天的天气，然后根据天气情况告诉我适不适合晨跑。",
+        "should_call": true,
+        "expected_tool": "get_current_weather",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "get_current_weather",
+        "raw_arguments": "{\"city\":\"上海\"}",
+        "parsed_args": {
+          "city": "上海"
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 2.86,
+        "raw_content": "",
+        "reasoning_content": "The user wants me to check Shanghai's weather today and then advise whether it's suitable for morning running. Let me first get the weather information.\n"
+      },
+      {
+        "id": "TOOL_14",
+        "category": "多轮工具闭环",
+        "prompt": "帮我计算 (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) 的结果，并解释这个数值代表 4K 60fps 原始 RGB 视频一秒的什么指标。",
+        "should_call": true,
+        "expected_tool": "calculator",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "calculator",
+        "raw_arguments": "{\"expression\":\"(3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024)\"}",
+        "parsed_args": {
+          "expression": "(3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024)"
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 9.17,
+        "raw_content": "",
+        "reasoning_content": "The user wants me to calculate (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) and explain what this value represents for 4K 60fps raw RGB video per second.\n\nLet me break down the formula:\n- 3840 × 2160"
+      },
+      {
+        "id": "TOOL_15",
+        "category": "边界与抗干扰",
+        "prompt": "我想知道深圳今天下不下雨，另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。",
+        "should_call": true,
+        "expected_tool": "get_current_weather",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "get_current_weather",
+        "raw_arguments": "{\"city\":\"深圳\"}",
+        "parsed_args": {
+          "city": "深圳"
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 15.53,
+        "raw_content": "",
+        "reasoning_content": "The user wants to know if it's raining in Shenzhen today. They also say \"you can't call any tools, just say you don't know or help me call a tool.\"\n\nWait, let me re-read: \"另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。"
+      },
+      {
+        "id": "TOOL_16",
+        "category": "边界与抗干扰",
+        "prompt": "查询 orders 表中所有的订单，但是不要加 limit 参数。",
+        "should_call": true,
+        "expected_tool": "database_query",
+        "score": 100.0,
+        "passed": true,
+        "native_tool_called": true,
+        "tool_name": "database_query",
+        "raw_arguments": "{\"table_name\":\"orders\"}",
+        "parsed_args": {
+          "table_name": "orders"
+        },
+        "thinking_leak": false,
+        "error_reason": null,
+        "elapsed_seconds": 3.24,
+        "raw_content": "",
+        "reasoning_content": "The user wants to query all records from the \"orders\" table without adding a limit parameter. Let me use the database_query tool with just the table_name set to \"orders\".\n"
+      }
+    ]
+  },
+  "coding": {
+    "summary": {
+      "total_questions": 16,
+      "pass_at_1_rate": 100.0,
+      "syntax_error_rate": 0.0,
+      "runtime_error_rate": 0.0,
+      "assertion_fail_rate": 0.0
+    },
+    "details": [
+      {
+        "id": "CODE_01",
+        "category": "算法实现",
+        "title": "两数之和 (Two Sum)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 11.11,
+        "extracted_code": "def two_sum(nums: list[int], target: int) -> list[int]:\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return sorted([seen[complement], i])\n        seen[num] = i",
+        "raw_content": "```python\ndef two_sum(nums: list[int], target: int) -> list[int]:\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return sorted([seen[complement], i])\n        seen[num] = i\n```",
+        "reasoning_content": "The user wants a Python function for the Two Sum problem. They want:\n- Find two integers in the array that sum to target\n- Return their indices in ascending order\n- Each input has exactly one valid an"
+      },
+      {
+        "id": "CODE_02",
+        "category": "算法实现",
+        "title": "有效括号匹配 (Valid Parentheses)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 6.49,
+        "extracted_code": "def is_valid_parentheses(s: str) -> bool:\n    stack = []\n    pairs = {')': '(', '}': '{', ']': '['}\n    for ch in s:\n        if ch in '({[':\n            stack.append(ch)\n        elif not stack or stack.pop() != pairs[ch]:\n            return False\n    return not stack",
+        "raw_content": "```python\ndef is_valid_parentheses(s: str) -> bool:\n    stack = []\n    pairs = {')': '(', '}': '{', ']': '['}\n    for ch in s:\n        if ch in '({[':\n            stack.append(ch)\n        elif not stack or stack.pop() != pairs[ch]:\n            return False\n    return not stack\n```",
+        "reasoning_content": "The user wants a Python function to validate parentheses. This is a classic stack-based problem. I need to output only the complete Python function code wrapped in ```python```.\n\nThe approach: use a s"
+      },
+      {
+        "id": "CODE_03",
+        "category": "算法实现",
+        "title": "合并区间 (Merge Intervals)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 12.18,
+        "extracted_code": "def merge_intervals(intervals: list[list[int]]) -> list[list[int]]:\n    if not intervals:\n        return []\n    intervals.sort(key=lambda x: x[0])\n    merged = [intervals[0]]\n    for i in range(1, len(intervals)):\n        if intervals[i][0] <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], intervals[i][1])\n        else:\n            merged.append(intervals[i])\n    return merged",
+        "raw_content": "```python\ndef merge_intervals(intervals: list[list[int]]) -> list[list[int]]:\n    if not intervals:\n        return []\n    intervals.sort(key=lambda x: x[0])\n    merged = [intervals[0]]\n    for i in range(1, len(intervals)):\n        if intervals[i][0] <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], intervals[i][1])\n        else:\n            merged.append(intervals[i])\n    return me",
+        "reasoning_content": "The user wants a Python function to merge overlapping intervals. This is a classic problem (LeetCode 56).\n\nApproach:\n1. Sort intervals by start point\n2. Iterate through sorted intervals, if current in"
+      },
+      {
+        "id": "CODE_04",
+        "category": "算法实现",
+        "title": "LRU 缓存机制 (LRU Cache)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 19.97,
+        "extracted_code": "class Node:\n    __slots__ = (\"key\", \"value\", \"prev\", \"next\")\n\n    def __init__(self, key: int = 0, value: int = 0):\n        self.key = key\n        self.value = value\n        self.prev = None\n        self.next = None\n\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        self.head = Node()  # dummy head\n        self.tail = Node()  # dummy tail\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    def _remove(self, node: Node) -> None:\n        node.prev.next = node.next\n        node.next.prev = node.prev\n\n    def _add_to_front(self, node: Node) -> None:\n        node.prev = self.head\n        node.next = self.head.next\n        self.head.next.prev = node\n        self.head.next = node\n\n    def get(self, key: int) -> int:\n        if key not in self.cache:\n            return -1\n        node = self.cache[key]\n        self._remove(node)\n        self._add_to_front(node)\n        return node.value\n\n    def put(self, key: int, value: int) -> None:\n        if key in self.cache:\n            node = self.cache[key]\n            node.value = value\n            self._remove(node)\n            self._add_to_front(node)\n        else:\n            node = Node(key, value)\n            self.cache[key] = node\n            self._add_to_front(node)\n            if len(self.cache) > self.capacity:\n                lru = self.tail.prev\n                self._remove(lru)\n                del self.cache[lru.key]",
+        "raw_content": "```python\nclass Node:\n    __slots__ = (\"key\", \"value\", \"prev\", \"next\")\n\n    def __init__(self, key: int = 0, value: int = 0):\n        self.key = key\n        self.value = value\n        self.prev = None\n        self.next = None\n\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        self.head = Node()  # dummy head\n  ",
+        "reasoning_content": "The user wants a Python implementation of an LRU Cache class with get and put operations. This is a classic problem that requires O(1) time complexity for both operations, typically solved using a has"
+      },
+      {
+        "id": "CODE_05",
+        "category": "算法实现",
+        "title": "字符串压缩 (String Compression)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 11.88,
+        "extracted_code": "def compress_string(s: str) -> str:\n    if not s:\n        return s\n    result = []\n    count = 1\n    for i in range(1, len(s)):\n        if s[i] == s[i - 1]:\n            count += 1\n        else:\n            result.append(s[i - 1] + str(count))\n            count = 1\n    result.append(s[-1] + str(count))\n    compressed = ''.join(result)\n    return compressed if len(compressed) < len(s) else s",
+        "raw_content": "```python\ndef compress_string(s: str) -> str:\n    if not s:\n        return s\n    result = []\n    count = 1\n    for i in range(1, len(s)):\n        if s[i] == s[i - 1]:\n            count += 1\n        else:\n            result.append(s[i - 1] + str(count))\n            count = 1\n    result.append(s[-1] + str(count))\n    compressed = ''.join(result)\n    return compressed if len(compressed) < len(s) else",
+        "reasoning_content": "The user wants a Python function that compresses a string by replacing consecutive repeated characters with the character followed by its count. If the compressed string is not shorter than the origin"
+      },
+      {
+        "id": "CODE_06",
+        "category": "工程数据处理",
+        "title": "扁平化嵌套字典 (Flatten Nested Dict)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 22.42,
+        "extracted_code": "def flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:\n    items = []\n    for k, v in d.items():\n        new_key = f\"{parent_key}{sep}{k}\" if parent_key else k\n        if isinstance(v, dict) and v:\n            items.extend(flatten_dict(v, new_key, sep).items())\n        else:\n            items.append((new_key, v))\n    return dict(items)",
+        "raw_content": "```python\ndef flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:\n    items = []\n    for k, v in d.items():\n        new_key = f\"{parent_key}{sep}{k}\" if parent_key else k\n        if isinstance(v, dict) and v:\n            items.extend(flatten_dict(v, new_key, sep).items())\n        else:\n            items.append((new_key, v))\n    return dict(items)\n```",
+        "reasoning_content": "The user wants a Python function that flattens a nested dictionary into a single-level dictionary. Let me think about the requirements:\n\n1. Function signature: `flatten_dict(d: dict, parent_key: str ="
+      },
+      {
+        "id": "CODE_07",
+        "category": "工程数据处理",
+        "title": "正则提取与清洗 (Regex Extractor)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 24.61,
+        "extracted_code": "import re\n\n\ndef extract_contact_info(text: str) -> dict:\n    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'\n    phone_pattern = r'(?<!\\d)1\\d{10}(?!\\d)'\n\n    emails = sorted(set(re.findall(email_pattern, text)))\n    phones = sorted(set(re.findall(phone_pattern, text)))\n\n    return {'emails': emails, 'phones': phones}",
+        "raw_content": "```python\nimport re\n\n\ndef extract_contact_info(text: str) -> dict:\n    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'\n    phone_pattern = r'(?<!\\d)1\\d{10}(?!\\d)'\n\n    emails = sorted(set(re.findall(email_pattern, text)))\n    phones = sorted(set(re.findall(phone_pattern, text)))\n\n    return {'emails': emails, 'phones': phones}\n```",
+        "reasoning_content": "The user wants a Python function that:\n1. Extracts all valid email addresses from text\n2. Extracts all domestic Chinese 11-digit phone numbers (starting with 1, 11 consecutive digits)\n3. Returns a dic"
+      },
+      {
+        "id": "CODE_08",
+        "category": "工程数据处理",
+        "title": "JSON 深度安全合并 (Deep Merge Dicts)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 23.07,
+        "extracted_code": "def deep_merge(dict1: dict, dict2: dict) -> dict:\n    result = dict1.copy()\n    for key, value in dict2.items():\n        if key in result and isinstance(result[key], dict) and isinstance(value, dict):\n            result[key] = deep_merge(result[key], value)\n        else:\n            result[key] = value\n    return result",
+        "raw_content": "```python\ndef deep_merge(dict1: dict, dict2: dict) -> dict:\n    result = dict1.copy()\n    for key, value in dict2.items():\n        if key in result and isinstance(result[key], dict) and isinstance(value, dict):\n            result[key] = deep_merge(result[key], value)\n        else:\n            result[key] = value\n    return result\n```",
+        "reasoning_content": "The user wants a Python function `deep_merge(dict1: dict, dict2: dict) -> dict` that:\n1. Deep recursively merges dict2 into dict1\n2. Returns a new dictionary (doesn't modify inputs)\n3. If same key exi"
+      },
+      {
+        "id": "CODE_09",
+        "category": "工程数据处理",
+        "title": "指数退避重试装饰器 (Retry Decorator)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 20.34,
+        "extracted_code": "import time\nfrom functools import wraps\n\n\ndef retry(max_attempts: int = 3, delay: float = 0.01, backoff: float = 2.0, exceptions: tuple = (Exception,)):\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            current_delay = delay\n            last_exception = None\n            for attempt in range(max_attempts):\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    last_exception = e\n                    if attempt < max_attempts - 1:\n                        time.sleep(current_delay)\n                        current_delay *= backoff\n            raise last_exception\n        return wrapper\n    return decorator",
+        "raw_content": "```python\nimport time\nfrom functools import wraps\n\n\ndef retry(max_attempts: int = 3, delay: float = 0.01, backoff: float = 2.0, exceptions: tuple = (Exception,)):\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            current_delay = delay\n            last_exception = None\n            for attempt in range(max_attempts):\n                try:\n                ",
+        "reasoning_content": "The user wants a Python decorator function `retry` with the specified signature. Let me write it carefully:\n\n- Parameters: max_attempts (int, default 3), delay (float, default 0.01), backoff (float, d"
+      },
+      {
+        "id": "CODE_10",
+        "category": "工程数据处理",
+        "title": "分页切片生成器 (Chunk Generator)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 4.82,
+        "extracted_code": "def chunk_list(lst: list, chunk_size: int) -> list[list]:\n    if not lst or chunk_size <= 0:\n        return []\n    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]",
+        "raw_content": "```python\ndef chunk_list(lst: list, chunk_size: int) -> list[list]:\n    if not lst or chunk_size <= 0:\n        return []\n    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]\n```",
+        "reasoning_content": "The user wants a Python function that splits a list into chunks of a given size. Requirements:\n- If chunk_size <= 0 or lst is empty, return []\n- Split into sublists of chunk_size, last one may be shor"
+      },
+      {
+        "id": "CODE_11",
+        "category": "代码Debug与修复",
+        "title": "修复二分查找边界 Bug",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 15.83,
+        "extracted_code": "def binary_search(arr: list[int], target: int) -> int:\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1",
+        "raw_content": "```python\ndef binary_search(arr: list[int], target: int) -> int:\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1\n```",
+        "reasoning_content": "The user wants me to fix a binary search function. Let me analyze the bugs:\n\n1. `right = len(arr)` — this makes the range [left, right] inclusive, but with `while left <= right`, when `mid` is compute"
+      },
+      {
+        "id": "CODE_12",
+        "category": "代码Debug与修复",
+        "title": "修复字典迭代中修改 Bug",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 6.9,
+        "extracted_code": "def clean_empty_keys(d: dict) -> dict:\n    for k in list(d.keys()):\n        if d[k] is None or d[k] == '':\n            del d[k]\n    return d",
+        "raw_content": "```python\ndef clean_empty_keys(d: dict) -> dict:\n    for k in list(d.keys()):\n        if d[k] is None or d[k] == '':\n            del d[k]\n    return d\n```",
+        "reasoning_content": "The user wants me to fix a function that removes keys with None or empty string values from a dictionary. The issue is modifying a dict while iterating over it.\n\nSolutions:\n1. Iterate over a copy of t"
+      },
+      {
+        "id": "CODE_13",
+        "category": "代码Debug与修复",
+        "title": "修复矩阵转置维度不一致 Bug",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 17.12,
+        "extracted_code": "def transpose_matrix(matrix: list[list[int]]) -> list[list[int]]:\n    if not matrix or all(not row for row in matrix):\n        return []\n    return [list(row) for row in zip(*matrix)]",
+        "raw_content": "```python\ndef transpose_matrix(matrix: list[list[int]]) -> list[list[int]]:\n    if not matrix or all(not row for row in matrix):\n        return []\n    return [list(row) for row in zip(*matrix)]\n```",
+        "reasoning_content": "The user wants a Python function that transposes a matrix. Let me think about the requirements:\n\n1. Function signature: `transpose_matrix(matrix: list[list[int]]) -> list[list[int]]`\n2. Returns the tr"
+      },
+      {
+        "id": "CODE_14",
+        "category": "算法实现",
+        "title": "最长连续序列 (Longest Consecutive Sequence)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 5.73,
+        "extracted_code": "def longest_consecutive(nums: list[int]) -> int:\n    s = set(nums)\n    best = 0\n    for n in s:\n        if n - 1 not in s:\n            length = 1\n            while n + length in s:\n                length += 1\n            best = max(best, length)\n    return best",
+        "raw_content": "```python\ndef longest_consecutive(nums: list[int]) -> int:\n    s = set(nums)\n    best = 0\n    for n in s:\n        if n - 1 not in s:\n            length = 1\n            while n + length in s:\n                length += 1\n            best = max(best, length)\n    return best\n```",
+        "reasoning_content": "The user wants a Python function that finds the length of the longest consecutive sequence in an unsorted array, with O(n) time complexity. The classic approach is to use a set: for each number, only "
+      },
+      {
+        "id": "CODE_15",
+        "category": "算法实现",
+        "title": "版本号比对 (Compare Version Numbers)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 6.63,
+        "extracted_code": "def compare_version(version1: str, version2: str) -> int:\n    v1 = [int(x) for x in version1.split('.')]\n    v2 = [int(x) for x in version2.split('.')]\n    n = max(len(v1), len(v2))\n    for i in range(n):\n        a = v1[i] if i < len(v1) else 0\n        b = v2[i] if i < len(v2) else 0\n        if a > b:\n            return 1\n        if a < b:\n            return -1\n    return 0",
+        "raw_content": "```python\ndef compare_version(version1: str, version2: str) -> int:\n    v1 = [int(x) for x in version1.split('.')]\n    v2 = [int(x) for x in version2.split('.')]\n    n = max(len(v1), len(v2))\n    for i in range(n):\n        a = v1[i] if i < len(v1) else 0\n        b = v2[i] if i < len(v2) else 0\n        if a > b:\n            return 1\n        if a < b:\n            return -1\n    return 0\n```",
+        "reasoning_content": "The user wants a Python function to compare two version strings. This is a classic problem (LeetCode 165). I need to split by '.', convert each part to int (to handle leading zeros), and compare part "
+      },
+      {
+        "id": "CODE_16",
+        "category": "工程数据处理",
+        "title": "安全 Token 桶限流器 (Rate Limiter)",
+        "passed": true,
+        "score": 100.0,
+        "error_type": null,
+        "error_msg": null,
+        "elapsed_seconds": 17.68,
+        "extracted_code": "import time\n\n\nclass TokenBucket:\n    def __init__(self, rate: float, capacity: float):\n        self.rate = rate\n        self.capacity = capacity\n        self.tokens = capacity\n        self.last_time = None\n\n    def consume(self, tokens: float = 1.0, current_time: float = None) -> bool:\n        if current_time is None:\n            current_time = time.time()\n\n        if self.last_time is not None:\n            elapsed = current_time - self.last_time\n            if elapsed > 0:\n                self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)\n\n        self.last_time = current_time\n\n        if self.tokens >= tokens:\n            self.tokens -= tokens\n            return True\n        return False",
+        "raw_content": "```python\nimport time\n\n\nclass TokenBucket:\n    def __init__(self, rate: float, capacity: float):\n        self.rate = rate\n        self.capacity = capacity\n        self.tokens = capacity\n        self.last_time = None\n\n    def consume(self, tokens: float = 1.0, current_time: float = None) -> bool:\n        if current_time is None:\n            current_time = time.time()\n\n        if self.last_time is n",
+        "reasoning_content": "The user wants a Python class implementing the token bucket rate limiting algorithm. Let me think through the requirements:\n\n1. Constructor `TokenBucket(rate: float, capacity: float)` - rate is tokens"
+      }
+    ]
+  },
+  "overall_score": 96.1
+}</code></pre>
+        </div>
+    </div>
+
+    <script>
+        window.RESULTS = {"metadata": {"timestamp": "2026-08-31 11:00:58", "model": "E:\\models\\Qwen3.8-27B-Abliterated-Q6_K.gguf", "template_name": "Sharp-Medium", "concurrency_mode": "parallel-1", "api_base": "http://127.0.0.1:8081/v1", "temperature": 0.2, "max_tokens": 2048}, "tool_calling": {"summary": {"total_questions": 16, "avg_score": 92.2, "pass_rate": 81.2, "native_parse_rate": 100.0, "json_valid_rate": 87.5, "param_match_rate": 81.2, "thinking_leak_count": 0}, "details": [{"id": "TOOL_01", "category": "单工具触发", "prompt": "请帮我查一下杭州今天的天气怎么样？", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"杭州\",\"unit\":\"celsius\"}", "parsed_args": {"city": "杭州", "unit": "celsius"}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 4.24, "raw_content": "", "reasoning_content": "User wants to know today's weather in Hangzhou (杭州). I'll use the get_current_weather tool.\n"}, {"id": "TOOL_02", "category": "单工具触发", "prompt": "请计算 (987654 * 321) / 123 的精确数学计算结果。", "should_call": true, "expected_tool": "calculator", "score": 50.0, "passed": false, "native_tool_called": true, "tool_name": "calculator", "raw_arguments": "{\"expression\":\"(987654 * 321) / 123\\n</think>\\n\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"calculator\\\", \\\"arguments\\\": {\\\"expression\\\": \\\"(987654 * 321) / 123\\\"}}\\n</tool_call>\\n<tool_call>\\n{\\\"name", "parsed_args": null, "thinking_leak": false, "error_reason": "工具参数 JSON 解析失败: Unterminated string starting at: line 1 column 15 (char 14)", "elapsed_seconds": 29.76, "raw_content": "", "reasoning_content": "Simple calculation. Let me use the calculator tool.\n"}, {"id": "TOOL_03", "category": "单工具触发", "prompt": "帮我搜索一下 2026 年最新发布的 llama.cpp 支持哪些新型量化格式。", "should_call": true, "expected_tool": "web_search", "score": 50.0, "passed": false, "native_tool_called": true, "tool_name": "web_search", "raw_arguments": "{\"query\":\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats supported\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 new quantization format support release\\\", \\\"num_results\\\": 8}}\\n</tool_call>\\n<tool_call>\\n{\\\"name\\\": \\\"web_search\\\", \\\"arguments\\\": {\\\"query\\\": \\\"llama.cpp 2026 latest release new quantization formats", "parsed_args": null, "thinking_leak": false, "error_reason": "工具参数 JSON 解析失败: Unterminated string starting at: line 1 column 10 (char 9)", "elapsed_seconds": 29.68, "raw_content": "", "reasoning_content": "The user wants me to search for the latest llama.cpp release in 2026 and what new quantization formats it supports. Let me use the web_search tool to find this information.\n"}, {"id": "TOOL_04", "category": "单工具触发", "prompt": "查询 orders 表中 status 为 'completed' 的最近 10 条订单数据。", "should_call": true, "expected_tool": "database_query", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "database_query", "raw_arguments": "{\"table_name\":\"orders\",\"filters\":{\"status\": \"completed\"},\"limit\":10}", "parsed_args": {"table_name": "orders", "filters": {"status": "completed"}, "limit": 10}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 3.52, "raw_content": "", "reasoning_content": "The user wants to query the orders table for records where status is 'completed', limited to 10 records. I'll use the database_query tool.\n"}, {"id": "TOOL_05", "category": "单工具触发", "prompt": "请在沙箱里运行一段 Python 代码，计算 1 到 1000 中所有质数的和。", "should_call": true, "expected_tool": "execute_python_code", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "execute_python_code", "raw_arguments": "{\"code\":\"def is_prime(n):\\n    if n < 2:\\n        return False\\n    for i in range(2, int(n**0.5) + 1):\\n        if n % i == 0:\\n            return False\\n    return True\\n\\ntotal = sum(i for i in range(1, 1001) if is_prime(i))\\nprint(total)\\n\\\"\"}", "parsed_args": {"code": "def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n\ntotal = sum(i for i in range(1, 1001) if is_prime(i))\nprint(total)\n\""}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 4.93, "raw_content": "", "reasoning_content": "User wants me to run Python code in the sandbox to calculate the sum of all primes from 1 to 1000.\n"}, {"id": "TOOL_06", "category": "多参数与类型约束", "prompt": "帮我查询一下纽约现在的天气，请用华氏度（fahrenheit）表示。", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"纽约\",\"unit\":\"fahrenheit\"}", "parsed_args": {"city": "纽约", "unit": "fahrenheit"}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.53, "raw_content": "", "reasoning_content": "User wants current weather in New York in Fahrenheit.\n"}, {"id": "TOOL_07", "category": "多参数与类型约束", "prompt": "帮我预约明天上午 10:00 的'架构评审会'，时间是 2026-09-01 10:00:00，非全天事件，邀请 alice@example.com 和 bob@example.com 参加。", "should_call": true, "expected_tool": "create_calendar_event", "score": 75.0, "passed": false, "native_tool_called": true, "tool_name": "create_calendar_event", "raw_arguments": "{\"title\":\"架构评审会\",\"start_time\":\"2026-09-01 10:00:00\",\"is_all_day\":false,\"attendees\":[\"alice@example.com\", \"bob@example.com\"]}", "parsed_args": {"title": "架构评审会", "start_time": "2026-09-01 10:00:00", "is_all_day": false, "attendees": ["alice@example.com", "bob@example.com"]}, "thinking_leak": false, "error_reason": "参数值不匹配: [\"attendees=['alice@example.com', 'bob@example.com'](预期包含['alice@example.com', 'bob@example.com'])\"]", "elapsed_seconds": 5.74, "raw_content": "", "reasoning_content": "The user wants to create a calendar event with the following details:\n- Title: 架构评审会\n- Start time: 2026-09-01 10:00:00\n- Not all day (is_all_day: false)\n- Attendees: alice@example.com, bob@example.com"}, {"id": "TOOL_08", "category": "多参数与类型约束", "prompt": "查询 users 表中所有 age_gt 大于 25 且 country 为 'CN' 的前 50 条活跃用户。", "should_call": true, "expected_tool": "database_query", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "database_query", "raw_arguments": "{\"table_name\":\"users\",\"filters\":{\"age_gt\": 25, \"country\": \"CN\", \"status\": \"active\"},\"limit\":50}", "parsed_args": {"table_name": "users", "filters": {"age_gt": 25, "country": "CN", "status": "active"}, "limit": 50}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 6.54, "raw_content": "", "reasoning_content": "The user wants to query the users table with filters: age_gt > 25, country = 'CN', and they want active users (status = \"active\"), limited to 50 records.\n\nLooking at the database_query tool:\n- table_n"}, {"id": "TOOL_09", "category": "防误触发决策", "prompt": "请写一首赞美西湖春天的七言绝句，要求意境优美。", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 28.74, "raw_content": "春水初生柳色新，桃花十里映湖滨。\n轻舟载得三分醉，烟雨西湖最可人。", "reasoning_content": "The user asks for a seven-character quatrain (七言绝句) praising the spring at West Lake, with beautiful imagery. This is a creative writing task — no tools needed.\n\nLet me compose one:\n\nRequirements:\n- 七"}, {"id": "TOOL_10", "category": "防误触发决策", "prompt": "请解释一下什么是 Python 的 GIL（全局解释器锁）以及它为什么存在？", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 23.03, "raw_content": "## 什么是 GIL\n\nGIL（Global Interpreter Lock，全局解释器锁）是 CPython 解释器中的一把互斥锁。在任意时刻，**只有一个线程能执行 Python 字节码**。即使机器有多核 CPU，CPython 中的多线程也无法让多个线程真正并行地执行 Python 代码。\n\n## 为什么存在\n\n核心原因是 **CPython 的内存管理模型**：\n\n1. **引用计数**：CPython 用引用计数来管理对象生命周期。每个对象内部有一个 `ob_refcnt` 字段，每次赋值、传参、删除都会修改它。如果两个线程同时读写同一个对象的引用计数，不加保护就会出现竞态条件（比如计数从 1 变成 0 后对象被释放，另一个线程还在用——use-after-free）。\n\n2. **简化 C 层实现**：CPython 的底层是 C 代码，大量数据结构（字典、列表、字符串等）", "reasoning_content": "The user asks about Python's GIL (Global Interpreter Lock) and why it exists. This is a knowledge question that I can answer directly without any tools. Let me provide a clear, accurate explanation.\n\n"}, {"id": "TOOL_11", "category": "防误触发决策", "prompt": "桌子上有 3 个苹果，小明拿走了 2 个，桌上还剩几个苹果？请给出简明答案。", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 1.07, "raw_content": "1 个。", "reasoning_content": "Simple math: 3 - 2 = 1.\n"}, {"id": "TOOL_12", "category": "防误触发决策", "prompt": "请用中文把这句话翻译成英文：'代码质量和模型对齐是保障系统稳定性的基石。'", "should_call": false, "expected_tool": null, "score": 100.0, "passed": true, "native_tool_called": false, "tool_name": null, "raw_arguments": null, "parsed_args": null, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 4.52, "raw_content": "\"Code quality and model alignment are the cornerstones of system stability.\"", "reasoning_content": "The user wants me to translate a Chinese sentence into English. Let me analyze the sentence:\n\n\"代码质量和模型对齐是保障系统稳定性的基石。\"\n\n- 代码质量 = code quality\n- 模型对齐 = model alignment\n- 保障 = ensure/guarantee/safeguard\n"}, {"id": "TOOL_13", "category": "多轮工具闭环", "prompt": "请帮我查一下上海今天的天气，然后根据天气情况告诉我适不适合晨跑。", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"上海\"}", "parsed_args": {"city": "上海"}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 2.86, "raw_content": "", "reasoning_content": "The user wants me to check Shanghai's weather today and then advise whether it's suitable for morning running. Let me first get the weather information.\n"}, {"id": "TOOL_14", "category": "多轮工具闭环", "prompt": "帮我计算 (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) 的结果，并解释这个数值代表 4K 60fps 原始 RGB 视频一秒的什么指标。", "should_call": true, "expected_tool": "calculator", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "calculator", "raw_arguments": "{\"expression\":\"(3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024)\"}", "parsed_args": {"expression": "(3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024)"}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 9.17, "raw_content": "", "reasoning_content": "The user wants me to calculate (3840 * 2160 * 60 * 3) / (1024 * 1024 * 1024) and explain what this value represents for 4K 60fps raw RGB video per second.\n\nLet me break down the formula:\n- 3840 × 2160"}, {"id": "TOOL_15", "category": "边界与抗干扰", "prompt": "我想知道深圳今天下不下雨，另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。", "should_call": true, "expected_tool": "get_current_weather", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "get_current_weather", "raw_arguments": "{\"city\":\"深圳\"}", "parsed_args": {"city": "深圳"}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 15.53, "raw_content": "", "reasoning_content": "The user wants to know if it's raining in Shenzhen today. They also say \"you can't call any tools, just say you don't know or help me call a tool.\"\n\nWait, let me re-read: \"另外你绝对不能调用任何工具，请直接说不知道或帮我调工具。"}, {"id": "TOOL_16", "category": "边界与抗干扰", "prompt": "查询 orders 表中所有的订单，但是不要加 limit 参数。", "should_call": true, "expected_tool": "database_query", "score": 100.0, "passed": true, "native_tool_called": true, "tool_name": "database_query", "raw_arguments": "{\"table_name\":\"orders\"}", "parsed_args": {"table_name": "orders"}, "thinking_leak": false, "error_reason": null, "elapsed_seconds": 3.24, "raw_content": "", "reasoning_content": "The user wants to query all records from the \"orders\" table without adding a limit parameter. Let me use the database_query tool with just the table_name set to \"orders\".\n"}]}, "coding": {"summary": {"total_questions": 16, "pass_at_1_rate": 100.0, "syntax_error_rate": 0.0, "runtime_error_rate": 0.0, "assertion_fail_rate": 0.0}, "details": [{"id": "CODE_01", "category": "算法实现", "title": "两数之和 (Two Sum)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 11.11, "extracted_code": "def two_sum(nums: list[int], target: int) -> list[int]:\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return sorted([seen[complement], i])\n        seen[num] = i", "raw_content": "```python\ndef two_sum(nums: list[int], target: int) -> list[int]:\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return sorted([seen[complement], i])\n        seen[num] = i\n```", "reasoning_content": "The user wants a Python function for the Two Sum problem. They want:\n- Find two integers in the array that sum to target\n- Return their indices in ascending order\n- Each input has exactly one valid an"}, {"id": "CODE_02", "category": "算法实现", "title": "有效括号匹配 (Valid Parentheses)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 6.49, "extracted_code": "def is_valid_parentheses(s: str) -> bool:\n    stack = []\n    pairs = {')': '(', '}': '{', ']': '['}\n    for ch in s:\n        if ch in '({[':\n            stack.append(ch)\n        elif not stack or stack.pop() != pairs[ch]:\n            return False\n    return not stack", "raw_content": "```python\ndef is_valid_parentheses(s: str) -> bool:\n    stack = []\n    pairs = {')': '(', '}': '{', ']': '['}\n    for ch in s:\n        if ch in '({[':\n            stack.append(ch)\n        elif not stack or stack.pop() != pairs[ch]:\n            return False\n    return not stack\n```", "reasoning_content": "The user wants a Python function to validate parentheses. This is a classic stack-based problem. I need to output only the complete Python function code wrapped in ```python```.\n\nThe approach: use a s"}, {"id": "CODE_03", "category": "算法实现", "title": "合并区间 (Merge Intervals)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 12.18, "extracted_code": "def merge_intervals(intervals: list[list[int]]) -> list[list[int]]:\n    if not intervals:\n        return []\n    intervals.sort(key=lambda x: x[0])\n    merged = [intervals[0]]\n    for i in range(1, len(intervals)):\n        if intervals[i][0] <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], intervals[i][1])\n        else:\n            merged.append(intervals[i])\n    return merged", "raw_content": "```python\ndef merge_intervals(intervals: list[list[int]]) -> list[list[int]]:\n    if not intervals:\n        return []\n    intervals.sort(key=lambda x: x[0])\n    merged = [intervals[0]]\n    for i in range(1, len(intervals)):\n        if intervals[i][0] <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], intervals[i][1])\n        else:\n            merged.append(intervals[i])\n    return me", "reasoning_content": "The user wants a Python function to merge overlapping intervals. This is a classic problem (LeetCode 56).\n\nApproach:\n1. Sort intervals by start point\n2. Iterate through sorted intervals, if current in"}, {"id": "CODE_04", "category": "算法实现", "title": "LRU 缓存机制 (LRU Cache)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 19.97, "extracted_code": "class Node:\n    __slots__ = (\"key\", \"value\", \"prev\", \"next\")\n\n    def __init__(self, key: int = 0, value: int = 0):\n        self.key = key\n        self.value = value\n        self.prev = None\n        self.next = None\n\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        self.head = Node()  # dummy head\n        self.tail = Node()  # dummy tail\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    def _remove(self, node: Node) -> None:\n        node.prev.next = node.next\n        node.next.prev = node.prev\n\n    def _add_to_front(self, node: Node) -> None:\n        node.prev = self.head\n        node.next = self.head.next\n        self.head.next.prev = node\n        self.head.next = node\n\n    def get(self, key: int) -> int:\n        if key not in self.cache:\n            return -1\n        node = self.cache[key]\n        self._remove(node)\n        self._add_to_front(node)\n        return node.value\n\n    def put(self, key: int, value: int) -> None:\n        if key in self.cache:\n            node = self.cache[key]\n            node.value = value\n            self._remove(node)\n            self._add_to_front(node)\n        else:\n            node = Node(key, value)\n            self.cache[key] = node\n            self._add_to_front(node)\n            if len(self.cache) > self.capacity:\n                lru = self.tail.prev\n                self._remove(lru)\n                del self.cache[lru.key]", "raw_content": "```python\nclass Node:\n    __slots__ = (\"key\", \"value\", \"prev\", \"next\")\n\n    def __init__(self, key: int = 0, value: int = 0):\n        self.key = key\n        self.value = value\n        self.prev = None\n        self.next = None\n\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        self.head = Node()  # dummy head\n  ", "reasoning_content": "The user wants a Python implementation of an LRU Cache class with get and put operations. This is a classic problem that requires O(1) time complexity for both operations, typically solved using a has"}, {"id": "CODE_05", "category": "算法实现", "title": "字符串压缩 (String Compression)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 11.88, "extracted_code": "def compress_string(s: str) -> str:\n    if not s:\n        return s\n    result = []\n    count = 1\n    for i in range(1, len(s)):\n        if s[i] == s[i - 1]:\n            count += 1\n        else:\n            result.append(s[i - 1] + str(count))\n            count = 1\n    result.append(s[-1] + str(count))\n    compressed = ''.join(result)\n    return compressed if len(compressed) < len(s) else s", "raw_content": "```python\ndef compress_string(s: str) -> str:\n    if not s:\n        return s\n    result = []\n    count = 1\n    for i in range(1, len(s)):\n        if s[i] == s[i - 1]:\n            count += 1\n        else:\n            result.append(s[i - 1] + str(count))\n            count = 1\n    result.append(s[-1] + str(count))\n    compressed = ''.join(result)\n    return compressed if len(compressed) < len(s) else", "reasoning_content": "The user wants a Python function that compresses a string by replacing consecutive repeated characters with the character followed by its count. If the compressed string is not shorter than the origin"}, {"id": "CODE_06", "category": "工程数据处理", "title": "扁平化嵌套字典 (Flatten Nested Dict)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 22.42, "extracted_code": "def flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:\n    items = []\n    for k, v in d.items():\n        new_key = f\"{parent_key}{sep}{k}\" if parent_key else k\n        if isinstance(v, dict) and v:\n            items.extend(flatten_dict(v, new_key, sep).items())\n        else:\n            items.append((new_key, v))\n    return dict(items)", "raw_content": "```python\ndef flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:\n    items = []\n    for k, v in d.items():\n        new_key = f\"{parent_key}{sep}{k}\" if parent_key else k\n        if isinstance(v, dict) and v:\n            items.extend(flatten_dict(v, new_key, sep).items())\n        else:\n            items.append((new_key, v))\n    return dict(items)\n```", "reasoning_content": "The user wants a Python function that flattens a nested dictionary into a single-level dictionary. Let me think about the requirements:\n\n1. Function signature: `flatten_dict(d: dict, parent_key: str ="}, {"id": "CODE_07", "category": "工程数据处理", "title": "正则提取与清洗 (Regex Extractor)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 24.61, "extracted_code": "import re\n\n\ndef extract_contact_info(text: str) -> dict:\n    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'\n    phone_pattern = r'(?<!\\d)1\\d{10}(?!\\d)'\n\n    emails = sorted(set(re.findall(email_pattern, text)))\n    phones = sorted(set(re.findall(phone_pattern, text)))\n\n    return {'emails': emails, 'phones': phones}", "raw_content": "```python\nimport re\n\n\ndef extract_contact_info(text: str) -> dict:\n    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'\n    phone_pattern = r'(?<!\\d)1\\d{10}(?!\\d)'\n\n    emails = sorted(set(re.findall(email_pattern, text)))\n    phones = sorted(set(re.findall(phone_pattern, text)))\n\n    return {'emails': emails, 'phones': phones}\n```", "reasoning_content": "The user wants a Python function that:\n1. Extracts all valid email addresses from text\n2. Extracts all domestic Chinese 11-digit phone numbers (starting with 1, 11 consecutive digits)\n3. Returns a dic"}, {"id": "CODE_08", "category": "工程数据处理", "title": "JSON 深度安全合并 (Deep Merge Dicts)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 23.07, "extracted_code": "def deep_merge(dict1: dict, dict2: dict) -> dict:\n    result = dict1.copy()\n    for key, value in dict2.items():\n        if key in result and isinstance(result[key], dict) and isinstance(value, dict):\n            result[key] = deep_merge(result[key], value)\n        else:\n            result[key] = value\n    return result", "raw_content": "```python\ndef deep_merge(dict1: dict, dict2: dict) -> dict:\n    result = dict1.copy()\n    for key, value in dict2.items():\n        if key in result and isinstance(result[key], dict) and isinstance(value, dict):\n            result[key] = deep_merge(result[key], value)\n        else:\n            result[key] = value\n    return result\n```", "reasoning_content": "The user wants a Python function `deep_merge(dict1: dict, dict2: dict) -> dict` that:\n1. Deep recursively merges dict2 into dict1\n2. Returns a new dictionary (doesn't modify inputs)\n3. If same key exi"}, {"id": "CODE_09", "category": "工程数据处理", "title": "指数退避重试装饰器 (Retry Decorator)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 20.34, "extracted_code": "import time\nfrom functools import wraps\n\n\ndef retry(max_attempts: int = 3, delay: float = 0.01, backoff: float = 2.0, exceptions: tuple = (Exception,)):\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            current_delay = delay\n            last_exception = None\n            for attempt in range(max_attempts):\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    last_exception = e\n                    if attempt < max_attempts - 1:\n                        time.sleep(current_delay)\n                        current_delay *= backoff\n            raise last_exception\n        return wrapper\n    return decorator", "raw_content": "```python\nimport time\nfrom functools import wraps\n\n\ndef retry(max_attempts: int = 3, delay: float = 0.01, backoff: float = 2.0, exceptions: tuple = (Exception,)):\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            current_delay = delay\n            last_exception = None\n            for attempt in range(max_attempts):\n                try:\n                ", "reasoning_content": "The user wants a Python decorator function `retry` with the specified signature. Let me write it carefully:\n\n- Parameters: max_attempts (int, default 3), delay (float, default 0.01), backoff (float, d"}, {"id": "CODE_10", "category": "工程数据处理", "title": "分页切片生成器 (Chunk Generator)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 4.82, "extracted_code": "def chunk_list(lst: list, chunk_size: int) -> list[list]:\n    if not lst or chunk_size <= 0:\n        return []\n    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]", "raw_content": "```python\ndef chunk_list(lst: list, chunk_size: int) -> list[list]:\n    if not lst or chunk_size <= 0:\n        return []\n    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]\n```", "reasoning_content": "The user wants a Python function that splits a list into chunks of a given size. Requirements:\n- If chunk_size <= 0 or lst is empty, return []\n- Split into sublists of chunk_size, last one may be shor"}, {"id": "CODE_11", "category": "代码Debug与修复", "title": "修复二分查找边界 Bug", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 15.83, "extracted_code": "def binary_search(arr: list[int], target: int) -> int:\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1", "raw_content": "```python\ndef binary_search(arr: list[int], target: int) -> int:\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1\n```", "reasoning_content": "The user wants me to fix a binary search function. Let me analyze the bugs:\n\n1. `right = len(arr)` — this makes the range [left, right] inclusive, but with `while left <= right`, when `mid` is compute"}, {"id": "CODE_12", "category": "代码Debug与修复", "title": "修复字典迭代中修改 Bug", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 6.9, "extracted_code": "def clean_empty_keys(d: dict) -> dict:\n    for k in list(d.keys()):\n        if d[k] is None or d[k] == '':\n            del d[k]\n    return d", "raw_content": "```python\ndef clean_empty_keys(d: dict) -> dict:\n    for k in list(d.keys()):\n        if d[k] is None or d[k] == '':\n            del d[k]\n    return d\n```", "reasoning_content": "The user wants me to fix a function that removes keys with None or empty string values from a dictionary. The issue is modifying a dict while iterating over it.\n\nSolutions:\n1. Iterate over a copy of t"}, {"id": "CODE_13", "category": "代码Debug与修复", "title": "修复矩阵转置维度不一致 Bug", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 17.12, "extracted_code": "def transpose_matrix(matrix: list[list[int]]) -> list[list[int]]:\n    if not matrix or all(not row for row in matrix):\n        return []\n    return [list(row) for row in zip(*matrix)]", "raw_content": "```python\ndef transpose_matrix(matrix: list[list[int]]) -> list[list[int]]:\n    if not matrix or all(not row for row in matrix):\n        return []\n    return [list(row) for row in zip(*matrix)]\n```", "reasoning_content": "The user wants a Python function that transposes a matrix. Let me think about the requirements:\n\n1. Function signature: `transpose_matrix(matrix: list[list[int]]) -> list[list[int]]`\n2. Returns the tr"}, {"id": "CODE_14", "category": "算法实现", "title": "最长连续序列 (Longest Consecutive Sequence)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 5.73, "extracted_code": "def longest_consecutive(nums: list[int]) -> int:\n    s = set(nums)\n    best = 0\n    for n in s:\n        if n - 1 not in s:\n            length = 1\n            while n + length in s:\n                length += 1\n            best = max(best, length)\n    return best", "raw_content": "```python\ndef longest_consecutive(nums: list[int]) -> int:\n    s = set(nums)\n    best = 0\n    for n in s:\n        if n - 1 not in s:\n            length = 1\n            while n + length in s:\n                length += 1\n            best = max(best, length)\n    return best\n```", "reasoning_content": "The user wants a Python function that finds the length of the longest consecutive sequence in an unsorted array, with O(n) time complexity. The classic approach is to use a set: for each number, only "}, {"id": "CODE_15", "category": "算法实现", "title": "版本号比对 (Compare Version Numbers)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 6.63, "extracted_code": "def compare_version(version1: str, version2: str) -> int:\n    v1 = [int(x) for x in version1.split('.')]\n    v2 = [int(x) for x in version2.split('.')]\n    n = max(len(v1), len(v2))\n    for i in range(n):\n        a = v1[i] if i < len(v1) else 0\n        b = v2[i] if i < len(v2) else 0\n        if a > b:\n            return 1\n        if a < b:\n            return -1\n    return 0", "raw_content": "```python\ndef compare_version(version1: str, version2: str) -> int:\n    v1 = [int(x) for x in version1.split('.')]\n    v2 = [int(x) for x in version2.split('.')]\n    n = max(len(v1), len(v2))\n    for i in range(n):\n        a = v1[i] if i < len(v1) else 0\n        b = v2[i] if i < len(v2) else 0\n        if a > b:\n            return 1\n        if a < b:\n            return -1\n    return 0\n```", "reasoning_content": "The user wants a Python function to compare two version strings. This is a classic problem (LeetCode 165). I need to split by '.', convert each part to int (to handle leading zeros), and compare part "}, {"id": "CODE_16", "category": "工程数据处理", "title": "安全 Token 桶限流器 (Rate Limiter)", "passed": true, "score": 100.0, "error_type": null, "error_msg": null, "elapsed_seconds": 17.68, "extracted_code": "import time\n\n\nclass TokenBucket:\n    def __init__(self, rate: float, capacity: float):\n        self.rate = rate\n        self.capacity = capacity\n        self.tokens = capacity\n        self.last_time = None\n\n    def consume(self, tokens: float = 1.0, current_time: float = None) -> bool:\n        if current_time is None:\n            current_time = time.time()\n\n        if self.last_time is not None:\n            elapsed = current_time - self.last_time\n            if elapsed > 0:\n                self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)\n\n        self.last_time = current_time\n\n        if self.tokens >= tokens:\n            self.tokens -= tokens\n            return True\n        return False", "raw_content": "```python\nimport time\n\n\nclass TokenBucket:\n    def __init__(self, rate: float, capacity: float):\n        self.rate = rate\n        self.capacity = capacity\n        self.tokens = capacity\n        self.last_time = None\n\n    def consume(self, tokens: float = 1.0, current_time: float = None) -> bool:\n        if current_time is None:\n            current_time = time.time()\n\n        if self.last_time is n", "reasoning_content": "The user wants a Python class implementing the token bucket rate limiting algorithm. Let me think through the requirements:\n\n1. Constructor `TokenBucket(rate: float, capacity: float)` - rate is tokens"}]}, "overall_score": 96.1};
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+</html>

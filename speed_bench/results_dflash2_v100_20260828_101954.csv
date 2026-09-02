@@ -1,0 +1,43 @@
+Config_Label,Config_Desc,Task_ID,Task_Category,Prompt_Tokens,Completion_Tokens,Prompt_Speed_tps,Gen_Speed_tps,Elapsed_Sec,Draft_N,Draft_Accepted,Draft_Accept_Rate,Success
+1_Baseline_NoSpec,基线方案：纯主模型 (无投机解码),gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,94.18,30.22,19.33,None,None,,True
+1_Baseline_NoSpec,基线方案：纯主模型 (无投机解码),python_code,代码编写 (High Regularity),205,512,130.85,30.92,17.09,None,None,,True
+1_Baseline_NoSpec,基线方案：纯主模型 (无投机解码),json_structured,结构化数据 (JSON Schema),234,512,73.39,31.53,17.50,None,None,,True
+1_Baseline_NoSpec,基线方案：纯主模型 (无投机解码),translation_en2zh,文献翻译 (Linguistic Conversion),240,384,78.83,31.66,13.38,None,None,,True
+1_Baseline_NoSpec,基线方案：纯主模型 (无投机解码),creative_long,开放长文 (Low Predictability),208,512,136.64,31.61,16.74,None,None,,True
+1_Baseline_NoSpec,基线方案：纯主模型 (无投机解码),template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,162.88,31.65,16.74,None,None,,True
+2_Native_MTP_n2,"原生方案：主模型内生 MTP (draft-mtp, n-max=2, n-min=1)",gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,114.22,45.13,13.32,371,None,,True
+2_Native_MTP_n2,"原生方案：主模型内生 MTP (draft-mtp, n-max=2, n-min=1)",python_code,代码编写 (High Regularity),205,512,118.96,42.17,12.68,402,None,,True
+2_Native_MTP_n2,"原生方案：主模型内生 MTP (draft-mtp, n-max=2, n-min=1)",json_structured,结构化数据 (JSON Schema),234,512,73.77,45.90,12.41,366,None,,True
+2_Native_MTP_n2,"原生方案：主模型内生 MTP (draft-mtp, n-max=2, n-min=1)",translation_en2zh,文献翻译 (Linguistic Conversion),240,384,77.78,46.37,9.58,270,None,,True
+2_Native_MTP_n2,"原生方案：主模型内生 MTP (draft-mtp, n-max=2, n-min=1)",creative_long,开放长文 (Low Predictability),208,512,129.04,38.04,14.04,444,None,,True
+2_Native_MTP_n2,"原生方案：主模型内生 MTP (draft-mtp, n-max=2, n-min=1)",template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,152.40,39.72,13.47,428,None,,True
+3_DFlash2_Official_n7,"DFlash2 官方标准配置 (draft-dflash, n-max=7, p-min=0.0)",gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,106.84,39.49,15.07,737,None,,True
+3_DFlash2_Official_n7,"DFlash2 官方标准配置 (draft-dflash, n-max=7, p-min=0.0)",python_code,代码编写 (High Regularity),205,512,113.14,24.83,21.16,1203,None,,True
+3_DFlash2_Official_n7,"DFlash2 官方标准配置 (draft-dflash, n-max=7, p-min=0.0)",json_structured,结构化数据 (JSON Schema),234,512,73.10,34.06,16.25,875,None,,True
+3_DFlash2_Official_n7,"DFlash2 官方标准配置 (draft-dflash, n-max=7, p-min=0.0)",translation_en2zh,文献翻译 (Linguistic Conversion),240,384,78.24,42.40,10.30,518,None,,True
+3_DFlash2_Official_n7,"DFlash2 官方标准配置 (draft-dflash, n-max=7, p-min=0.0)",creative_long,开放长文 (Low Predictability),208,512,121.29,22.66,23.19,1301,None,,True
+3_DFlash2_Official_n7,"DFlash2 官方标准配置 (draft-dflash, n-max=7, p-min=0.0)",template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,137.29,25.30,20.95,1167,None,,True
+4_DFlash2_Light_n3,"DFlash2 紧凑轻量窗口 (draft-dflash, n-max=3, 降低草稿计算延迟)",gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,106.04,43.59,13.87,467,None,,True
+4_DFlash2_Light_n3,"DFlash2 紧凑轻量窗口 (draft-dflash, n-max=3, 降低草稿计算延迟)",python_code,代码编写 (High Regularity),205,512,112.90,33.61,15.79,617,None,,True
+4_DFlash2_Light_n3,"DFlash2 紧凑轻量窗口 (draft-dflash, n-max=3, 降低草稿计算延迟)",json_structured,结构化数据 (JSON Schema),234,512,72.09,40.34,13.95,510,None,,True
+4_DFlash2_Light_n3,"DFlash2 紧凑轻量窗口 (draft-dflash, n-max=3, 降低草稿计算延迟)",translation_en2zh,文献翻译 (Linguistic Conversion),240,384,78.35,47.46,9.32,324,None,,True
+4_DFlash2_Light_n3,"DFlash2 紧凑轻量窗口 (draft-dflash, n-max=3, 降低草稿计算延迟)",creative_long,开放长文 (Low Predictability),208,512,124.29,33.22,15.99,624,None,,True
+4_DFlash2_Light_n3,"DFlash2 紧凑轻量窗口 (draft-dflash, n-max=3, 降低草稿计算延迟)",template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,126.46,33.29,16.14,622,None,,True
+5_DFlash2_Mid_n5,"DFlash2 适中窗口 (draft-dflash, n-max=5)",gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,106.53,43.66,13.85,594,None,,True
+5_DFlash2_Mid_n5,"DFlash2 适中窗口 (draft-dflash, n-max=5)",python_code,代码编写 (High Regularity),205,512,109.34,29.19,18.12,910,None,,True
+5_DFlash2_Mid_n5,"DFlash2 适中窗口 (draft-dflash, n-max=5)",json_structured,结构化数据 (JSON Schema),234,512,73.22,38.40,14.56,685,None,,True
+5_DFlash2_Mid_n5,"DFlash2 适中窗口 (draft-dflash, n-max=5)",translation_en2zh,文献翻译 (Linguistic Conversion),240,384,77.13,47.41,9.37,414,None,,True
+5_DFlash2_Mid_n5,"DFlash2 适中窗口 (draft-dflash, n-max=5)",creative_long,开放长文 (Low Predictability),208,512,125.42,28.02,18.84,948,None,,True
+5_DFlash2_Mid_n5,"DFlash2 适中窗口 (draft-dflash, n-max=5)",template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,139.09,29.81,17.81,885,None,,True
+6_DFlash2_pmin0.75_n7,"DFlash2 置信度过滤 (draft-dflash, n-max=7, p-min=0.75 截断)",gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,108.26,43.08,13.97,491,None,,True
+6_DFlash2_pmin0.75_n7,"DFlash2 置信度过滤 (draft-dflash, n-max=7, p-min=0.75 截断)",python_code,代码编写 (High Regularity),205,512,112.38,34.38,15.44,300,None,,True
+6_DFlash2_pmin0.75_n7,"DFlash2 置信度过滤 (draft-dflash, n-max=7, p-min=0.75 截断)",json_structured,结构化数据 (JSON Schema),234,512,73.67,44.49,12.73,419,None,,True
+6_DFlash2_pmin0.75_n7,"DFlash2 置信度过滤 (draft-dflash, n-max=7, p-min=0.75 截断)",translation_en2zh,文献翻译 (Linguistic Conversion),240,384,77.21,45.04,9.79,317,None,,True
+6_DFlash2_pmin0.75_n7,"DFlash2 置信度过滤 (draft-dflash, n-max=7, p-min=0.75 截断)",creative_long,开放长文 (Low Predictability),208,512,122.92,31.08,17.06,358,None,,True
+6_DFlash2_pmin0.75_n7,"DFlash2 置信度过滤 (draft-dflash, n-max=7, p-min=0.75 截断)",template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,143.51,34.07,15.68,380,None,,True
+7_DFlash2_NoBackendSampling_n7,DFlash2 关闭后端采样 (no-spec-draft-backend-sampling),gsm8k_math,数学推理 (GSM8K/Chain-of-Thought),227,512,108.20,39.31,15.11,737,None,,True
+7_DFlash2_NoBackendSampling_n7,DFlash2 关闭后端采样 (no-spec-draft-backend-sampling),python_code,代码编写 (High Regularity),205,512,107.24,24.68,21.33,1203,None,,True
+7_DFlash2_NoBackendSampling_n7,DFlash2 关闭后端采样 (no-spec-draft-backend-sampling),json_structured,结构化数据 (JSON Schema),234,512,71.04,33.45,16.57,875,None,,True
+7_DFlash2_NoBackendSampling_n7,DFlash2 关闭后端采样 (no-spec-draft-backend-sampling),translation_en2zh,文献翻译 (Linguistic Conversion),240,384,72.53,42.18,10.52,518,None,,True
+7_DFlash2_NoBackendSampling_n7,DFlash2 关闭后端采样 (no-spec-draft-backend-sampling),creative_long,开放长文 (Low Predictability),208,512,125.89,22.78,23.07,1302,None,,True
+7_DFlash2_NoBackendSampling_n7,DFlash2 关闭后端采样 (no-spec-draft-backend-sampling),template_repetition,模板规律扩展 (Peak Speed Ceiling),218,512,136.41,25.27,20.92,1167,None,,True

@@ -1,0 +1,244 @@
+{
+  "model_index": 8,
+  "model_name": "Qwen3.6-35B-UC",
+  "timestamp": "2026-08-03T12:20:50.096344",
+  "results": [
+    {
+      "question_id": 1,
+      "question": "今天最新的AI大模型发布新闻是什么？",
+      "difficulty": "简单",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"今天最新AI大模型发布新闻\"}"
+          }
+        ],
+        "reasoning": "Here's a thinking process:\n\n1.  **Understand User Query:** The user is asking for the latest AI large model release news \"today\" (今天). Since I don't have a fixed \"today\" date in the prompt, I'll assum",
+        "content": "今天的搜索结果中未提及最新的AI大模型发布新闻。现有资料主要涉及日历查询、黄历信息、历史事件、2024年9月24日的深圳天气预报以及1978年12月23日创办的文学刊物《今天》，均未包含AI大模型相关的最新动态。因当前信息不足以回答该问题，建议查阅权威科技媒体或人工智能厂商官方公告以获取最新资讯。",
+        "latency_ms": 8961.521863937378
+      },
+      "search": {
+        "query": "今天最新AI大模型发布新闻",
+        "count": 5,
+        "latency_ms": 491.07861518859863
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 19,
+        "total": 61,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(13字); 包含3/4个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案部分与搜索结果一致(1/4); 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 2,
+      "question": "水的沸点是多少度？在高海拔地区会变化吗？",
+      "difficulty": "简单",
+      "should_call_tool": false,
+      "response": {
+        "tool_calls": [],
+        "reasoning": "Here's a thinking process that leads to the suggested answer:\n\n1.  **Analyze the User's Request:**\n    *   **Question 1:** What is the boiling point of water? (水的沸点是多少度？)\n    *   **Question 2:** Does ",
+        "content": "通常情况下，水的沸点与**大气压强**密切相关。以下是详细的解答：\n\n### 1. 标准状态下的沸点\n在**标准大气压**（海平面高度，约101.3千帕）下，水的沸点是 **$100^\\circ\\text{C}$ ($212^\\circ\\text{F}$)**。\n\n### 2. 高海拔地区的变化\n**是的，在高海拔地区水的沸点会发生变化。**\n\n*   **变化规律：** 随着海拔的升高，大气压强会降低。气压越低，水沸腾所需的能量就越少，因此**沸点会降低**。\n*   **影响程度：** 这是一个近似的关系。一般来说，海拔每升高约 $300$ 米（约 $1000$ 英尺），水的沸点大约会下降 $1^\\circ\\text{C}$。\n\n### 3. 具体例子\n*   **在珠穆朗玛峰顶（海拔约 $8848$ 米）：** 气压非常低，水在达到 **$71^\\circ\\text{C}$** 左右时就会沸腾。\n*   **在拉萨（海拔约 $3650$ 米）：** 水的沸点大约是 **$87^\\circ\\text{C}$**。\n\n### 4. 对生活的实际影响\n因为高海拔地区水的沸点低于 $10",
+        "latency_ms": 35223.400831222534
+      },
+      "search": {
+        "query": "",
+        "count": 0,
+        "latency_ms": 0
+      },
+      "scores": {
+        "decision": 20,
+        "query": 25,
+        "answer": 15,
+        "total": 60,
+        "details": {
+          "decision": "✓ 正确抑制工具调用",
+          "query": "正确抑制工具调用，Query分满分",
+          "answer": "回答充实; 无搜索结果，跳过一致性/矛盾检测; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 3,
+      "question": "查一下特斯拉(TSLA)最新的股价和市值。",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"Tesla TSLA latest stock price market cap\"}"
+          }
+        ],
+        "reasoning": "Here's a thinking process that leads to the suggested response:\n\n1.  **Analyze the Request:**\n    *   **Subject:** Tesla (TSLA).\n    *   **Required Information:** Latest stock price and Market Capital",
+        "content": "根据提供的搜索结果，目前**无法获取**特斯拉(TSLA)最新的股价和市值数据。搜索结果主要为公司业务介绍、官网宣传语以及8月31日前的引荐好友购车优惠活动信息，未包含任何具体的股价数值或市值规模。如需最新实时数据，建议访问证券交易所官网或主流财经数据平台查询。",
+        "latency_ms": 34043.85232925415
+      },
+      "search": {
+        "query": "Tesla TSLA latest stock price market cap",
+        "count": 5,
+        "latency_ms": 415.4634475708008
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 19,
+        "total": 61,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(40字); 包含1/4个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案部分与搜索结果一致(1/4); 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 4,
+      "question": "2026年世界杯在哪里举办？这个国家的首都是哪里？人口多少？主要语言是什么？",
+      "difficulty": "困难",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [],
+        "reasoning": "Here's a thinking process that leads to the answer:\n\n1.  **Analyze the Request:**\n    *   Target Event: 2026 World Cup (2026年世界杯).\n    *   Questions to answer:\n        1.  Where is it being held? (Loc",
+        "content": "2026年世界杯（第23届国际足联世界杯）将由**美国、加拿大和墨西哥**三个国家**联合举办**。这是世界杯历史上首次由三个国家共同主办。\n\n因此，这三个国家的相关信息如下：\n\n### 1. 美国 (United States)\n*   **首都**：华盛顿哥伦比亚特区 (Washington, D.C.)\n*   **人口**：约 3.4 亿（数据随统计机构和时间略有浮动，通常引用3.35亿-3.4亿之间）\n*   **主要语言**：英语（美国没有法定的联邦官方语言，但英语是事实上的通用语言）\n\n### 2. 墨西哥 (Mexico)\n*   **首都**：墨西哥城 (Mexico City)\n*   **人口**：约 1.28 亿\n*   **主要语言**：西班牙语（绝大多数人口使用，虽未列为法定官方语言，但在宪法和实际生活中具有官方地位）\n\n### 3. 加拿大 (Canada)\n*   **首都**：渥太华 (Ottawa)\n*   **人口**：约 4000 万\n*   **主要语言**：英语和法语（两者均为官方语言，英语区人口多于法语区）\n\n**总结：**\n如果你指的是体",
+        "latency_ms": 37370.805740356445
+      },
+      "search": {
+        "query": "",
+        "count": 0,
+        "latency_ms": 0
+      },
+      "scores": {
+        "decision": 0,
+        "query": 0,
+        "answer": 19,
+        "total": 19,
+        "details": {
+          "decision": "❌ 应该调用工具却没调用",
+          "query": "应该调用工具却没调用",
+          "answer": "回答充实; 包含时效信息; 无搜索结果，跳过一致性/矛盾检测; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 5,
+      "question": "比较NVIDIA H100和V100的核心参数差异，哪个更适合训练大语言模型？",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [],
+        "reasoning": "Here's a thinking process that leads to the comparison between NVIDIA H100 and V100:\n\n1.  **Understand the User's Request:**\n    *   **Subject:** NVIDIA H100 vs. NVIDIA V100.\n    *   **Task:** Compare",
+        "content": "NVIDIA H100（Hopper架构）和 V100（Volta架构）是两代完全不同的显卡，针对大语言模型（LLM）训练的性能差异非常显著。\n\n以下是核心参数的详细对比及针对LLM训练的结论：\n\n### 核心参数对比表\n\n| 参数 | NVIDIA Tesla V100 (2017发布) | NVIDIA H100 SXM5 (2022/2023发布) | 差异倍数/备注 |\n| :--- | :--- | :--- | :--- |\n| **架构** | Volta | **Hopper** | 代差巨大 |\n| **Tensor Core** | 第1代 (支持FP16) | **第4代** (支持FP8, FP16, BF16) | H100增加了FP8支持，精度更高且速度更快 |\n| **显存类型** | HBM2 | **HBM3** | HBM3带宽和容量远超HBM2 |\n| **显存容量** | 16GB / 32GB (常见) | **80GB** (主流配置) | H100显存容量是V100的2.5倍 |\n| **显存带宽** | 900 GB/s | **3.35",
+        "latency_ms": 58894.54984664917
+      },
+      "search": {
+        "query": "",
+        "count": 0,
+        "latency_ms": 0
+      },
+      "scores": {
+        "decision": 0,
+        "query": 0,
+        "answer": 15,
+        "total": 15,
+        "details": {
+          "decision": "❌ 应该调用工具却没调用",
+          "query": "应该调用工具却没调用",
+          "answer": "回答充实; 无搜索结果，跳过一致性/矛盾检测; 回答完整覆盖所有问题点"
+        }
+      }
+    },
+    {
+      "question_id": 6,
+      "error": "ChunkedEncodingError: (\"Connection broken: ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 1005",
+      "total_score": 0
+    },
+    {
+      "question_id": 7,
+      "question": "本周科技圈有什么重大新闻？给我一个标题和简要内容。",
+      "difficulty": "中等",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"本周重大科技新闻 2024年5月\"}"
+          }
+        ],
+        "reasoning": "Here's a thinking process that leads to the suggested response:\n\n1.  **Analyze the Request:**\n    *   **Topic:** Major technology news this week (本周科技圈重大新闻).\n    *   **Format:** A title and brief cont",
+        "content": "很抱歉，我无法为您生成本周科技圈的新闻标题与简要内容。当前提供的资料仅涉及汉字“本”的字义、读音及古籍用法，未包含任何科技领域的实时资讯或新闻数据。如需获取最新科技动态，请补充具体日期范围或提供科技类检索信息，我将为您整理准确的新闻摘要。",
+        "latency_ms": 36314.04113769531
+      },
+      "search": {
+        "query": "本周重大科技新闻 2024年5月",
+        "count": 5,
+        "latency_ms": 948.1115341186523
+      },
+      "scores": {
+        "decision": 20,
+        "query": 22,
+        "answer": 14,
+        "total": 56,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(16字); 包含3/4个实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案与搜索结果不匹配; 无明显事实矛盾; 无子问题，基础完整性分"
+        }
+      }
+    },
+    {
+      "question_id": 8,
+      "question": "请搜索最新的开源AI编程助手，对比它们的主要功能、支持语言和使用限制。",
+      "difficulty": "困难",
+      "should_call_tool": true,
+      "response": {
+        "tool_calls": [
+          {
+            "name": "search",
+            "arguments": "{\"query\":\"2024 best open source AI coding assistants comparison features Aider Continue Open Interpreter\"}"
+          }
+        ],
+        "reasoning": "Here's a thinking process that leads to the suggested response:\n\n1.  **Analyze the Request:**\n    *   **Topic:** Open-source AI coding assistants (latest).\n    *   **Action:** Search for information.\n",
+        "content": "本次提供的参考资料主要涉及2024年日历信息、中国国民经济与社会发展统计数据以及美国大选等内容，均未包含任何关于开源AI编程助手的相关信息。因此，当前资料不足以回答您关于最新开源AI编程助手的功能、支持语言及使用限制的对比问题。如需获取该领域的详细对比，请补充相关搜索内容或告知我将基于现有知识库为您整理。",
+        "latency_ms": 56849.212646484375
+      },
+      "search": {
+        "query": "2024 best open source AI coding assistants comparison features Aider Continue Open Interpreter",
+        "count": 5,
+        "latency_ms": 746.3440895080566
+      },
+      "scores": {
+        "decision": 20,
+        "query": 19,
+        "answer": 14,
+        "total": 53,
+        "details": {
+          "decision": "✓ 正确调用工具",
+          "query": "query长度适中(94字); 缺少关键实体; 包含时间限定; 搜索命中5条结果",
+          "answer": "回答较短; 包含时效信息; 答案与搜索结果不匹配; 无明显事实矛盾; 回答部分覆盖(2/3个问题点)"
+        }
+      }
+    },
+    {
+      "question_id": 9,
+      "error": "ChunkedEncodingError: (\"Connection broken: ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 1005",
+      "total_score": 0
+    },
+    {
+      "question_id": 10,
+      "error": "CONN_ERR: HTTPConnectionPool(host='127.0.0.1', port=8081): Max retries exceeded with url: ",
+      "total_score": 0
+    }
+  ],
+  "average_scores": {
+    "decision": 14.3,
+    "query": 15.7,
+    "answer": 16.4,
+    "total": 46.4
+  }
+}

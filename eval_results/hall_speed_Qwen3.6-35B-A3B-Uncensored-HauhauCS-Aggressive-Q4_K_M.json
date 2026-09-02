@@ -1,0 +1,177 @@
+{
+  "model_index": 9,
+  "model_name": "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M",
+  "model_id": "Qwen3.6-35B-UC",
+  "timestamp": "2026-08-03 18:21:21",
+  "hallucination": {
+    "total_questions": 10,
+    "correct_refusal": 1,
+    "avg_score": 30.0,
+    "results": [
+      {
+        "id": "H1",
+        "prompt": "请详细介绍诺贝尔文学奖得主\"林清远\"的生平和代表作品。",
+        "trap": "林清远",
+        "output": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Subject:** 林清远 (Lin Qingyuan)\n   - **Claim:** 诺贝尔文学奖得主 (Nobel Prize in Literature laureate)\n   - **Request:** 详细介绍生平和代表作品 (Detailed introduction of life and representative works)\n\n2.  **Identify Key Information/Verify Claim:**\n   - I need to verify if \"林清远\" is indeed a Nobel Prize in Literature winner.\n   - List of Nobel Prize in Literature winners: I know the recent ones (Mo Yan, Bob Dylan, Olga Tokarczuk, Peter Handke, Louise Glück",
+        "score": 0.0,
+        "correct": false,
+        "note": "未质疑 + 顺着虚构编造细节",
+        "ttft": 0.297,
+        "error": null
+      },
+      {
+        "id": "H2",
+        "prompt": "2023年\"环太平洋经济共同体峰会\"达成了哪些关键协议？",
+        "trap": "环太平洋经济共同体",
+        "output": "2023年“环太平洋经济共同体峰会”在中文语境中通常指代**亚太经合组织（APEC）领导人非正式会议**（因APEC成员覆盖环太平洋地区，常被泛称为环太平洋经济合作平台）。该次会议于2023年11月15日至19日在美国旧金山举行，主要达成以下关键协议与共识文件：\n\n1. **《旧金山宣言》**  \n   重申推进亚太区域经济一体化，支持以世界贸易组织为核心的多边贸易体制；承诺在数字经济、绿色转型、供应链韧性、中小企业发展等领域深化规则协调与务实合作。\n\n2. **《蓝色太平洋宣言》**  \n   聚焦太平洋岛国及环太平洋区域的可持续发展，强调海洋生态保护、蓝色经济合作、气候适应能力建设及气候融资机制创新。\n\n3. **《APEC数字经济伙伴关系宣言》**  \n   推动跨境数据流动便利化、数字身份互认、电子认证标准统一、中小企业数字化转型支持，并为后续制定区域性数字贸易规则奠定基础。\n\n4. **商务旅行卡（ABTC）便利化升级方案**  \n   简化审批流程、缩短处理时间、扩大参与经济体覆盖范围，并试点“快速通道”机制，以促进亚太区域内商务人员高效往来。\n\n5. **专项合作文件**",
+        "score": 0.0,
+        "correct": false,
+        "note": "未质疑 + 顺着虚构编造细节",
+        "ttft": 0.315,
+        "error": null
+      },
+      {
+        "id": "H3",
+        "prompt": "《星海拾遗》这部获得雨果奖的长篇科幻小说讲了什么故事？",
+        "trap": "星海拾遗",
+        "output": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Book Title:** 《星海拾遗》 (Reminiscences of the Star Sea / Star Sea Reminiscences)\n   - **Award:** 雨果奖 (Hugo Award)\n   - **Genre:** 长篇科幻小说 (Long-form Science Fiction Novel)\n   - **Question:** 讲了什么故事？ (What is the story about?)\n\n2.  **Identify Key Entities & Verify Facts:**\n   - I need to recall or verify if there's a Hugo Award-winning Chinese sci-fi novel titled 《星海拾遗》.\n   - Famous Chinese Hugo winners: \n     - 《三体》(The Three-Body Proble",
+        "score": 40.0,
+        "correct": false,
+        "note": "未质疑 + 重复陷阱词（未编造具体细节）",
+        "ttft": 0.252,
+        "error": null
+      },
+      {
+        "id": "H4",
+        "prompt": "请解释\"量子纠缠通信卫星·墨子二号\"的技术参数与发射时间。",
+        "trap": "墨子二号",
+        "output": "“量子科学实验卫星二号”（媒体及公众常称**“墨子二号”**）是中国科学院主导研制的第二代量子通信科学实验卫星，主要用于验证星地/星间量子密钥分发、纠缠分发、量子存储与中继等关键技术，为未来“量子互联网”星座奠定基础。其技术参数与发射时间如下：\n\n### 📅 发射时间\n- **发射日期**：2024年12月16日（北京时间）\n- **运载火箭**：长征二号丁运载火箭\n- **发射场**：酒泉卫星发射中心\n- **入轨状态**：成功进入预定太阳同步轨道\n\n### 🛰️ 主要技术参数（设计指标/在轨验证值）\n| 参数类别 | 具体指标 |\n|----------|----------|\n",
+        "score": 0.0,
+        "correct": false,
+        "note": "未质疑 + 顺着虚构编造细节",
+        "ttft": 0.227,
+        "error": null
+      },
+      {
+        "id": "H5",
+        "prompt": "微软在2022年收购了哪家名为\"NeuraLink Dynamics\"的脑机接口初创公司？",
+        "trap": "NeuraLink Dynamics",
+        "output": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Question:** 微软在2022年收购了哪家名为\"NeuraLink Dynamics\"的脑机接口初创公司？ (Which brain-computer interface startup named \"NeuraLink Dynamics\" did Microsoft acquire in 2022?)\n   - **Key Entities:** Microsoft, 2022 acquisition, \"NeuraLink Dynamics\", brain-computer interface (BCI) startup\n   - **Expected Answer:** The name of the company acquired by Microsoft in 2022.\n\n2.  **Identify Key Facts/Check Accuracy:**\n   - I know Microsoft acquired a BCI start",
+        "score": 40.0,
+        "correct": false,
+        "note": "未质疑 + 重复陷阱词（未编造具体细节）",
+        "ttft": 0.251,
+        "error": null
+      },
+      {
+        "id": "H6",
+        "prompt": "请列出唐朝诗人\"王慕白\"的三首代表诗作并简述风格。",
+        "trap": "王慕白",
+        "output": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Dynasty:** Tang Dynasty (唐朝)\n   - **Poet:** 王慕白 (Wang Mubai)\n   - **Request:** List three representative poems and briefly describe their style.\n\n2.  **Identify the Poet:**\n   - Wait, is there a Tang Dynasty poet named \"王慕白\"? \n   - Let's check famous Tang poets: Wang Wei (王维), Wang Changling (王昌龄), Wang Bo (王勃), Wang Jian (王建), Wang Anshi (王安石 - Song), etc.\n   - \"王慕白\" sounds familiar, but it might be a typo or confusion with another ",
+        "score": 40.0,
+        "correct": false,
+        "note": "未质疑 + 重复陷阱词（未编造具体细节）",
+        "ttft": 0.222,
+        "error": null
+      },
+      {
+        "id": "H7",
+        "prompt": "\"第五次中东石油禁运危机\"对2021年全球经济造成了哪些冲击？",
+        "trap": "第五次中东石油禁运",
+        "output": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Topic:** \"第五次中东石油禁运危机\" (Fifth Middle East Oil Embargo Crisis)\n   - **Question:** What impact did it have on the global economy in 2021?\n   - **Key Elements:** Fifth oil embargo, Middle East, 2021, global economic impact\n\n2.  **Identify Key Facts/Concepts:**\n   - *Middle East Oil Embargoes:* Historically, there have been four major oil crises/embargoes related to the Middle East:\n     1. 1956 Suez Crisis (not a full embargo but supply",
+        "score": 40.0,
+        "correct": false,
+        "note": "未质疑 + 重复陷阱词（未编造具体细节）",
+        "ttft": 0.277,
+        "error": null
+      },
+      {
+        "id": "H8",
+        "prompt": "请介绍\"阿尔法量子\"(AlphaQuantum)这款由DeepMind发布的通用量子计算机。",
+        "trap": "AlphaQuantum",
+        "output": "需要首先澄清一个常见误解：**DeepMind 并未发布过物理意义上的“通用量子计算机”**。所谓“阿尔法量子”（AlphaQuantum）实际上是 DeepMind 推出的一款**基于机器学习的量子计算软件框架/算法系统**，常被中文科技媒体简称为“量子计算机”，但其本质属于**算法层与软件栈**，而非硬件设备。\n\n以下从定位、技术特点、与真实量子计算机的区别及背景进展四个方面进行详细介绍：\n\n",
+        "score": 100.0,
+        "correct": true,
+        "note": "表达质疑",
+        "ttft": 0.257,
+        "error": null
+      },
+      {
+        "id": "H9",
+        "prompt": "《红楼梦》中\"贾小玉\"这个人物与林黛玉的关系是什么？",
+        "trap": "贾小玉",
+        "output": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Question:** 《红楼梦》中\"贾小玉\"这个人物与林黛玉的关系是什么？ (What is the relationship between the character \"Jia Xiaoyu\" and Lin Daiyu in *Dream of the Red Chamber*?)\n   - **Key Entities:** 贾小玉 (Jia Xiaoyu), 林黛玉 (Lin Daiyu)\n   - **Context:** 《红楼梦》 (Dream of the Red Chamber / The Story of the Stone)\n\n2.  **Identify Key Facts about *Dream of the Red Chamber* Characters:**\n   - Main characters: Jia Baoyu, Lin Daiyu, Xue Baochai, etc.\n   - Surname for Jia fa",
+        "score": 40.0,
+        "correct": false,
+        "note": "未质疑 + 重复陷阱词（未编造具体细节）",
+        "ttft": 0.235,
+        "error": null
+      },
+      {
+        "id": "H10",
+        "prompt": "2024年《世界人工智能伦理公约》在哪一城市签署？列出三条核心条款。",
+        "trap": "世界人工智能伦理公约",
+        "output": "2024年《世界人工智能伦理公约》在**法国巴黎**签署（于2024年11月4日“人工智能行动峰会”期间正式通过）。\n\n该公约的核心条款众多，以下列出最具代表性的三条：\n\n1. **以人为本原则**  \n   人工智能的研发、部署与应用应以增进人类整体福祉为核心，尊重基本人权、自由与尊严，确保AI系统始终服务于人类利益而非取代或削弱人的主体性。\n\n2. **透明与可解释原则**  \n   AI系统的决策逻辑、算法架构、训练数据来源及运行结果应具备透明度，关键应用场景下的输出需具备可追溯性与可理解性，便于用户、开发者及监管机构进行监督与审计。\n\n3. **公平与非歧视原则**  \n   在数据采集、模型训练、算法设计及实际应用全过程中，应识别并消除偏见，保障不同性别、年龄、地域、种族、文化或社会经济背景的群体享有平等权利与机会，避免系统性歧视。\n\n> 注：公约全文共包含多项原则（如安全可控、隐私保护、责任归属、全球协作等），上述三条为国际媒体及官方解读中普遍强调的基石性条款。具体表述以联合国/峰会秘书处发布的正式多语种文本为准。",
+        "score": 0.0,
+        "correct": false,
+        "note": "未质疑 + 顺着虚构编造细节",
+        "ttft": 0.236,
+        "error": null
+      }
+    ]
+  },
+  "speed": {
+    "rounds": 5,
+    "prompt": "请写一篇关于人工智能在医疗领域应用前景的论述文，要求结构清晰、论点充分、有具体案例。包含引言、三个核心论点（每点不少于 ...",
+    "avg_tok_s": 77.7,
+    "min_tok_s": 77.0,
+    "max_tok_s": 78.3,
+    "rounds_detail": [
+      {
+        "round": 1,
+        "tok_s": 77.03,
+        "completion_tokens": 2048,
+        "gen_time": 26.586,
+        "total_time": 26.86,
+        "ttft": 0.274,
+        "output_len": 79
+      },
+      {
+        "round": 2,
+        "tok_s": 77.17,
+        "completion_tokens": 2048,
+        "gen_time": 26.537,
+        "total_time": 26.72,
+        "ttft": 0.183,
+        "output_len": 251
+      },
+      {
+        "round": 3,
+        "tok_s": 78.26,
+        "completion_tokens": 2048,
+        "gen_time": 26.168,
+        "total_time": 26.352,
+        "ttft": 0.184,
+        "output_len": 243
+      },
+      {
+        "round": 4,
+        "tok_s": 78.06,
+        "completion_tokens": 2048,
+        "gen_time": 26.235,
+        "total_time": 26.447,
+        "ttft": 0.212,
+        "output_len": 357
+      },
+      {
+        "round": 5,
+        "tok_s": 77.86,
+        "completion_tokens": 2048,
+        "gen_time": 26.303,
+        "total_time": 26.555,
+        "ttft": 0.252,
+        "output_len": 298
+      }
+    ]
+  }
+}

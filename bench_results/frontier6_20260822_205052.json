@@ -1,0 +1,269 @@
+{
+  "stamp": "20260822_205052",
+  "benchmarks": [
+    "Terminal-Bench 2.1",
+    "SWE-bench Pro",
+    "DeepSWE (长程软件工程)",
+    "NL2Repo",
+    "GPQA Diamond",
+    "HLE"
+  ],
+  "models": {
+    "ornith": {
+      "label": "Ornith-1.5-35B",
+      "short_name": "Ornith",
+      "bench_scores": {
+        "Terminal-Bench 2.1": 96.9,
+        "SWE-bench Pro": 75.0,
+        "DeepSWE (长程软件工程)": 18.8,
+        "NL2Repo": 75.9,
+        "GPQA Diamond": 41.7,
+        "HLE": 66.7
+      },
+      "overall_score": 62.5,
+      "avg_tps": 69.6,
+      "tasks": [
+        {
+          "id": "TB-01",
+          "benchmark": "Terminal-Bench 2.1",
+          "title": "Nginx 日志高频 5xx 错误 IP 管道排查与排序",
+          "score": 87.5,
+          "detail": "Bash 管道命令合规度 7/8",
+          "tps": 66.3,
+          "dt_ms": 16163.0,
+          "answer": "```bash\nawk '$9 ~ /^5[0-9][0-9]$/' access.log | awk '{print $1}' | sort | uniq -c | sort -rn | head -10\n```"
+        },
+        {
+          "id": "TB-02",
+          "benchmark": "Terminal-Bench 2.1",
+          "title": "僵尸进程定位与端口冲突占用安全清理流水线",
+          "score": 100.0,
+          "detail": "核心要点覆盖 5/5",
+          "tps": 66.9,
+          "dt_ms": 22960.0,
+          "answer": "```bash\n#!/usr/bin/env bash\n#\n# 安全释放被异常挂起的本地端口 8081\n# 策略：先 SIGTERM 优雅退出，等待最多 5 秒，超时则 SIGKILL 强杀。\n\nset -uo pipefail\n\nPORT=8081\n\n# 查找监听指定端口的进程 PID（优先 ss，回退 lsof）\nfind_pid() {\n    local pid=\"\"\n\n    if command -v ss >/dev/null 2>&1; then\n        # 兼容 ss 的多种输出格式：提取 users:(...,pid=NNN,...) 中的 NNN\n        pid=$(ss -ltnp \"sport = :${PORT}\" 2>/dev/null \\\n              | grep -oP 'pid=\\K[0-9]+' 2>/dev/null \\\n              | head -n1) || true\n    fi\n\n    if [[ -z \"${pid}\" ]] && command -v lsof >/dev/null 2>&1; then\n        pid=$(lsof -tiTCP:\"${PORT}\" -sTCP:LISTEN 2>/dev/null) || true\n    fi\n\n    printf '%s' \"${pid}\"\n}\n\npid=$(find_pid)\n\n# 情况 1：端口空闲，直接成功退出（exit code 0）\nif [[ -z \"${pid}\" ]]; then\n    echo \"Port ${PORT} is free. Nothing to do.\"\n    exit 0\nfi\n\necho \"Found PID ${pid} listening on port ${PORT}.\"\n\n# 情况 2：先尝试优雅终止（SIGTERM / 15）\necho \"Sending SIGTERM (15) to PID ${pid}...\"\nkill -TERM \"${pid}\" 2>/dev/null || true\n\n# 等待最多 5 秒，每秒检查一次进程是否已退出\nfor _ in 1 2 3 4 5; do\n    if ! kill -0 \"${pid}\" 2>/dev/null; then\n        echo \"PID ${pid} exited gracefully within timeout.\"\n        exit 0\n    fi\n    sleep 1\ndone\n\n# 情况 3：超时仍未退出，强制终止（SIGKILL / 9）\nif kill -0 \"${pid}\" 2>/dev/null; then\n    echo \"PID ${pid} still alive after "
+        },
+        {
+          "id": "TB-03",
+          "benchmark": "Terminal-Bench 2.1",
+          "title": "Git 分支变基冲突自动中止与安全恢复脚本",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 69.5,
+          "dt_ms": 11841.0,
+          "answer": "```bash\n# 1. 检查当前是否处于 rebase 冲突暂停状态\ngit status\n# 输出中若出现 \"rebase in progress\" 或 \"resolved conflicts\" 等字样，说明正处于 rebase 暂停状态\n# 也可通过检测 rebase 目录确认：\nls -d .git/rebase-merge .git/rebase-apply 2>/dev/null\n\n# 2. 查看当前冲突文件列表（未合并文件）\ngit diff --name-only --diff-filter=U\n# 或更详细地列出未合并文件及其状态：\ngit ls-files -u\n# 或用 status 简览：\ngit status --short | grep '^UU\\|^AU\\|^DU\\|^AA\\|^DD'\n\n# 3. 彻底放弃本次变基，安全回滚到 rebase 前的 HEAD 状态\ngit rebase --abort\n\n# 4. 清理所有未跟踪的临时垃圾文件（-f 强制，-d 包含目录）\ngit clean -fd\n# 如需同时清理被忽略的文件（如构建产物、依赖目录等），使用：\n# git clean -fdx\n```"
+        },
+        {
+          "id": "TB-04",
+          "benchmark": "Terminal-Bench 2.1",
+          "title": "Docker 多容器共享卷权限与 UID 映射排错",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 67.3,
+          "dt_ms": 22817.0,
+          "answer": "# 权限问题根因与解决方案\n\n## 根因\n挂载的宿主机目录会覆盖容器内同名路径，其属主/权限决定访问权。容器内 UID 1001 与宿主机目录属主不一致 → `Permission denied`。\n\n---\n\n## 一、宿主机侧（对齐属主 + 最小权限）\n\n```bash\n# 1. 确认容器内目标 UID/GID（若镜像未固定，先查）\ndocker run --rm alpine id\n\n# 2. 将宿主机目录属主改为与容器一致\nsudo chown -R 1001:1001 /data/app\n\n# 3. 收紧权限（属主 rwx，其余只读/无，禁止 777）\nsudo chmod 750 /data/app\n\n# 4. SELinux 环境（RHEL/CentOS/Fedora）必须设置上下文，否则仍拒绝\nsudo semanage fcontext -a -t container_file_t \"/data/app(/.*)?\"\nsudo restorecon -Rv /data/app\n```\n\n---\n\n## 二、Dockerfile（构建期固定 UID/GID）\n\n```dockerfile\nARG UID=1001\nARG GID=1001\n\n# 创建与宿主机对齐的普通用户（非 root）\nRUN groupadd -g \"$GID\" appgroup \\\n    && useradd -u \"$UID\" -g \"$GID\" -m -d /home/appuser -s /usr/sbin/nologin appuser\n\nUSER $UID:$GID\n```\n\n---\n\n## 三、docker-compose.yml（运行时锁定身份 + 安全加固）\n\n```yaml\nservices:\n  app:\n    build:\n      context: .\n      dockerfile: Dockerfile\n      args:\n        UID: \"1001\"\n        GID: \"1001\"\n    user: \"1001:1001\"          # 强制非 root，禁止 root 运行\n    volumes:\n      - /data/app:/data/app:rw # 按需只读则改 :ro\n    security_opt:\n      - no-new-privileges:true # 阻止提权\n    cap_drop:\n      - ALL                    # 最小化能力集\n```\n\n---\n\n## 四、验证"
+        },
+        {
+          "id": "SWE-01",
+          "benchmark": "SWE-bench Pro",
+          "title": "Python 并发生成器竞态条件与锁失效 Bug 修复",
+          "score": 0.0,
+          "detail": "类测试异常: name 'SafeQueue' is not defined",
+          "tps": 66.8,
+          "dt_ms": 20626.0,
+          "answer": "## 问题分析\n\n原代码存在典型的 **TOCTOU（Time-Of-Check-To-Time-Of-Use）竞态**：\n\n```python\ndef get(self):\n    if len(self.q) > 0:          # ① 检查（无锁）\n        with self.lock:\n            return self.q.popleft()  # ② 消费（加锁）\n    return None\n```\n\n线程 A 在 ① 处读到 `len(q) > 0`，但尚未进入临界区；此时线程 B 抢先拿到锁把最后一个元素弹出。等 A 重新加锁执行 `popleft()` 时，deque 已为空 → **`IndexError: pop from empty deque`**。\n\n## 修复后的完整代码\n\n核心思路：**把\"检查长度\"和\"弹出元素\"合并到同一把锁保护的临界区内**，使 check-and-pop 成为不可分割的原子操作。\n\n```python\nfrom collections import deque\nimport threading\n\n\nclass SafeQueue:\n    def __init__(self):\n        self.q = deque()\n        self.lock = threading.Lock()\n\n    def put(self, item):\n        with self.lock:\n            self.q.append(item)\n\n    def get(self):\n        # 将\"检查长度\"与\"弹出元素\"合并到同一把锁保护的临界区，\n        # 保证 check-and-pop 的原子性，消除 TOCTOU 竞态导致的 IndexError。\n        with self.lock:\n            if self.q:\n                return self.q.popleft()\n        return None\n```\n\n## 关键改动说明\n\n| 改动点 | 说明 |\n|--------|------|\n| `with self.lock:` 包裹整个 `if` | 检查与消费在同一临界区内，中间不会被其他线程插入 |\n| `if len(self.q) > 0` → `if self.q` | 等价但更 Pythonic，空 deque 直接判假 |\n\n这样无论并发多高，`popleft()` 执行前都能保证队列非空。\n\n## 补充建议\n\n- 若需要**阻塞等待**（队列为空时挂起而非立即返回 `None`），可改用标准库 `queue.Queue`，它已内置条件变量与超时机制：\n  ```python\n  import queue\n  q = queue.Queue()\n  item = q.get(timeout=1.0)  # 超时抛 queue.Empty\n  ```\n- 当前实现基于 `threading.Lock` 已足够；除非需要在同一线程内重入加锁，否则无需改用 `RLock`。"
+        },
+        {
+          "id": "SWE-02",
+          "benchmark": "SWE-bench Pro",
+          "title": "递归深层嵌套 JSON 循环引用反序列化崩溃修复",
+          "score": 100.0,
+          "detail": "通过 3/3 单元测试",
+          "tps": 70.9,
+          "dt_ms": 21456.0,
+          "answer": "```python\ndef safe_deep_clone(data: dict) -> dict:\n    \"\"\"\n    安全地深拷贝嵌套字典与列表。\n    检测到自引用/循环引用时，将该节点替换为字符串 '[CIRCULAR_REF]'，\n    避免 RecursionError。\n    \"\"\"\n    def _clone(obj, seen):\n        # 用 id() 追踪当前递归路径上出现过的对象\n        obj_id = id(obj)\n        if obj_id in seen:\n            return '[CIRCULAR_REF]'\n\n        if isinstance(obj, dict):\n            seen.add(obj_id)\n            result = {}\n            for key, value in obj.items():\n                result[key] = _clone(value, seen)\n            seen.discard(obj_id)  # 退出当前路径，允许非循环的共享对象被再次拷贝\n            return result\n\n        if isinstance(obj, list):\n            seen.add(obj_id)\n            result = []\n            for item in obj:\n                result.append(_clone(item, seen))\n            seen.discard(obj_id)\n            return result\n\n        # 不可变/叶子对象（int、str、tuple、None 等）直接返回\n        return obj\n\n    return _clone(data, set())\n```\n\n**说明：**\n\n- 通过 `seen` 集合记录当前递归路径上已访问对象的 `id()`。进入节点时加入，退出时移除，这样既能捕获真正的循环引用（祖先→后代），又不会把普通的\"共享对象/菱形结构\"误判为循环引用。\n- 遇到已在 `seen` 中的对象，说明存在环，直接返回标记字符串 `'[CIRCULAR_REF]'`，从而避免 `RecursionError`。\n- 字典、列表递归处理；其余叶子类型（`int`、`str`、`bool`、`None`、`tuple` 等）原样返回。\n\n**示例：**\n\n```python\nd = {'a': 1, 'b': {'c': [1, 2, 3]}}\nd['self'] = d                      # 构造循环引用\nprint(safe_deep_clone(d))\n# {'a': 1, 'b': {'c': [1, 2, 3]}, 'self': '[CIRCULAR_REF]'}\n```"
+        },
+        {
+          "id": "SWE-03",
+          "benchmark": "SWE-bench Pro",
+          "title": "Git Unified Diff 补丁生成与版本冲突修复",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 68.0,
+          "dt_ms": 22575.0,
+          "answer": "# 修复方案\n\n## 问题分析\n\n原代码存在三个缺陷：\n\n| 缺陷 | 示例 | 结果 |\n|------|------|------|\n| 精确匹配，无法处理参数 | `application/json; charset=utf-8` | ❌ 误判为否 |\n| 区分大小写 | `Application/JSON` | ❌ 误判为否 |\n| 未处理 `None`/空串 | `is_json(None)` | ⚠️ 抛出 `TypeError` |\n\n## 修复代码\n\n```python\ndef is_json(content_type: str | None) -> bool:\n    \"\"\"判断 Content-Type 是否为 JSON，忽略大小写与分号后的参数。\"\"\"\n    if not content_type:\n        return False\n    mime = content_type.strip().lower().split(';', 1)[0].strip()\n    return mime == 'application/json'\n```\n\n## Git Unified Diff 补丁\n\n```diff\n--- a/utils.py\n+++ b/utils.py\n@@ -1,2 +1,8 @@\n-def is_json(content_type: str) -> bool:\n-    return content_type == 'application/json'\n+def is_json(content_type: str | None) -> bool:\n+    \"\"\"判断 Content-Type 是否为 JSON，忽略大小写与分号后的参数。\"\"\"\n+    if not content_type:\n+        return False\n+    mime = content_type.strip().lower().split(';', 1)[0].strip()\n+    return mime == 'application/json'\n```\n\n## 关键设计说明\n\n1. **`if not content_type`** —— 同时拦截 `None`、`''`、`'   '`（纯空白）等 falsy 值，避免 `.strip()` 报错。\n2. **`.lower()`** —— 归一化大小写，兼容 `Application/JSON`。\n3. **`.split(';', 1)[0]`** —— 以第一个分号为界截断，丢弃 `; charset=utf-8` 等后续参数；`maxsplit=1` 提升性能并避免多余分割。\n4. **外层 `.strip()`** —— 容忍首尾空白（如 `' application/json '`）。\n\n## 验证用例\n\n```python\nassert is_json(None) is False\nassert is_json('') is False\nassert is_json('application/json') is"
+        },
+        {
+          "id": "SWE-04",
+          "benchmark": "SWE-bench Pro",
+          "title": "高负载内存泄漏与 WeakValueDictionary 弱引用修复",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 70.9,
+          "dt_ms": 21671.0,
+          "answer": "# EventBus 基于弱引用的事件分发器\n\n## 设计思路\n\n核心问题在于：全局事件总线持有订阅者的**强引用**，导致订阅者对象即使外部已不再使用也无法被 GC 回收。解决方案是用 `weakref.ref` 保存订阅者，这样总线只持有\"软引用\"，一旦外部销毁了订阅者，弱引用会自动失效（返回 `None`），总线在分发时将其剔除即可。\n\n## 完整代码\n\n```python\nimport weakref\nimport threading\nfrom typing import Any, Callable, Dict, List, Optional\n\n\nclass EventBus:\n    \"\"\"\n    基于弱引用的事件分发器。\n\n    - 使用 weakref.ref 管理订阅者，避免强引用导致的 OOM。\n    - 当订阅者在外部被销毁后，弱引用自动失效，总线不再向其分发事件。\n    - 线程安全：发布与订阅均通过锁保护共享数据结构。\n    - 异常隔离：单个回调抛错不会影响其他回调。\n    \"\"\"\n\n    def __init__(self, name: str = \"default\"):\n        self._name = name\n        # topic -> List[weakref.ref]\n        self._subscribers: Dict[str, List[weakref.ref]] = {}\n        # 可重入锁，避免同一线程内 reentrant 调用死锁\n        self._lock = threading.RLock()\n\n    # ------------------------------------------------------------------ #\n    # 订阅 / 取消订阅\n    # ------------------------------------------------------------------ #\n    def subscribe(self, topic: str, callback: Callable[..., Any]) -> None:\n        \"\"\"\n        订阅指定 topic 的事件。\n\n        支持三种订阅者：\n          1. 普通函数 / lambda\n          2. 对象的绑定方法（如 obj.method）\n          3. 实现了 __call__ 的可调用对象实例\n\n        注意：int / str / tuple 等内置不可变类型不支持弱引用，\n        若传入此类对象会抛出 TypeError。\n        \"\"\"\n        ref = weakref.ref(callback)  # 可能抛出 TypeError\n\n        with self._lock:\n            bucket = self._subscribers.setdefault(topic, [])\n            # 避免同一回调重复订阅\n            if not any(r() is callback for r in bucket):\n                bucket.append(ref)\n\n    def unsubscribe(self, topic: str, callback: Callable[..., Any]) -> bool:\n       "
+        },
+        {
+          "id": "DSWE-01",
+          "benchmark": "DeepSWE (长程软件工程)",
+          "title": "长程跨模块依赖注入与 Clean Architecture 架构重构",
+          "score": 25.0,
+          "detail": "核心要点覆盖 1/4",
+          "tps": 71.1,
+          "dt_ms": 21605.0,
+          "answer": "Error: 持久化失败\n            NotificationError: 通知发送失败\n        \"\"\"\n        # 1. 数据校验与实体构建\n        order = self._build_order(order_data)\n\n        # 2. 持久化订单（初始状态）\n        if not self._order_repository.save_order(order):\n            raise OrderPersistenceError(\"无法保存订单\")\n\n        # 3. 处理支付\n        payment_success = self._payment_gateway.process_payment(order.amount)\n        if not payment_success:\n            # 回滚：取消订单并重新持久化\n            self._rollback(order)\n            raise PaymentFailedError(\"支付失败，订单已回滚\")\n\n        # 4. 标记订单为已支付并持久化\n        order.mark_paid()\n        if not self._order_repository.save_order(order):\n            # 支付成功但持久化失败，需要回滚支付（这里简化处理）\n            raise OrderPersistenceError(\"更新订单状态失败\")\n\n        # 5. 发送收据通知\n        if not self._notification_service.send_receipt(\n            order.user_id,\n            f\"订单 {order.order_id} 支付成功，金额 {order.amount:.2f}\",\n        ):\n            # 通知失败不影响主流程，记录但不抛出（或根据业务决定）\n            pass\n\n        return {\n            \"success\": True,\n            \"order_id\": order.order_id,\n            \"status\": order.status.value,\n            \"amount\": order.amount,\n        }\n\n    def _build_order(self, order_data: dict) -> Order:\n        \"\"\"校验并构建订单实体\"\"\"\n        try:\n            required = [\"order_id\", \"user_id\", \"amount\"]\n            missing = [key for key in required if key not in order_data]\n            if missing:\n                raise ValueError(f\"缺少必要字段: {', '.join(missing)}\")\n\n            amount = float(order_data[\"amount\"])\n            if amount <= 0:\n                raise ValueError(\"订单金额必须大于零\")\n\n            return Order(\n                order_id=str(order_data[\"order_id\"]),\n                user_id=str(order_data[\"user_id\"]),\n                amount=amount,\n                items=list(order_data.get(\"items\", [])),\n            )\n        except (ValueError, TypeError) as exc:\n            raise CheckoutError(f\"订单数据无效: {exc}\") from exc"
+        },
+        {
+          "id": "DSWE-02",
+          "benchmark": "DeepSWE (长程软件工程)",
+          "title": "分布式事务 Saga 编排器设计与补偿事务机制",
+          "score": 0.0,
+          "detail": "类测试异常: invalid character '：' (U+FF1A) (<string>, line 5)",
+          "tps": 70.9,
+          "dt_ms": 21673.0,
+          "answer": "# Saga 编排器设计与实现\n\n## 设计思路\n\nSaga 模式的核心思想是：**用一系列本地事务 + 对应的补偿操作来替代传统的分布式两阶段提交（2PC）**。每个步骤正向执行成功，就记录其补偿函数；一旦后续某步失败，就按**严格倒序**依次调用已成功步骤的 `compensate`，从而保证最终一致性。\n\n关键设计点：\n1. **顺序注册**：用列表保存步骤，天然保证 FIFO 执行顺序。\n2. **正向执行 + 记录**：每执行成功一步，将其（含返回值）压入 `executed` 栈。\n3. **严格倒序补偿**：失败后从 `executed` 栈顶开始弹出并调用 `compensate`。\n4. **补偿容错**：单个补偿函数失败不应阻断其余补偿（否则回滚不完整），需记录并继续，最终汇总。\n5. **详细总结字典**：包含失败原因、堆栈、各步骤状态、回滚状态等。\n\n## 完整代码\n\n```python\nfrom __future__ import annotations\n\nimport logging\nimport traceback\nfrom dataclasses import dataclass, field\nfrom typing import Any, Callable, Dict, List, Optional, Tuple\n\nlogger = logging.getLogger(__name__)\n\n\n@dataclass\nclass Step:\n    \"\"\"\n    一个 Saga 步骤。\n\n    Attributes:\n        name:       步骤名称，便于日志与结果报告。\n        action:     正向执行函数，成功时返回任意值（会传给 compensate）。\n        compensate: 补偿/回滚函数，接收对应 action 的返回值作为参数。\n        args/kwargs:传给 action 的位置/关键字参数。\n    \"\"\"\n\n    name: str\n    action: Callable[..., Any]\n    compensate: Optional[Callable[..., Any]] = None\n    args: Tuple[Any, ...] = ()\n    kwargs: Dict[str, Any] = field(default_factory=dict)\n\n\n@dataclass\nclass StepResult:\n    \"\"\"单个步骤的执行/补偿结果，用于生成最终总结字典。\"\"\"\n\n    name: str\n    phase: str  # \"action\" | \"compensate\"\n    succeeded: bool\n    result: Any = None          # action 的返回值\n    error: Optional[str] = None  # 失败时的异常信息\n\n\nclass SagaOrchestrator"
+        },
+        {
+          "id": "DSWE-03",
+          "benchmark": "DeepSWE (长程软件工程)",
+          "title": "无锁环形缓冲区 Lock-Free RingBuffer 并发实现",
+          "score": 0.0,
+          "detail": "类测试异常: invalid syntax (<string>, line 1)",
+          "tps": 71.8,
+          "dt_ms": 21403.0,
+          "answer": "```python\nimport itertools\nfrom typing import Any\n\n\nclass RingBuffer:\n    \"\"\"\n    高性能、固定容量的无锁环形缓冲区。\n\n    设计要点：\n    - 使用 itertools.count() 作为 head / tail 游标，next() 在 CPython 下是原子的\n      （C 层实现且不释放 GIL），因此无需任何锁即可保证并发安全。\n    - 实际存储索引 = 游标 % capacity（容量必须为 2 的幂，保证位运算等价于取模）。\n    - 通过 tail - head 的差值判断满/空，天然区分满与空，无需额外计数变量或保留槽。\n    - 单写多读场景：tail 仅由唯一写线程推进；head 由多个读线程原子推进，\n      每个元素恰好被一个读者取出，保证数据一致性与 O(1) 吞吐。\n    \"\"\"\n\n    __slots__ = (\"_buffer\", \"_mask\", \"_tail\", \"_head\")\n\n    def __init__(self, capacity: int) -> None:\n        if capacity <= 0:\n            raise ValueError(\"capacity must be a positive integer\")\n        # 强制 2 的幂，使 % capacity 退化为 & (capacity - 1)，避免取模开销\n        if capacity & (capacity - 1) != 0:\n            raise ValueError(\"capacity must be a power of two\")\n        self._buffer: list[Any] = [None] * capacity\n        self._mask: int = capacity - 1\n        # count 的 next() 在 CPython 中原子，天然充当无锁计数器\n        self._tail: itertools.count = itertools.count(0)\n        self._head: itertools.count = itertools.count(0)\n\n    def push(self, item: Any) -> bool:\n        \"\"\"队列未满则压入并返回 True；已满返回 False。O(1)。\"\"\"\n        tail = next(self._tail)\n        # 先推进 tail，再判断：若超出容量窗口则回退（无锁 CAS 语义）\n        if tail - self._head[0] >= self._mask + 1:\n            # 已满：回退游标，避免浪费计数空间\n            self._tail = itertools.count(tail)\n            return False\n        self._buffer[tail &"
+        },
+        {
+          "id": "DSWE-04",
+          "benchmark": "DeepSWE (长程软件工程)",
+          "title": "异步数据库连接池生命周期与健康巡检状态机",
+          "score": 50.0,
+          "detail": "核心要点覆盖 2/4",
+          "tps": 71.2,
+          "dt_ms": 21575.0,
+          "answer": "```\n\nLet me write the full implementation now. I'll make it clean and complete.\n\nI need to be careful about:\n- The `acquire()` context manager needs to properly handle the connection lifecycle\n- Using asyncio primitives correctly (Queue, Event, Semaphore)\n- Background tasks for idle timeout and ping checks\n- Proper cleanup on pool close\n\nLet me use an `asyncio.Queue` for idle connections. When acquiring:\n1. Try to get from queue (non-blocking)\n2. If got one, ping it (if configured), if healthy return, else discard and try again\n3. If empty, check if we can create new (in_use < max_size)\n4. Otherwise wait on a waiter mechanism with timeout\n\nFor the waiting mechanism, I'll use an `asyncio.Queue` for waiters too, or track in-use count and use an Event. Let me use a simpler approach:\n\nActually, let me use this approach:\n- `self._idle`: asyncio.Queue of idle connections\n- `self._in_use`: set of in-use connections\n- `self._waiters`: asyncio.Queue where acquirers wait when pool is full\n\nWhen releasing:\n1. Put connection back in idle queue (if healthy and not expired)\n2. If there are waiters, we could hand off directly, but putting in queue works too\n\nLet me think about the acquire logic more carefully:\n\n```python\nasync def _acquire(self):\n    # Try to get an existing idle connection\n    while True:\n        try:\n            conn = self._idle.get_nowait()\n        except asyncio.QueueEmpty:\n            conn = None\n        \n        if conn is not None:\n            # Optionally ping\n            if self.ping_on_acquire:\n                healthy = await asyncio.wait_for(conn.ping(), timeout=self.ping_timeout)\n                if not healthy:\n                    await conn.close()\n                    continue  # try next\n            conn.touch()\n            self._in_use.add(conn)\n            return conn\n        \n        # No idle connection available\n        if len(self._in_use) < self.max_size:\n            # Create a new one\n            new_conn = await self._create_connection()\n            self._in_use.add(new_conn)\n            return new_conn\n        \n        # Pool is full, need to wait\n        waiter = self._waiters.get_nowait()  # hmm this doesn't work well\n```\n\nThe waiter"
+        },
+        {
+          "id": "NLR-01",
+          "benchmark": "NL2Repo",
+          "title": "生成企业级 JWT 鉴权 FastAPI 微服务脚手架",
+          "score": 28.6,
+          "detail": "仓库文件完整度 2/7",
+          "tps": 72.6,
+          "dt_ms": 21147.0,
+          "answer": "build-essential gcc \\\n    && rm -rf /var/lib/apt/lists/*\n\n# ---- Dependencies ----\nFROM base AS deps\nCOPY pyproject.toml ./\nRUN pip install --no-cache-dir .\n\n# ---- Production ----\nFROM base AS production\nCOPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages\nCOPY --from=deps /usr/local/bin /usr/local/bin\nCOPY . .\n\nEXPOSE 8000\n\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\n#### app/__init__.py\nEmpty file.\n\n#### app/core/config.py\nFor configuration management using pydantic-settings.\n\n```python\nfrom functools import lru_cache\nfrom pydantic_settings import BaseSettings, SettingsConfigDict\n\n\nclass Settings(BaseSettings):\n    \"\"\"Application settings loaded from environment variables.\"\"\"\n\n    app_name: str = \"auth-service\"\n    jwt_secret: str\n    jwt_algorithm: str = \"HS256\"\n    access_token_expire_minutes: int = 30\n    refresh_token_expire_days: int = 7\n\n    model_config = SettingsConfigDict(env_file=\".env\", env_prefix=\"AUTH_\", extra=\"ignore\")\n\n\n@lru_cache\ndef get_settings() -> Settings:\n    return Settings()\n```\n\n#### app/core/security.py\n\n```python\nimport datetime as dt\nfrom typing import Any, Dict, Optional\n\nimport jwt\nfrom passlib.context import CryptContext\nfrom pydantic import BaseModel\n\nfrom app.core.config import get_settings\n\n\npwd_context = CryptContext(schemes=[\"bcrypt\"], deprecated=\"auto\")\n\n\nclass TokenPayload(BaseModel):\n    sub: str\n    type: str = \"access\"\n    exp: dt.datetime\n\n\ndef hash_password(password: str) -> str:\n    return pwd_context.hash(password)\n\n\ndef verify_password(plain_password: str, hashed_password: str) -> bool:\n    return pwd_context.verify(plain_password, hashed_password)\n\n\ndef create_token(*, subject: str, expires_delta: dt.timedelta, token_type: str = \"access\") -> str:\n    settings = get_settings()\n    now = dt.datetime.now(dt.timezone.utc)\n    exp = now + expires_delta\n    payload = {\n        \"sub\": subject,\n        \""
+        },
+        {
+          "id": "NLR-02",
+          "benchmark": "NL2Repo",
+          "title": "生成现代化 CLI 命令行工具完整包结构",
+          "score": 100.0,
+          "detail": "核心要点覆盖 4/4",
+          "tps": 78.9,
+          "dt_ms": 19471.0,
+          "answer": "</think>\n\n# repocli — 生产级命令行工具完整仓库\n\n下面使用 **Typer**（基于 Click 构建）框架，为你生成一个完整的 `repocli` 仓库。包含分析目录、清理文件、富文本表格输出以及完整单元测试。\n\n## 目录结构\n\n```\nrepocli/\n├── pyproject.toml\n├── README.md\n├── LICENSE\n├── .gitignore\n├── .python-version\n├── src/\n│   └── repocli/\n│       ├── __init__.py\n│       ├── __main__.py\n│       ├── cli.py\n│       ├── models.py\n│       ├── analyzer.py\n│       └── cleaner.py\n└── tests/\n    ├── __init__.py\n    ├── conftest.py\n    ├── test_analyzer.py\n    ├── test_cleaner.py\n    └── test_cli.py\n```\n\n---\n\n## 1. `pyproject.toml`（含 `[project.scripts]` 入口点）\n\n```toml\n[build-system]\nrequires = [\"setuptools>=61.0\", \"wheel\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"repocli\"\nversion = \"0.1.0\"\ndescription = \"A production-grade CLI tool for analyzing and cleaning repositories.\"\nreadme = \"README.md\"\nrequires-python = \">=3.8\"\nlicense = { text = \"MIT\" }\nauthors = [{ name = \"Your Name\", email = \"you@example.com\" }]\nkeywords = [\"cli\", \"repository\", \"analysis\", \"cleanup\"]\nclassifiers = [\n    \"Development Status :: 4 - Beta\",\n    \"Environment :: Console\",\n    \"Intended Audience :: Developers\",\n    \"License :: OSI Approved :: MIT License\",\n    \"Programming Language :: Python :: 3\",\n    \"Programming Language :: Python :: 3.8\",\n    \"Programming Language :: Python :: 3.9\",\n    \"Programming Language :: Python :: 3.10\",\n    \"Programming Language :: Python :: 3.11\",\n    \"Topic :: Software Development :: Build Tools\",\n]\ndependencies = [\n    \"typer>=0.9.0\",\n    \"rich>=13.0.0\",\n]"
+        },
+        {
+          "id": "NLR-03",
+          "benchmark": "NL2Repo",
+          "title": "生成轻量本地 RAG 知识库检索微服务仓库",
+          "score": 75.0,
+          "detail": "核心要点覆盖 3/4",
+          "tps": 71.1,
+          "dt_ms": 21611.0,
+          "answer": "(len(c))}\n            for i, c in enumerate(chunks)\n        ]\n```\n\n### vector_store.py\n\n```python\n\"\"\"\n向量存储 (Vector Store)\n基于 SQLite + SentenceTransformers 实现向量嵌入与检索。\n\"\"\"\n\nimport sqlite3\nimport numpy as np\nfrom typing import List, Optional, Tuple\nfrom sentence_transformers import SentenceTransformer\nfrom .chunker import TextChunker\n\n\nclass VectorStore:\n    def __init__(self, db_path: str = \"rag.db\", model_name: str = \"all-MiniLM-L6-v2\"):\n        self.model = SentenceTransformer(model_name)\n        self.chunker = TextChunker()\n        self.db_path = db_path\n        self._init_db()\n    \n    def _init_db(self):\n        conn = sqlite3.connect(self.db_path)\n        cursor = conn.cursor()\n        cursor.execute(\"\"\"\n            CREATE TABLE IF NOT EXISTS documents (...)\n        \"\"\")\n        cursor.execute(\"\"\"\n            CREATE TABLE IF NOT EXISTS chunks (...)\n        \"\"\")\n        conn.commit()\n        conn.close()\n    \n    def add_document(self, filename: str, content: str) -> int:\n        chunks = self.chunker.chunk_text(content)\n        embeddings = self.model.encode(chunks, normalize_embeddings=True)\n        # store in DB\n        ...\n    \n    def query(self, question: str, top_k: int = 3) -> List[dict]:\n        # encode question\n        # compute cosine similarity\n        ...\n```\n\nLet me think about the cosine similarity computation. Since we normalize embeddings (normalize_embeddings=True), the dot product equals cosine similarity. But to be safe and general, I'll compute actual cosine similarity.\n\nFor retrieval from SQLite:\n1. Load all chunk embeddings and contents\n2. Compute query embedding\n3. Compute cosine similarity with each stored embedding\n4. Return top-k\n\nThis is a brute-force approach which is fine for small-scale. For large scale, we'd need ANN, but that's beyond the scope.\n\nLet me write this more carefully.\n\n```python\ndef query(self, question: str, top_k: int = 3) -> List[dict]:\n    query_embedding = self.model.encode([question], normalize_embeddings=True)[0]\n    \n    conn = sqlite3.connect(self.db_path)\n    cursor = conn.cursor()\n    cursor.execute(\"\"\"\n        SELECT c.content"
+        },
+        {
+          "id": "NLR-04",
+          "benchmark": "NL2Repo",
+          "title": "生成分布式异步任务队列 Worker 守护进程工程",
+          "score": 100.0,
+          "detail": "核心要点覆盖 3/3",
+          "tps": 71.2,
+          "dt_ms": 21573.0,
+          "answer": "# pytask-queue\n\n一个基于 Redis 的分布式后台任务队列微框架，支持任务提交、守护进程式执行、指数退避重试与死信队列（DLQ）。\n\n---\n\n## 📁 仓库结构\n\n```\npytask-queue/\n├── README.md\n├── requirements.txt\n├── pyproject.toml\n├── .env.example\n├── pytask_queue/\n│   ├── __init__.py\n│   ├── config.py            # 配置中心\n│   ├── models.py            # 任务 / 结果数据模型\n│   ├── serializer.py        # 任务序列化 / 反序列化\n│   ├── registry.py          # 任务注册表（函数名 <-> 可调用对象）\n│   ├── queue_backend.py     # Redis 后端抽象\n│   ├── retry_policy.py      # 退避重试策略\n│   ├── client.py            # 客户端：提交任务\n│   ├── worker.py            # 守护进程：轮询并执行\n│   └── tasks.py             # 示例计算密集型任务\n├── examples/\n│   ├── submit_tasks.py      # 演示：批量提交任务\n│   └── run_worker.py        # 演示：启动 worker\n└── tests/\n    └── test_queue.py        # 单测（可离线运行）\n```\n\n---\n\n## 📄 `requirements.txt`\n\n```text\nredis>=5.0.0\npython-dotenv>=1.0.0\n```\n\n---\n\n## 📄 `pyproject.toml`\n\n```toml\n[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"pytask-queue\"\nversion = \"0.1.0\"\ndescription = \"A minimal Redis-based distributed task queue micro-framework.\"\nrequires-python = \">=3.9\"\ndependencies = [\n    \"redis>=5.0.0\",\n    \"python-dotenv>=1.0.0\",\n]\n\n[project.scripts]\npytask-worker = \"pytask_queue.worker:main\"\n\n[tool.setuptools.packages.find]\nwhere = [\".\"]\ninclude = [\"pytask_queue*\"]\n```\n\n---\n\n## 📄 `.env.example`\n\n```ini\n#"
+        },
+        {
+          "id": "GPQA-01",
+          "benchmark": "GPQA Diamond",
+          "title": "量子霍尔效应与朗道能级简并度计算",
+          "score": 0.0,
+          "detail": "数值偏差: 1.0，期望 2.418",
+          "tps": 62.5,
+          "dt_ms": 20491.0,
+          "answer": "# 朗道能级非自旋轨道简并度计算\n\n## 物理背景\n\n在磁场中，二维电子气的轨道运动会量子化为朗道能级。每个朗道能级的**非自旋轨道简并度**表示该能级可容纳的电子态数目，其物理意义为：\n\n$$N_L = \\frac{\\text{磁通量}}{\\text{磁通量量子}} = \\frac{eBA}{h}$$\n\n其中 $\\Phi_0 = h/e$ 是磁通量量子。\n\n## 分步计算\n\n**代入已知量：**\n$$N_L = \\frac{eBA}{h} = \\frac{(1.602 \\times 10^{-19}\\,\\text{C})(10.0\\,\\text{T})(1.0 \\times 10^{-4}\\,\\text{m}^2)}{6.626 \\times 10^{-34}\\,\\text{J}\\cdot\\text{s}}$$\n\n**计算分子：**\n$$eBA = (1.602 \\times 10^{-19})(10.0)(1.0 \\times 10^{-4})$$\n$$= 1.602 \\times 10^{-19} \\times 10^{-3} = 1.602 \\times 10^{-22}\\,\\text{C·T·m}^2$$\n\n**除以分母：**\n$$N_L = \\frac{1.602 \\times 10^{-22}}{6.626 \\times 10^{-34}}$$\n\n分离系数与指数：\n$$N_L = \\frac{1.602}{6.626} \\times 10^{-22+34} = 0.24177 \\times 10^{12}$$\n\n**化为标准科学计数法：**\n$$N_L = 2.4177 \\times 10^{11}$$\n\n## 最终结果\n\n四舍五入到三位有效数字：\n\n$$\\boxed{N_L \\approx 2.42 \\times 10^{11}}$$\n\n**量纲验证：** $\\dfrac{\\text{C}\\cdot\\text{T}\\cdot\\text{m}^2}{\\text{J}\\cdot\\text{s}}$，由于 $1\\,\\text{T} = \\dfrac{\\text{J}}{\\text{C·m}^2/\\text{s}}$... 实际上 $\\text{T·m}^2 = \\text{Wb}$（韦伯），$\\dfrac{\\text{C·Wb}}{\\text{J·s}}$，而 $\\text{Wb}=\\text{V·s}=\\dfrac{\\text{J}}{\\text{C}}\\cdot\\text{s}$，故 $\\dfrac{\\text{C}\\cdot\\text{J·s/C}}{\\text{J·s}}=1$（无量纲），✓ 结果正确。"
+        },
+        {
+          "id": "GPQA-02",
+          "benchmark": "GPQA Diamond",
+          "title": "手性催化不对称合成产物立体构型判定",
+          "score": 100.0,
+          "detail": "核心要点覆盖 2/2",
+          "tps": 70.6,
+          "dt_ms": 21768.0,
+          "answer": "# 不对称催化氢化机理分析\n\n## 反应体系\n\n底物 $\\alpha$-乙酰氨基肉桂酸甲酯：\n$$\\text{PhCH=C(CO}_2\\text{Me)(NHAc)}$$\n\n这是典型的 $\\alpha$-脱氢氨基酸酯，与工业合成 L-DOPA 的底物同属一类。催化剂为 $(R,R)$-DIPAMP 修饰的 Rh 配合物。\n\n## Halpern 机理的核心分析\n\n**两种非对映中间体（diastereomeric intermediates）的形成：**\n\n底物在 Rh 中心配位时有两种取向，形成两个非对映异构的催化循环中间体：\n\n$$\\text{Rh-L}^* + \\text{底物} \\rightleftharpoons \\begin{cases} \\textbf{Major (M)} & \\text{较稳定、浓度高（热力学有利）}\\\\ \\textbf{Minor (m)} & \\text{较不稳定、浓度低} \\end{cases}$$\n\n**关键动力学结论：**\n\nHalpern 通过稳态动力学分析指出，产物的对映选择性**并非**由占优势的主要中间体决定，而是由**浓度较低但反应活性更高的次要中间体**决定：\n\n$$k_{\\text{minor}} \\gg k_{\\text{major}}$$\n\n即次要中间体虽然浓度低，但其决速步（H₂ 的氧化加成 / 氢迁移插入）活化能更低、反应速率更快。因此：\n\n$$\\boxed{\\text{对映选择性由「次要非对映异构体中间体」决定}}$$\n\n## 绝对构型的确定\n\n对于 $(R,R)$-DIPAMP 体系，Rh 中心的手性环境使底物采取特定配位取向，氢从位阻较小的一面（Re/Si 面）转移。\n\n**与 L-DOPA 工业合成的类比：**\n- 底物：$(Z)$-$\\alpha$-乙酰氨基-2,4,5-三甲氧基肉桂酸甲酯\n- 催化剂：$(R,R)$-DIPAMP-Rh\n- 产物：$(S)$-乙酸酯 → $(S)$-DOPA（L-DOPA）\n\n本反应底物（苯基取代）与上述体系配位模式相同，故立体化学结果一致——**$(R,R)$-DIPAMP 给出 $(S)$"
+        },
+        {
+          "id": "GPQA-03",
+          "benchmark": "GPQA Diamond",
+          "title": "代数拓扑 CW-复形同调群与贝蒂数推导",
+          "score": 0.0,
+          "detail": "数值偏差: 2.0，期望 1",
+          "tps": 69.9,
+          "dt_ms": 21970.0,
+          "answer": "# 空间 $X = S^2 \\vee S^1$ 的同调与欧拉示性数\n\n## 方法一：CW 复结构 + 链复形\n\n**构造 CW 结构。** 取 $S^2$ 的标准 CW 结构（一个 0-胞腔、一个 2-胞腔，附着映射为 $S^1 \\to S^0$ 的二对一映射），取 $S^1$ 的标准 CW 结构（一个 0-胞腔、一个 1-胞腔）。在基点处粘合后，$X$ 得到 CW 结构：\n\n$$\\text{0-胞腔 } 1 \\text{ 个},\\quad \\text{1-胞腔 } 1 \\text{ 个},\\quad \\text{2-胞腔 } 1 \\text{ 个}.$$\n\n对应的整数链复形为\n$$0 \\longrightarrow C_2 \\xrightarrow{\\ \\partial_2\\ } C_1 \\xrightarrow{\\ \\partial_1\\ } C_0 \\longrightarrow 0,\\qquad C_0=C_1=C_2=\\mathbb{Z}.$$\n\n**计算边界同态。**\n- $\\partial_1$：1-胞腔是一个以基点为起终点的环，故 $\\partial_1 = 0$。\n- $\\partial_2$：2-胞腔通过 $S^2$ 的附着映射（度为 2）粘到 0-胞腔上，故 $\\partial_2 = 0$。\n\n因此所有边界同态均为零，同调群即为链群本身：\n\n$$\n\\begin{aligned}\nH_0(X) &= \\mathbb{Z},\\\\\nH_1(X) &= \\mathbb{Z},\\\\\nH_2(X) &= \\mathbb{Z},\\\\\nH_3(X) &= 0.\n\\end{aligned}\n$$\n\n## 方法二：Mayer–Vietoris 验证（约化同调）\n\n取开邻域 $U = S^2 \\cup (\\text{S}^1\\text{的一半})$，$V = S^1 \\cup (\\text{S}^2\\text{的一半})$，则 $U \\simeq S^2$，$V \\simeq S^"
+        },
+        {
+          "id": "GPQA-04",
+          "benchmark": "GPQA Diamond",
+          "title": "CRISPR-Cas9 靶向解旋自由能与脱靶动力学",
+          "score": 66.7,
+          "detail": "核心要点覆盖 2/3",
+          "tps": 71.4,
+          "dt_ms": 21509.0,
+          "answer": "# 种子区域错配为何强烈抑制 Cas9 切割活性\n\n## 核心结论\n\n种子区（PAM 近端 1–8 bp）的错配之所以抑制力远强于远端（13–20 bp），根本原因在于 **Cas9 的激活是一个具有顺序性与门控性的多步构象级联反应**，而种子区的碱基配对是触发并稳定\"活性构象\"的**热力学与动力学枢纽**。下面从自由能壁垒与构象门控两个层面展开。\n\n---\n\n## 一、R-loop 形成的方向性与时间顺序（结构基础）\n\nCas9 识别靶标遵循严格的**空间与时间顺序**：\n\n1. **PAM 先被识别**：PI 结构域（PAM-interacting domain）结合 NGG 等 PAM，这是整个激活级联的\"第一把钥匙\"。\n2. **DNA 从 PAM 近端开始解链**：R-loop 的延伸方向是 **PAM 近端 → 远端**（即种子区最先杂交、最晚解旋）。\n3. 因此，**种子区是 R-loop 成核（nucleation）的核心区域**。\n\n这一方向性意味着：**种子区的配对状态直接决定了 R-loop 能否成功成核并稳定延伸**。\n\n---\n\n## 二、自由能壁垒视角：种子区贡献了不成比例的稳定性\n\nR-loop 的形成是一个**耦合过程**——RNA–DNA 杂合链的形成与 DNA 双链的解旋相互耦合。其净自由能变化为：\n\n$$\\Delta G_{\\text{R-loop}} = \\Delta G_{\\text{杂交成对}} + \\Delta G_{\\text{DNA解旋}} + \\Delta G_{\\text{Cas9结合补偿}}$$\n\n关键点在于：\n\n- **种子区配对提供主要的热力学驱动力**。由于 R-loop 从 PAM 近端开始延伸，种子区的正确配对能最大程度地通过 Cas9 的 REC 叶（recognition lobe）与 RNA–DNA 杂合链形成有利的相互作用，从而**大幅降低 ΔG**。\n- **错配会局部破坏碱基堆积（base stacking）与氢键**，使该位点的 ΔG 显著升高。由于种子区处于\"成核枢纽\"位置，其自由能升高会被**放大**——它"
+        },
+        {
+          "id": "HLE-01",
+          "benchmark": "HLE",
+          "title": "跨学科形式认识论与模态认知逻辑反证证明",
+          "score": 66.7,
+          "detail": "核心要点覆盖 2/3",
+          "tps": 64.9,
+          "dt_ms": 23657.0,
+          "answer": "# 菲奇认知悖论核心引理证明\n\n## 符号约定\n\n为书写简洁，记 $K := K_i$（省略下标 $i$）。我们要证明的定理是：\n\n$$\\vdash\\ (p \\land \\neg K p)\\to \\neg K(p\\land\\neg K p)$$\n\n**证明策略**：采用反证法。假设 $K(p\\land\\neg K p)$ 成立，推导出矛盾 $Kp \\land \\neg Kp$，从而否定该假设。\n\n---\n\n## 演绎推导（反证法）\n\n| 步骤 | 公式 | 依据 |\n|------|------|------|\n| (1) | $K(p\\land\\neg K p)$ | **反证假设**（假设主体知道\"某真命题不可知\"这一事实） |\n| (2) | $(p\\land\\neg K p)\\to p$ | 合取化简，命题逻辑重言式 |\n| (3) | $K\\big((p\\land\\neg K p)\\to p\\big)$ | 对(2)应用**必然化规则**(Nec) |\n| (4) | $K\\big((p\\land\\neg K p)\\to p\\big)\\to\\big(K(p\\land\\neg K p)\\to Kp\\big)$ | **K公理**（代入 $\\phi:=p\\land\\neg Kp,\\ \\psi:=p$） |\n| (5) | $K(p\\land\\neg K p)\\to Kp$ | 由(3)(4)假言推理(MP) |\n| (6) | $\\boxed{Kp}$ | 由(1)(5)假言推理(MP) |\n| (7) | $(p\\land\\neg K p)\\to\\neg K p$ | 合取化简，命题逻辑重言式 |\n| (8) | $K\\big((p\\land\\neg K p)\\to\\neg K p\\big)$ | 对(7)应用**必然化规则**(Nec) |\n| (9) | $K\\big((p\\land\\neg K p)\\to\\neg K p\\big)\\to\\big(K(p\\land\\neg K p)\\to K\\neg K p\\big)$ | **"
+        },
+        {
+          "id": "HLE-02",
+          "benchmark": "HLE",
+          "title": "Kerr 旋转黑洞能层能量提取彭罗斯过程极限",
+          "score": 100.0,
+          "detail": "精确数理断言通过: 0.29289",
+          "tps": 62.7,
+          "dt_ms": 24496.0,
+          "answer": "# 彭罗斯过程最大能量提取效率推导\n\n## 一、克尔黑洞的不可逆质量\n\n克尔黑洞的事件视界半径为：\n$$r_+ = M + \\sqrt{M^2 - a^2}$$\n\n视界面积 $A = 4\\pi(r_+^2 + a^2)$，**不可逆质量**由下式定义（Bekenstein-Hawking 熵正比于面积）：\n$$A = 16\\pi M_{\\text{irr}}^2 \\quad\\Rightarrow\\quad M_{\\text{irr}}^2 = \\frac{r_+^2 + a^2}{4}$$\n\n## 二、质量-角动量关系（不可约分解）\n\n将 $r_+$ 代入并化简，可得 Kerr 黑洞的**严格质量公式**：\n$$\\boxed{M^2 = M_{\\text{irr}}^2 + \\frac{J^2}{4M_{\\text{irr}}^2}}, \\qquad J = aM$$\n\n其中第一项为**不可约（不可提取）能量**，第二项为**可通过旋转过程提取的转动能量**。\n\n## 三、极端克尔黑洞的极限\n\n对极端黑洞 $a = M$，此时 $r_+ = M$：\n$$M_{\\text{irr}}^2 = \\frac{M^2 + M^2}{4} = \\frac{M^2}{2} \\quad\\Rightarrow\\quad M_{\\text{irr}} = \\frac{M}{\\sqrt{2}}$$\n\n## 四、最大提取效率\n\n彭罗斯过程受**第二定律约束**（视界面积不减，即 $M_{\\text{irr}}$ 不降）。当过程可逆地进行到 $M_{\\text{irr}}$ 达到最小值时，提取能量最大：\n\n$$E_{\\text{max}} = M - M_{\\text{irr}} = M - \\frac{M}{\\sqrt{2}} = M\\left(1 - \\frac{1}{\\sqrt{2}}\\right)$$\n\n因此理论最大效率为：\n$$\\eta_{\\text{max}} = 1 - \\frac{1}{\\sqrt{2}} = 1 - 0.70711 = 0.29289"
+        },
+        {
+          "id": "HLE-03",
+          "benchmark": "HLE",
+          "title": "算法博弈论 VCG 机制真实报价占优策略证明",
+          "score": 66.7,
+          "detail": "核心要点覆盖 2/3",
+          "tps": 70.7,
+          "dt_ms": 21729.0,
+          "answer": "# VCG 机制 DSIC 性质证明\n\n## 符号约定\n\n设参与者 $i$ 以外的所有参与者的报价向量为 $b_{-i}=(b_j)_{j\\neq i}$。定义两个关键函数：\n\n$$W(k)\\equiv \\sum_{j\\neq i} b_j(k)\\quad\\text{（其他参与者报价之和）}$$\n\n$$B_i(k)\\equiv b_i(k)+W(k)\\quad\\text{（含 }i\\text{ 的总报价）}$$\n\n参与者 $i$ 报出 $b_i$ 时，机制选出的结果为\n$$k^*(b_i)=\\arg\\max_k\\big[b_i(k)+W(k)\\big]$$\n\n其费用为\n$$p_i=\\max_k W(k)-W(k^*)$$\n\n---\n\n## 第一步：化简净效用（分离常数项）\n\n参与者 $i$ 的净效用为\n$$\nu_i(b_i)=v_i(k^*)-p_i=v_i(k^*)-\\Big[\\max_k W(k)-W(k^*)\\Big]\n$$\n\n整理得\n$$\n\\boxed{\\,u_i(b_i)=\\underbrace{\\big[v_i(k^*)+W(k^*)\\big]}_{\\text{依赖 }b_i}-\\underbrace{\\max_k W(k)}_{\\text{常数}}\\,}\n$$\n\n**关键点**：$\\max_k W(k)$ 仅由 $b_{-i}$ 决定，与 $i$ 的报价 $b_i$ **完全无关**。因此\n\n$$\n\\arg\\max_{b_i} u_i(b_i)=\\arg\\max_{b_i}\\Big[v_i(k^*)+W(k^*)\\Big]\n$$\n\n定义**真实社会福利函数**\n$$\n\\Phi(k)\\equiv v_i(k)+W(k)\n$$\n\n则问题化为：**选择 $b_i$ 以最大化 $\\Phi\\big(k^*(b_i)\\big)$。**\n\n---\n\n## 第二步：如实报价恰好最大化 $\\Phi$\n\n当 $b_i=v_i$ 时，机制选择\n$$\nk^{\\text{truth}}=\\arg\\max_k\\big[v_i(k)+W(k)\\big]=\\arg\\max_k \\Phi(k)\n$$\n\n故如实报价使\n$$\n\\Phi\\big(k^"
+        },
+        {
+          "id": "HLE-04",
+          "benchmark": "HLE",
+          "title": "神经信息整合理论 IIT 全局整合信息量 Φ 计算",
+          "score": 33.3,
+          "detail": "核心要点覆盖 1/3",
+          "tps": 71.7,
+          "dt_ms": 21437.0,
+          "answer": "# 信息整合理论（IIT）中 $\\Phi^{\\text{max}}$ 的系统动力学分析\n\n## 0. 形式化框架与约定\n\n在展开分析前，先建立 IIT 3.0/4.0 的数学语言。设系统 $M$ 处于某状态 $m$，其动力学由**转移概率矩阵**（transition probability matrix）$T$ 刻画：\n\n$$\nT_{ij} = P\\big(X(t+1)=j \\mid X(t)=i\\big)\n$$\n\n其中 $i,j$ 遍历系统所有可能的状态。IIT 的核心主张是：**一个系统的因果性（causation）可以由其状态对后续状态的约束（effect repertoire）与对先前状态的约束（cause repertoire）完全描述**。\n\n定义两个关键几何对象：\n\n- **效应库（Effect repertoire）** $\\omega_i$：系统处于状态 $i$ 时，下一时刻各状态的概率分布。\n- **因果库（Cause repertoire）** $\\kappa_j$：下一时刻处于状态 $j$ 时，对先前状态的推断分布。\n\n系统的**因果结构（cause-effect structure）** 是所有机制（mechanism）及其因果态（cause-effect state）的集合。而**最大不可约因果结构（maximally irreducible cause-effect structure, MICS）** 是使信息损失最小的那个子集与状态——它\"定义\"了意识的内容（quality）。\n\n---\n\n## 1. $\\Phi^{\\text{max}}$ 的物理与认知意义\n\n### 1.1 Φ 的严格定义\n\n$\\Phi$ 衡量的是：**一个整体所产生的信息，减去其各部分在相互独立时所能产生的信息**。\n\n具体地，对系统 $M$ 的所有机制-状态集合，计算其**整体因果信息量** $|\\text{Whole}|$（即 MICS 的信息量）。然后考虑所有可能的**划分（partition）** $\\pi$：将系统切成子集 $A$ 与 $B$，并令二者在动力学上**解耦**（切断 $A\\!\\to\\!B$、$B\\!\\to\\!A$ 的因果连接，使联合转移矩阵退化为分块对角形式）。\n\n对每个划分，计算**被割裂后各部分独立的信息量之和** $|\\text{Partition}_\\pi|$。定义：\n\n$$\n"
+        }
+      ]
+    }
+  }
+}
