@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title AI 智能任务自适应网关 · Smart Dispatch Gateway v4.0
+title AI 智能任务自适应网关 · Unified 27B Flagship Gateway v5.0
 
 if not exist "%~dp0logs" mkdir "%~dp0logs"
 
-:: CUDA 运行时性能优化（2GB JIT 编译缓存 + 硬件调度流锁）
+:: CUDA 运行时性能优化 (2GB JIT 编译缓存 + 硬件调度流锁)
 set "CUDA_CACHE_MAXSIZE=2147483648"
 set "CUDA_DEVICE_MAX_CONNECTIONS=1"
 
@@ -13,7 +13,7 @@ if "%dt%"=="" set "dt=%DATE:~-4%%DATE:~3,2%%DATE:~0,2%"
 set "DAILY_LOG=%~dp0logs\8083_llama_%dt%.log"
 
 echo ====================================================================================
-echo   🤖 AI 智能任务自适应网关  ·  Unified 27B Flagship Gateway v5.0
+echo   🤖 AI 智能任务自适应网关 · Unified 27B Flagship Gateway v5.0
 echo ====================================================================================
 echo   [网关统一入口] http://127.0.0.1:8081/v1 (全应用统一接入点)
 echo   [实时算力大屏] http://127.0.0.1:8081/dashboard (动态槽位 · 瞬时吞吐 · 虚拟账本)
