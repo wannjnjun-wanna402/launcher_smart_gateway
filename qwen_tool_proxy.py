@@ -2940,6 +2940,31 @@ class Qwen27BBackendManager:
             if self.current_state == target_state and self.is_server_healthy():
                 return True
 
+            state_names = {
+                self.STATE_MTP_2SLOT: "👑 Qwen3.8-27B-A [双槽MTP 极速基准态] (36.7 t/s · 144K)",
+                self.STATE_PIPELINE_4SLOT: "🚀 Qwen3.8-27B-A [4并发流水线态] (45.0 t/s · 144K)",
+                self.STATE_VISION_27B: "👁️ Qwen3.8-27B-A [原生多模态视觉态] (31.5 t/s · 128K)"
+            }
+            old_desc = state_names.get(self.current_state, self.current_state)
+            new_desc = state_names.get(target_state, target_state)
+            daily_log = self.get_today_log()
+
+            # 向主脑日志总线注入切换横幅
+            banner_start = (
+                f"\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"[{time.strftime('%H:%M:%S')}] 🔄 [AI自适应热切换] 正在置换主模型显存:\n"
+                f"  ├─ 当前形态: {old_desc}\n"
+                f"  └─ 目标形态: {new_desc}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            )
+            try:
+                with open(daily_log, "a", encoding="utf-8") as lf:
+                    lf.write(banner_start)
+                    lf.flush()
+            except Exception:
+                pass
+
             sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🚀 触发 27B 形态自适应热切换: {self.current_state} ➔ {target_state}...\n")
             sys.stdout.flush()
 
@@ -2960,7 +2985,6 @@ class Qwen27BBackendManager:
                     break
 
             # 2. 构造目标形态的启动参数
-            daily_log = self.get_today_log()
             base_args = [
                 self.server_exe,
                 "-m", self.model_path,
@@ -3028,7 +3052,22 @@ class Qwen27BBackendManager:
                     try: on_heartbeat()
                     except Exception: pass
                 if self.is_server_healthy():
-                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ✅ 27B [{target_state}] 已就绪 (耗时 {time.time()-t0:.1f} 秒)！\n")
+                    t_elapsed = time.time() - t0
+                    banner_done = (
+                        f"\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"[{time.strftime('%H:%M:%S')}] ✅ [AI自适应热切换] 主模型显存置换完成 (耗时 {t_elapsed:.1f} 秒)！\n"
+                        f"  └─ 当前激活: {new_desc}\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    )
+                    try:
+                        with open(daily_log, "a", encoding="utf-8") as lf:
+                            lf.write(banner_done)
+                            lf.flush()
+                    except Exception:
+                        pass
+
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ✅ 27B [{target_state}] 已就绪 (耗时 {t_elapsed:.1f} 秒)！\n")
                     sys.stdout.flush()
                     self.current_state = target_state
                     return True
