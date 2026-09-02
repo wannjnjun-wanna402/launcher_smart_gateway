@@ -1,4 +1,4 @@
-﻿# ====================================================================================
+# ====================================================================================
 #  🤖 AI 智能任务自适应网关启动器 v4.0 (Smart Task Dispatch Gateway)
 #  专为 Tesla V100 32GB 打造：全局 144K 统一共享池 · 5大王牌矩阵 · 默认 Flash 极速接待
 #  Date: 2026-09-02
@@ -77,6 +77,26 @@ function Write-C([string]$text, [string]$fg = "White", [bool]$nl = $true) {
 }
 
 # ------------------------------------------------------------------------------------
+# 0. 历史日志生命周期自动管理（自动清理超过 90 天的历史日志，循环保持磁盘干爽）
+# ------------------------------------------------------------------------------------
+function Clean-ExpiredLogs([int]$days = 90) {
+    if (Test-Path $LogDir) {
+        $threshold = (Get-Date).AddDays(-$days)
+        $oldLogs = Get-ChildItem -Path $LogDir -Filter "*.log" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt $threshold }
+        $cleaned = 0
+        foreach ($f in $oldLogs) {
+            try {
+                Remove-Item -Path $f.FullName -Force -ErrorAction SilentlyContinue
+                $cleaned += 1
+            } catch {}
+        }
+        if ($cleaned -gt 0) {
+            Write-C "  🧹 自动归档清理 $cleaned 个超过 90 天的历史旧日志" "DarkGray"
+        }
+    }
+}
+
+# ------------------------------------------------------------------------------------
 # 1. 显存与进程绝对安全清理（严格遵守 AGENTS.md 标准）
 # ------------------------------------------------------------------------------------
 function Stop-LlamaProcesses {
@@ -110,6 +130,8 @@ function Stop-LlamaProcesses {
 # 2. 保证 8081 智能网关与 8085 侧挂视觉常驻运行
 # ------------------------------------------------------------------------------------
 function Ensure-GatewayAndSidecar {
+    Clean-ExpiredLogs 90
+
     # 检查 8081 网关
     $gConn = Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue
     if (-not $gConn) {

@@ -3138,6 +3138,12 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         self.wfile.write(chunk_len + start_evt + b"\r\n")
                         self.wfile.flush()
                         anthropic_started = True
+                    else:
+                        # OpenAI SSE 协议即时心跳首包，防止超长预填计算期间客户端读超时
+                        ping_evt = b": keep-alive\r\n\r\n"
+                        chunk_len = f"{len(ping_evt):X}\r\n".encode("ascii")
+                        self.wfile.write(chunk_len + ping_evt + b"\r\n")
+                        self.wfile.flush()
 
                     while True:
                         line = resp.readline()
