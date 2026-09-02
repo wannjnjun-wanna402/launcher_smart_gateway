@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  AI大模型启动器  v2
 #  自动识别 E:\models 目录下所有 GGUF 模型，分类并启动
 #  显示模型、显存、资源占用概览
@@ -1763,20 +1763,20 @@ function Start-LlamaServer {
     }
     $ServerArgs = $newArgs
 
-    # ---- 清理后端端口 8083 上残留的旧模型服务（保持 8081 网关常驻） ---- 
+    # ---- 彻底清理残留的 llama 进程与 8083 端口（严格遵守 AGENTS.md 规范） ----
     try {
-        $netstat = netstat -ano | Select-String ":$backendPort "
-        if ($netstat) {
-            foreach ($line in $netstat) {
-                if ($line -match 'LISTENING\s+(\d+)$') {
-                    $oldPid = [int]$Matches[1]
-                    Write-DailyLog "CLEANUP: killing old backend model process PID=${oldPid} on port $backendPort"
-                    taskkill /PID $oldPid /F 2>$null | Out-Null
-                }
-            }
-        }
+        Get-Process | Where-Object { $_.ProcessName -match "llama" } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-NetTCPConnection -LocalPort $backendPort -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
     } catch { }
-    Start-Sleep -Milliseconds 300
+    
+    # 循环检查 GPU 显存直至安全释放
+    for ($waitIdx = 0; $waitIdx -lt 10; $waitIdx++) {
+        try {
+            $usedStr = (nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>$null).Trim()
+            if ($usedStr -and [int]$usedStr -lt 600) { break }
+        } catch { }
+        Start-Sleep -Milliseconds 300
+    }
     Ensure-GatewayRunning
 
     # ---- 仅限文本型 27B 模型：自动挂载 8085 (Qwen2.5-VL-3B) CPU 视觉侧挂 ----
@@ -2029,6 +2029,10 @@ function Start-LlamaServer {
         if ($script:g_Sidecar8085Process -and -not $script:g_Sidecar8085Process.HasExited) {
             Stop-Process -Id $script:g_Sidecar8085Process.Id -Force -ErrorAction SilentlyContinue
         }
+        # 安全清理所有 llama-server 进程以释放 GPU 显存
+        try {
+            Get-Process | Where-Object { $_.ProcessName -match "llama" } | Stop-Process -Force -ErrorAction SilentlyContinue
+        } catch { }
         # 保持 8081 智能协同网关常驻运行，供随时访问 /dashboard 监控看板与虚拟计费
         # 结束前最后一次采样
         Write-MonitorSample -LogFile $g_DailyLogFile -ModelName $modelName
