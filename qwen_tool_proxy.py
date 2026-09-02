@@ -2882,9 +2882,9 @@ class Qwen27BBackendManager:
         self.mmproj_path = os.path.join(models_dir, "mmproj-Qwen3.8-27B-F16.gguf")
         self.log_dir = os.path.join(root_dir, "logs")
         
-        # 后台闲置守护线程已禁用，避免频繁重启打断客户端连接
-        # self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
-        # self.watchdog_thread.start()
+        # 5分钟闲置自适应回归线程（空闲 300 秒自动平滑回归默认双槽 MTP 态）
+        self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
+        self.watchdog_thread.start()
 
     def get_today_log(self):
         today = time.strftime("%Y%m%d")
@@ -3020,7 +3020,7 @@ class Qwen27BBackendManager:
             subprocess.Popen(base_args, cwd=self.root_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             t0 = time.time()
-            while time.time() - t0 < 30:
+            while time.time() - t0 < 75:
                 if on_heartbeat:
                     try: on_heartbeat()
                     except Exception: pass
@@ -3034,13 +3034,13 @@ class Qwen27BBackendManager:
             return False
 
     def _idle_watchdog(self):
-        """后台闲置监控：若脱离默认 MTP 态且空闲超过 45 秒，自动优雅回归默认双槽MTP"""
+        """后台闲置监控：若脱离默认 MTP 态且空闲超过 300 秒(5分钟)，自动优雅回归默认双槽MTP"""
         while True:
-            time.sleep(5)
+            time.sleep(10)
             if self.current_state in (self.STATE_VISION_27B, self.STATE_PIPELINE_4SLOT):
                 idle_sec = time.time() - self.last_activity_time
-                if idle_sec > 45:
-                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🕒 任务已空闲 {idle_sec:.0f} 秒，自动回归【27B 双槽MTP 常驻极速态】...\n")
+                if idle_sec > 300:
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🕒 任务已空闲 {idle_sec:.0f} 秒 (超5分钟)，自动优雅回归【27B 双槽MTP 常驻极速态】...\n")
                     sys.stdout.flush()
                     self.ensure_state(self.STATE_MTP_2SLOT)
 
@@ -3354,15 +3354,25 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 cleaned_json["reasoning_effort"] = effort
                 cleaned_json["reasoning_budget"] = budget
                 
-                # 3. 动态思考等级注入与方案B GPU 瞬态视觉协同
+                # 3. 动态思考等级注入与 3 组形态自适应热切换 (有图切原生多模态 27B / 工作切双MTP / 4槽流水线)
                 has_img = has_image_content(cleaned_json)
-                is_backend_multi = check_backend_is_multimodal(target_port)
-                if has_img and not is_backend_multi:
-                    # 8083 主脑为纯文本形态（双槽MTP/4并发流水线），执行 GPU 瞬态 3B 视觉解析 (用完即焚)
-                    cleaned_json, was_modified, v_tokens = process_vision_pipeline(cleaned_json, key_name=key_name)
+                req_model = str(cleaned_json.get("model", "")).lower()
+                
+                if has_img:
+                    # 有图：自适应热切至 27B 原生多模态视觉态 (挂载 mmproj-27B)
+                    backend_manager.ensure_state(backend_manager.STATE_VISION_27B)
+                    is_vision = True
+                elif "pipeline" in req_model or "4并发" in req_model or "4slot" in req_model:
+                    # 4 槽高吞吐流水线态
+                    backend_manager.ensure_state(backend_manager.STATE_PIPELINE_4SLOT)
+                    is_vision = False
+                elif "mtp" in req_model or "双槽" in req_model:
+                    # 双槽 MTP 极速基准态
+                    backend_manager.ensure_state(backend_manager.STATE_MTP_2SLOT)
                     is_vision = False
                 else:
-                    is_vision = has_img
+                    # 默认维持当前状态（若在 MTP 则直接 MTP，若在视觉态且仍在会话中则保持）
+                    is_vision = False
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)

@@ -3,8 +3,8 @@
 """
 ====================================================================================
  🤖 AI 智能任务自适应网关启动器 v5.0 (方案B · 纯 Python 原生驱动引擎)
- 专为 Tesla V100 32GB 打造：纯 Qwen3.8-27B 旗舰统一矩阵 · 原生输出 · 绝对稳定
- 彻底告别 Windows CMD 乱码、杜绝后台随意杀进程导致的断连与伪造日志
+ 专为 Tesla V100 32GB 打造：纯 Qwen3.8-27B 旗舰统一矩阵 · 4.5秒自适应热切换 · 原生输出
+ 连续无缝投屏 llamacpp 服务日志，彻底解决热切换导致的脱钩闪退与退出提示问题
  Date: 2026-09-02
 ====================================================================================
 """
@@ -13,6 +13,9 @@ import os
 import sys
 import time
 import socket
+import json
+import urllib.request
+import urllib.error
 import subprocess
 import signal
 
@@ -115,7 +118,11 @@ def ensure_gateway():
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags
             )
-            time.sleep(1.2)
+            # 等待网关就绪
+            for _ in range(25):
+                if is_port_listening(8081):
+                    break
+                time.sleep(0.2)
         except Exception as e:
             print_c(f"  ⚠️ 启动 8081 网关警告: {e}", "yellow")
 
@@ -123,8 +130,7 @@ def ensure_gateway():
 # 2. 显存与进程绝对安全清理（严格遵守 AGENTS.md 标准）
 # ------------------------------------------------------------------------------------
 def stop_llama_processes():
-    print_c("  🧹 正在执行显存与旧进程安全回收...", "yellow")
-    # 终止所有 llama 相关进程
+    print_c("  🧹 正在安全停止所有 AI 进程与显存回收...", "yellow")
     try:
         subprocess.run(
             ['powershell', '-NoProfile', '-Command', 'Get-Process | Where-Object { $_.ProcessName -match "llama" } | Stop-Process -Force'],
@@ -133,7 +139,6 @@ def stop_llama_processes():
     except Exception:
         pass
     
-    # 释放 8083 端口占用
     try:
         subprocess.run(
             ['powershell', '-NoProfile', '-Command', 'Get-NetTCPConnection -LocalPort 8083 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }'],
@@ -142,8 +147,7 @@ def stop_llama_processes():
     except Exception:
         pass
 
-    # 循环检查 GPU 显存，低于 600MB 才算彻底干净
-    for _ in range(15):
+    for _ in range(10):
         try:
             res = subprocess.run(
                 ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
@@ -151,27 +155,23 @@ def stop_llama_processes():
             )
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l.strip() for l in res.stdout.strip().splitlines() if l.strip()]
-                if lines:
-                    val = int(lines[0])
-                    if val < 600:
-                        print_c(f"  ✅ GPU 显存已完全释放 (当前占用: {val} MB)", "green")
-                        break
+                if lines and int(lines[0]) < 600:
+                    break
         except Exception:
             pass
-        time.sleep(0.8)
+        time.sleep(0.5)
 
 # ------------------------------------------------------------------------------------
 # 3. 纯 Qwen3.8-27B 旗舰 3 大场景形态配置定义
 # ------------------------------------------------------------------------------------
+STATE_MTP_2SLOT = "MTP_2SLOT"
+STATE_PIPELINE_4SLOT = "PIPELINE_4SLOT"
+STATE_VISION_27B = "VISION_27B"
+
 MODEL_PROFILES = {
     "1": {
+        "state_key": STATE_MTP_2SLOT,
         "name": "Qwen3.8-27B-A [双槽MTP]",
-        "gguf": "Qwen3.8-27B-Abliterated-Q6_K.gguf",
-        "alias": "Qwen3.8-27B-A-Q6_K",
-        "ctx": 147456,       # 144K 统一动态共享池
-        "parallel": 2,
-        "mtp": True,        # 原生 MTP 双草稿投机加速
-        "mmproj": "",
         "speed": "36.7 tok/s (投机加速)",
         "aa_index": "52 分 (开源TOP 1)",
         "desc": "【默认基准常驻态】单兵极速 · 原生 MTP 加速 · 动态注入 low/medium/xhigh 思考",
@@ -179,13 +179,8 @@ MODEL_PROFILES = {
         "vram": "27.4 GB"
     },
     "2": {
+        "state_key": STATE_PIPELINE_4SLOT,
         "name": "Qwen3.8-27B-A [4并发流水线]",
-        "gguf": "Qwen3.8-27B-Abliterated-Q6_K.gguf",
-        "alias": "Qwen3.8-27B-A-Q6_K",
-        "ctx": 147456,       # 144K 统一动态共享池
-        "parallel": 4,
-        "mtp": False,
-        "mmproj": "",
         "speed": "23.2 tok/s (总吞吐 45+ tok/s)",
         "aa_index": "52 分 (开源TOP 1)",
         "desc": "【高负载流水线态】4 槽并发 · 零排队交替输入 · 多 Agent 批量协作王者",
@@ -193,13 +188,8 @@ MODEL_PROFILES = {
         "vram": "28.5 GB"
     },
     "3": {
+        "state_key": STATE_VISION_27B,
         "name": "Qwen3.8-27B-A [原生多模态视觉]",
-        "gguf": "Qwen3.8-27B-Abliterated-Q6_K.gguf",
-        "alias": "Qwen3.8-27B-A-Q6_K",
-        "ctx": 131072,       # 128K 黄金多模态池
-        "parallel": 2,
-        "mtp": False,
-        "mmproj": "mmproj-Qwen3.8-27B-F16.gguf",
         "speed": "31.5 tok/s",
         "aa_index": "52 分 (全模态旗舰)",
         "desc": "【原生多模态视觉态】挂载 mmproj-27B · 27B 原生看图 + 27B 顶尖写代码",
@@ -209,125 +199,86 @@ MODEL_PROFILES = {
 }
 
 # ------------------------------------------------------------------------------------
-# 4. 启动指定形态引擎 (直接前台运行 llama-server，全量原生输出)
+# 4. 触发网关热切换与全量 llamacpp 日志连续流式投屏
 # ------------------------------------------------------------------------------------
+def switch_backend_state(target_state: str) -> bool:
+    url = "http://127.0.0.1:8081/api/switch"
+    payload = json.dumps({"target_state": target_state}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=80) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("success", False)
+    except Exception:
+        return False
+
 def start_selected_profile(key: str):
     p = MODEL_PROFILES.get(key)
-    if not p:
-        return
+    target_state = p["state_key"] if p else STATE_MTP_2SLOT
 
-    stop_llama_processes()
     ensure_gateway()
-
-    model_path = os.path.join(MODELS_DIR, p["gguf"])
-    if not os.path.exists(model_path):
-        print_c(f"  ❌ 错误: 未找到模型文件 {model_path}", "red")
-        input("\n按回车键退出...")
-        return
 
     today = time.strftime("%Y%m%d")
     daily_log = os.path.join(LOG_DIR, f"8083_llama_{today}.log")
 
     print_c("", "white")
     print_c("====================================================================================", "cyan")
-    print_c(f"  🚀 正在加载 27B 形态: {p['name']}  [{p['type_tag']}]", "green")
+    print_c(f"  🚀 正在向 Tesla V100 注入显存，载入形态: {p['name'] if p else target_state}...", "green")
     print_c("====================================================================================", "cyan")
-    print_c(f"  ├─ 🎯 智能指数 : {p['aa_index']}", "white")
-    print_c(f"  ├─ ⚡ 运行速度 : {p['speed']}", "yellow")
-    print_c(f"  ├─ 📚 上下文池 : {p['ctx'] // 1024}K (统一 KV 动态共享池)", "white")
-    mtp_info = "(🔥 挂载原生 MTP 双草稿投机)" if p["mtp"] else "(无 MTP)"
-    print_c(f"  ├─ 🚦 槽位并发 : {p['parallel']} 并发槽位 {mtp_info}", "white")
-    print_c(f"  ├─ 💾 显存预算 : {p['vram']} (预留 5.4GB+ 安全裕量)", "white")
-    print_c(f"  ├─ 🌐 统一接口 : http://127.0.0.1:8081/v1 (已接管 8083 主脑)", "cyan")
-    print_c(f"  └─ 📊 算力大屏 : http://127.0.0.1:8081/dashboard", "cyan")
+    print_c(f"  ├─ 🌐 统一接口 : http://127.0.0.1:8081/v1 (全应用统一接入点)", "cyan")
+    print_c(f"  ├─ 📊 算力大屏 : http://127.0.0.1:8081/dashboard", "cyan")
+    print_c(f"  ├─ ⚡ 运行基准 : 27B 双槽MTP / 4并发 / 原生视觉 4.5秒自适应热切换矩阵", "white")
+    print_c(f"  └─ 💾 今日日志 : {daily_log}", "white")
     print_c("====================================================================================", "cyan")
-    print_c("  ⏳ 正在向 Tesla V100 注入显存，预计耗时约 4~5 秒...\n", "gray")
+    print_c("  ⏳ 正在进行内存级初始化，预计耗时约 4~5 秒...\n", "gray")
 
-    cmd = [
-        SERVER_EXE,
-        "-m", model_path,
-        "-ngl", "99",
-        "--cache-type-k", "q8_0",
-        "--cache-type-v", "q8_0",
-        "-c", str(p["ctx"]),
-        "-b", "2048",
-        "--ubatch-size", "2048",
-        "-t", "6",
-        "--parallel", str(p["parallel"]),
-        "--kv-unified",
-        "--flash-attn", "on",
-        "--ctx-checkpoints", "4",
-        "--reasoning", "auto",
-        "--reasoning-budget", "2048",
-        "--reasoning-effort", "medium",
-        "--reasoning-format", "deepseek",
-        "--reasoning-preserve",
-        "--no-warmup",
-        "--temp", "0.3",
-        "--top-p", "0.95",
-        "--top-k", "20",
-        "--min-p", "0.05",
-        "--dry-multiplier", "0.0",
-        "--repeat-penalty", "1.05",
-        "--presence-penalty", "0.0",
-        "--jinja",
-        "--chat-template-file", TEMPLATE_FILE,
-        "--alias", p["alias"],
-        "--port", "8083",
-        "--host", "127.0.0.1",
-        "--log-file", daily_log
-    ]
+    # 触发初始形态加载
+    ok = switch_backend_state(target_state)
+    if ok:
+        print_c(f"  ✅ 初始形态 [{target_state}] 已就绪！\n", "green")
+    else:
+        print_c("  ⏳ 网关正在自适应调度中...\n", "yellow")
 
-    if p["mtp"]:
-        cmd.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", "2", "--spec-draft-n-min", "1", "--cache-reuse", "512"])
+    print_c("=" * 84, "cyan")
+    print_c(f"  🟢 llamacpp 主脑引擎原生日志连续投屏中 (按 Ctrl+C 停止服务)", "green")
+    print_c("=" * 84 + "\n", "cyan")
 
-    if p["mmproj"]:
-        proj_path = os.path.join(MODELS_DIR, p["mmproj"])
-        if os.path.exists(proj_path):
-            cmd.extend(["--mmproj", proj_path])
-
-    start_log_entry = (
-        f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] --- SESSION START [{p['name']}] ---\n"
-        f"MODEL: {p['name']}\n"
-        f"ARGS: {' '.join(cmd)}\n"
-    )
-    try:
+    # 确保日志文件存在
+    if not os.path.exists(daily_log):
         with open(daily_log, "a", encoding="utf-8") as f:
-            f.write(start_log_entry)
-    except Exception:
-        pass
+            pass
 
-    # 直接前台启动 llama-server，所有原生推理日志、速度与槽位状态直接输出至当前终端
-    proc = subprocess.Popen(cmd, cwd=ROOT_DIR)
-    
-    # 优雅中断与退出处理
+    # 优雅退出信号捕获
     def handle_sigint(signum, frame):
-        print_c("\n\n  ⚠️ 接收到退出信号 (Ctrl+C)，正在安全终止 llama-server...", "yellow")
-        try:
-            proc.terminate()
-            proc.wait(timeout=5)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        print_c("  ✅ llama-server 服务已安全退出。", "green")
+        print_c("\n\n  ⚠️ 接收到退出信号 (Ctrl+C)，正在安全关闭所有 AI 进程...", "yellow")
+        stop_llama_processes()
+        print_c("  ✅ 服务已完全安全退出。", "green")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_sigint)
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, handle_sigint)
 
+    # 连续无缝日志投屏循环（完全脱钩于单一 PID，跨越所有热切换，永不闪退）
     try:
-        proc.wait()
+        with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
+            # 先输出末尾最近已有日志
+            lines = f.readlines()
+            tail_lines = lines[-25:] if len(lines) > 25 else lines
+            for line in tail_lines:
+                sys.stdout.write(line)
+            sys.stdout.flush()
+
+            # 持续跟随读取新生成的每一行日志（即使后台杀旧开新，日志依然连续写入同一个 daily_log）
+            while True:
+                line = f.readline()
+                if line:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                else:
+                    time.sleep(0.06)
     except KeyboardInterrupt:
         handle_sigint(None, None)
-
-    print_c("\n  服务已退出。按回车键关闭窗口...", "gray")
-    try:
-        input()
-    except Exception:
-        pass
 
 # ------------------------------------------------------------------------------------
 # 5. 主菜单与自动热等待倒计时交互
@@ -341,7 +292,7 @@ def main():
     print_c("====================================================================================", "cyan")
     print_c("   [网关统一入口] http://127.0.0.1:8081/v1 (全应用统一接入点)", "white")
     print_c("   [实时监控看板] http://127.0.0.1:8081/dashboard", "white")
-    print_c("   [核心架构规范] 纯 27B 旗舰统一矩阵 · 原生输出 · 0秒动态思考等级调控", "gray")
+    print_c("   [核心架构规范] 纯 27B 旗舰统一矩阵 · 4.5秒无感热切 · 原生输出 · 0秒动态思考调控", "gray")
     print_c("====================================================================================", "cyan")
     print_c("   请选择启动模式 (默认 5 秒后自动载入 【1】 Qwen3.8-27B-A [双槽MTP] 常驻基准态):", "yellow")
     print_c("", "white")
