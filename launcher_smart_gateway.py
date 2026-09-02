@@ -5,6 +5,7 @@
  🤖 AI 智能任务自适应网关启动器 v5.0 (方案B · 纯 Python 原生驱动引擎)
  专为 Tesla V100 32GB 打造：纯 Qwen3.8-27B 旗舰统一矩阵 · 4.5秒无感热切换 · 0秒动态思考调控
  彻底告别 Windows CMD 乱码、ANSI 颜色失效与热切换进程脱钩崩溃限制
+ 支持 llamacpp 原生运行日志全量实时投屏与动态热切换无感跟踪
  Date: 2026-09-02
 ====================================================================================
 """
@@ -119,7 +120,7 @@ def ensure_gateway():
                 creationflags=creationflags
             )
             # 等待网关就绪
-            for _ in range(20):
+            for _ in range(25):
                 if is_port_listening(8081):
                     break
                 time.sleep(0.2)
@@ -208,7 +209,7 @@ STATE_DISPLAY_MAP = {
 }
 
 # ------------------------------------------------------------------------------------
-# 4. 触发网关热切换与实时状态守护循环 (Live State Guard)
+# 4. 触发网关热切换与实时日志全量投屏 (Live Log Streamer)
 # ------------------------------------------------------------------------------------
 def switch_backend_state(target_state: str) -> bool:
     url = "http://127.0.0.1:8081/api/switch"
@@ -254,45 +255,52 @@ def start_selected_profile(key: str):
     # 触发目标形态加载
     ok = switch_backend_state(target_state)
     if ok:
-        print_c(f"  ✅ 目标形态 [{target_state}] 已成功就绪！", "green")
+        print_c(f"  ✅ 目标形态 [{target_state}] 已成功就绪！\n", "green")
     else:
-        print_c("  ⏳ 网关正在自适应调度中，进入实时守护监控...", "yellow")
+        print_c("  ⏳ 网关正在自适应调度中...\n", "yellow")
 
-    print_c("\n" + "=" * 84, "cyan")
-    print_c("  🟢 AI 智能网关实时守护与算力中枢已进入常驻运行 (按 Ctrl+C 安全停止服务)", "green")
+    print_c("=" * 84, "cyan")
+    print_c(f"  🟢 llamacpp 主脑引擎运行日志实时投屏中 ({p['name'] if p else target_state}) · 按 Ctrl+C 停止服务", "green")
     print_c("=" * 84 + "\n", "cyan")
 
-    # 进入常驻实时监控守护循环（完全免疫热切换导致的进程脱钩与退出）
+    # 确保日志文件存在
+    if not os.path.exists(daily_log):
+        with open(daily_log, "a", encoding="utf-8") as f:
+            pass
+
+    # 进入全量日志实时投屏与热切换跟踪循环
     last_known_state = target_state
-    tick = 0
     try:
-        while True:
-            time.sleep(1.5)
-            tick += 1
-            st = get_backend_state()
-            if not st:
-                # 若网关意外掉线，自动拉起
-                ensure_gateway()
-                continue
+        with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
+            # 读取末尾最近已有内容展示给用户
+            existing_lines = f.readlines()
+            tail_lines = existing_lines[-20:] if len(existing_lines) > 20 else existing_lines
+            for line in tail_lines:
+                sys.stdout.write(line)
+            sys.stdout.flush()
 
-            current_st = st.get("current_state", "UNKNOWN")
-            is_healthy = st.get("server_healthy", False)
-            active_text = st.get("active_text", 0)
-            active_vis = st.get("active_vision", 0)
-            today_reqs = st.get("today_reqs", 0)
-            today_cost = st.get("today_cost", 0.0)
-
-            # 感知后台自适应热切换并打印通知
-            if current_st != last_known_state:
-                disp_name = STATE_DISPLAY_MAP.get(current_st, current_st)
-                print_c(f"[{time.strftime('%H:%M:%S')}] 🔄 [动态热切换] 当前激活形态: {disp_name} (4.5s 内存级就绪)", "yellow")
-                last_known_state = current_st
-
-            # 每 10 次循环打印一次心跳状态行
-            if tick % 10 == 0:
-                disp_name = STATE_DISPLAY_MAP.get(current_st, current_st)
-                status_icon = "🟢" if is_healthy else "⏳"
-                print_c(f"[{time.strftime('%H:%M:%S')}] {status_icon} [状态巡检] 形态: {disp_name} | 活跃任务: {active_text} | 今日调用: {today_reqs} 次 (¥{today_cost:.2f})", "gray")
+            tick = 0
+            while True:
+                line = f.readline()
+                if line:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                else:
+                    time.sleep(0.08)
+                    tick += 1
+                    if tick % 20 == 0:  # 每约 1.6 秒做一次网关状态感知
+                        st = get_backend_state()
+                        if st:
+                            current_st = st.get("current_state")
+                            if current_st and current_st != last_known_state:
+                                disp_name = STATE_DISPLAY_MAP.get(current_st, current_st)
+                                print_c(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "yellow")
+                                print_c(f"[{time.strftime('%H:%M:%S')}] 🔄 [AI自适应热切换] 当前激活形态: {disp_name} (4.5s 内存级无感就绪)", "yellow")
+                                print_c(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", "yellow")
+                                last_known_state = current_st
+                        else:
+                            # 自动守护网关
+                            ensure_gateway()
 
     except KeyboardInterrupt:
         print_c("\n\n  ⚠️ 接收到退出信号 (Ctrl+C)，正在安全关闭所有 AI 服务...", "yellow")
