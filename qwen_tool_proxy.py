@@ -2930,14 +2930,47 @@ class Qwen27BBackendManager:
         except Exception:
             return False
 
-    def ensure_state(self, target_state, on_heartbeat=None):
-        """线程安全的状态切换器：4.5秒内存级无感热切换"""
+    def get_actual_state(self):
+        """真实查询 8083 底层 /props 与 /slots 获取正在运行的真实形态"""
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/props", method="GET")
+            with urllib.request.urlopen(req, timeout=0.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    gen_settings = data.get("default_generation_settings", {})
+                    params = gen_settings.get("params", {})
+                    modalities = gen_settings.get("modalities", []) or []
+                    spec_types = str(params.get("speculative.types", "")).lower()
+
+                    if "vision" in modalities or "image" in modalities or params.get("mmproj"):
+                        return self.STATE_VISION_27B
+                    if "draft-mtp" in spec_types or "draft" in spec_types or "mtp" in spec_types:
+                        return self.STATE_MTP_2SLOT
+                    
+                    try:
+                        req_slots = urllib.request.Request(f"http://127.0.0.1:{self.port}/slots", method="GET")
+                        with urllib.request.urlopen(req_slots, timeout=0.5) as sresp:
+                            sdata = json.loads(sresp.read().decode("utf-8"))
+                            if len(sdata) == 4:
+                                return self.STATE_PIPELINE_4SLOT
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return None
+
+    def ensure_state(self, target_state, force=False, on_heartbeat=None):
+        """线程安全的状态切换器：精准比对真实底层形态，4.5秒内存级无感热切换"""
         self.last_activity_time = time.time()
-        if self.current_state == target_state and self.is_server_healthy():
+        actual = self.get_actual_state()
+        if not force and actual == target_state and self.is_server_healthy():
+            self.current_state = target_state
             return True
 
         with self.lock:
-            if self.current_state == target_state and self.is_server_healthy():
+            actual = self.get_actual_state()
+            if not force and actual == target_state and self.is_server_healthy():
+                self.current_state = target_state
                 return True
 
             state_names = {
