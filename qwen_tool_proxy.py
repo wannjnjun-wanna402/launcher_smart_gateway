@@ -765,13 +765,17 @@ class ConcurrencyQueue:
 
                             elif has_log_prefill or (n_prompt > 0 and n_prompt_proc > 0 and n_prompt_proc < n_prompt and n_decoded == 0):
                                 stage = "prefill"
-                                if m and m_recent and m.get("progress") is not None:
+                                if n_prompt > 0 and n_prompt_proc > 0:
+                                    stage_progress = round(n_prompt_proc / max(1, n_prompt) * 100, 1)
+                                elif m and m_recent and m.get("progress") is not None:
                                     stage_progress = round(float(m["progress"]) * 100, 1)
                                 elif n_prompt > 0:
                                     stage_progress = round(n_prompt_proc / max(1, n_prompt) * 100, 1)
                                 
                                 if m and m_recent and m.get("tokens_processed"):
                                     n_prompt_proc = max(n_prompt_proc, int(m["tokens_processed"]))
+                                    if n_prompt > 0:
+                                        stage_progress = max(stage_progress, round(n_prompt_proc / max(1, n_prompt) * 100, 1))
                                 if m and m_recent and m.get("in_tok_s"):
                                     in_s = float(m["in_tok_s"])
 
@@ -883,9 +887,9 @@ class ConcurrencyQueue:
         except Exception:
             pass
 
-        # 2. 如果请求瞬时超时（如大模型正在 100% CUDA 算力执行 65K 超大 Batch 预填），30 秒内曾成功过一律返回缓存防抖，杜绝看板槽位闪烁或消失
+        # 2. 如果请求瞬时超时，仅在 2.5 秒内返回轻度缓存防抖，杜绝超长滞后
         with self.lock:
-            if self.cached_status and (now - self.cache_time < 30.0):
+            if self.cached_status and (now - self.cache_time < 2.5):
                 return self.cached_status
 
         # 3. 确实未启动或已关闭
@@ -2821,8 +2825,8 @@ async function updateStats() {
   }
 }
 
-// 🌟 10 秒平稳自动刷新 (节约算力与资源开销，保持低负载流畅)
-setInterval(updateStats, 10000);
+// 🌟 1.2 秒高灵敏度实时刷新 (精准同步预填进度、瞬时吐字速度与槽位状态)
+setInterval(updateStats, 1200);
 updateStats();
 </script>
 </body>
