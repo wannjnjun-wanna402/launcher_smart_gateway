@@ -3279,6 +3279,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
             sys.stdout.flush()
             try:
                 raw_json = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+                if is_anthropic_protocol:
+                    raw_json = translate_anthropic_to_openai(raw_json)
                 forward_body = json.dumps(sanitize_schema(raw_json), ensure_ascii=False).encode("utf-8")
             except Exception:
                 forward_body = raw_body
