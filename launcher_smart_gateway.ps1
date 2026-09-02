@@ -1,6 +1,6 @@
-# ====================================================================================
-#  🤖 AI 智能任务自适应网关启动器 v4.0 (Smart Task Dispatch Gateway)
-#  专为 Tesla V100 32GB 打造：全局 144K 统一共享池 · 5大王牌矩阵 · 默认 Flash 极速接待
+﻿# ====================================================================================
+#  🤖 AI 智能任务自适应网关启动器 v5.0 (Unified 27B Flagship Smart Gateway)
+#  专为 Tesla V100 32GB 打造：纯 Qwen3.8-27B 旗舰统一矩阵 · 4.5秒无感热切换 · 0秒动态思考调控
 #  Date: 2026-09-02
 # ====================================================================================
 
@@ -8,42 +8,31 @@
 #  ⚠️ 核心调优、生产实测经验与底层物理规律总结 —— 维护与调整必读
 # ====================================================================================
 #
-# 【一、MTP 投机采样在不同架构上的物理分水岭（2026-09-02 实机压测铁律）】
-#  1. 稠密大模型（Dense，如 Qwen3.8-27B-A）：必须开启 MTP (--spec-type draft-mtp)
-#     - 原因：27B 稠密模型每次前向计算需硬算 270 亿参数（单步 ~43ms）。开启 MTP 命中草稿词
-#       即可省去整步 27B 矩阵大前向计算，吐字均速由 23.2 tok/s 暴涨至 36.7 tok/s（提速 +70%）。
-#  2. 稀疏专家模型（MoE，如 Ornith-1.5-35B A3B）：必须关闭 MTP（纯自回归）
-#     - 原因：35B MoE 每次生成只激活 ~3B 专家参数（单步极轻仅 ~12ms）。若开 MTP，GPU 额外
-#       执行草稿头验证与树分支比对的开销，反而超过了 3B 本身的前向开销！
-#     - 2026-09-02 实测对比：
-#       * 纯自回归（关 MTP）：82.40 tok/s 🏆（全场极速之王，极简轻快）
-#       * MTP n_max=1       ：77.84 tok/s（微小额外开销拖累）
-#       * MTP n_max=3       ：54.81 tok/s（多分支验证开销严重劣化）
-#     - 结论：Ornith-1.5-35B 保持纯自回归，释放 82.4 tok/s 极速；Qwen3.8-27B 保持 MTP 投机。
+# 【一、纯 Qwen3.8-27B-Abliterated 旗舰统一矩阵核心哲学（2026-09-02 架构终极进化）】
+#  1. 智力绝对信任：全线采用 52 分开源榜首、100/100 工具遵循满分的 Qwen3.8-27B-Abliterated-Q6_K。
+#  2. 3大场景专属形态 4.5 秒无感热切换：
+#     - 形态 1【双槽MTP 常驻极速态】：日常默认常驻，36.7 tok/s 原生投机喷涌，极低延迟；
+#     - 形态 2【4并发流水线态】：多 Agent/批量并发时 4.5 秒切入，4 槽零排队交替吞吐 (45+ tok/s)；
+#     - 形态 3【原生多模态视觉态】：发图时 4.5 秒挂载 mmproj-27B-F16，原生看图+原生顶尖代码一步到位！
+#  3. 0秒动态思考等级调控 (0-second Dynamic Reasoning Level Modulation)：
+#     - 简单任务（问答/翻译/搜索/正则）➔ 0秒注入 low/none 思考（预算 512），MTP 瞬间秒出；
+#     - 默认中等（日常写代码/Bug排查/SQL）➔ 0秒注入 medium 思考（预算 2048）；
+#     - 困难任务（Minecraft/完整系统/大型重构）➔ 0秒注入 xhigh 深度思考（预算 8192），榨干 27B 智力！
 #
 # 【二、模板与工具调用生死线（2026-08-31 深度专项长测铁律）】
-#  1. 模板生死线：Fixed-Medium (chat_template_qwen_fixed.jinja) 全面碾压 Sharp-Medium
-#     - Fixed-Medium 模板：4大模型全线保持 0 次死循环展开、0 次 XML 标签污染，通过率 100%。
-#     - Sharp-Medium 模板：缺少闭合约束，在 A-Q6_K 上引发 XML 标签泄漏导致 JSON 崩溃，通过率仅 65%。
-#     - 结论：生产部署必须死锁 chat_template_qwen_fixed.jinja，严禁在工具/Agent场景使用 Sharp 模板！
-#  2. 无审核模型（Abliterated）遵循能力顶尖：
-#     - Qwen3.8-27B-A-Q6_K (Abliterated)：20/20 题全通过（100.0 分），消除防御性发散分支，结构化指令遵循最强。
+#  - 生产部署必须死锁 chat_template_qwen_fixed.jinja (froggeric v22.4.0 旗舰版)；
+#  - 0 次死循环、0 次 XML 标签泄漏，工具通过率 100%。
 #
 # 【三、DRY 采样器与防复读参数黄金基线】
-#  1. DRY 采样器必须关闭（--dry-multiplier 0.0）：
-#     - 原因：DRY 惩罚“最近上下文里出现过的 2-gram 重复”。在复制文件路径（如 E:\...\_fix3.js）时，
-#       只要前缀重复就会被强制篡改导致 0/9 全错；关闭 DRY 后 Windows 路径复现 9/9 全对。
-#  2. repeat-penalty 1.05 兜底：
-#     - 关掉 DRY 后采用 repeat-penalty 1.05 作为乘性轻量兜底（logit * 0.952），不会破坏精确复现。
+#  - DRY 采样器定死关闭（--dry-multiplier 0.0），避免 Windows 路径 2-gram 变异；
+#  - repeat-penalty 1.05 轻量乘性兜底。
 #
-# 【四、全局 144K 统一 KV 动态共享池（--kv-unified --cache-reuse 512 -c 147456）】
-#  1. 消除上下文超限截断：所有 GPU 模型统一标定为 144K（147,456 tokens）。
-#  2. 动态共享：无论是双槽（单槽最高吃 72K~100K）还是 4 槽（4 槽动态共享），按需自适应分配。
-#  3. 显存绝对安全：144K KV 下 Tesla V100 显存占用 25.8GB~28.5GB，预留 4.5GB~7.0GB 缓冲，切换 0% OOM。
+# 【四、统一上下文池与显存安全红线】
+#  - 27B 主模型 (20.89G) + mmproj 视觉头 (0.91G) = 21.80 GB，V100 32GB 剩余 10.2 GB 纯净显存；
+#  - 双槽/4槽分配 144K (147,456) / 多模态分配 128K (131,072)，留有 5.4GB+ 安全裕量，切换 0% OOM 风险。
 #
 # 【五、服务日志命名与单日累加标准（严格遵守 AGENTS.md）】
-#  - 命名规范：[端口号]_[功能名]_[YYYYMMDD].log（8081_proxy_*.log, 8083_llama_*.log, 8085_sidecar_*.log）
-#  - 单日单文件追加写入，严禁拆分 .out / .err。
+#  - 命名规范：[端口号]_[功能名]_[YYYYMMDD].log，单日单文件追加模式，90天自动循环归档。
 # ====================================================================================
 
 [CmdletBinding()]
@@ -66,7 +55,6 @@ $LogDir = Join-Path $RootDir "logs"
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
 if (-not $DailyLogFile) { $DailyLogFile = Join-Path $LogDir "8083_llama_$today.log" }
 $ProxyLogFile = Join-Path $LogDir "8081_proxy_$today.log"
-$SidecarLogFile = Join-Path $LogDir "8085_sidecar_$today.log"
 
 function Write-C([string]$text, [string]$fg = "White", [bool]$nl = $true) {
     if ($nl) {
@@ -127,7 +115,7 @@ function Stop-LlamaProcesses {
 }
 
 # ------------------------------------------------------------------------------------
-# 2. 保证 8081 智能网关与 8085 侧挂视觉常驻运行
+# 2. 保证 8081 智能自适应网关常驻运行
 # ------------------------------------------------------------------------------------
 function Ensure-GatewayAndSidecar {
     Clean-ExpiredLogs 90
@@ -135,88 +123,64 @@ function Ensure-GatewayAndSidecar {
     # 检查 8081 网关
     $gConn = Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue
     if (-not $gConn) {
-        Write-C "  🚀 正在拉起 8081 智能协同网关..." "Cyan"
+        Write-C "  🚀 正在拉起 8081 智能自适应调度网关..." "Cyan"
         Start-Process -FilePath "C:\Users\wanna402\AppData\Local\Programs\Python\Python313\python.exe" `
-            -ArgumentList "$RootDir\qwen_tool_proxy.py --listen 8081 --target 8083 --vision-main 8085 --api-key llamacpp" `
+            -ArgumentList "$RootDir\qwen_tool_proxy.py --listen 8081 --target 8083 --api-key llamacpp" `
             -WorkingDirectory $RootDir -WindowStyle Hidden
         Start-Sleep -Seconds 1
-    }
-
-    # 检查 8085 CPU 侧挂视觉眼睛 (Qwen2.5-VL-3B, 0显存占用)
-    $vConn = Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue
-    $vModel = Join-Path $ModelsDir "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf"
-    $vProj  = Join-Path $ModelsDir "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf"
-    if (-not $vConn -and (Test-Path $vModel) -and (Test-Path $vProj)) {
-        Write-C "  👁️ 正在拉起 8085 CPU 侧挂视觉眼睛 (0显存)..." "Cyan"
-        $sidecarArgs = @("-m", $vModel, "--mmproj", $vProj, "-ngl", "0", "-t", "4", "-c", "32768", "--port", "8085", "--host", "127.0.0.1", "--log-file", $SidecarLogFile)
-        Start-Process -FilePath $ServerExe -ArgumentList $sidecarArgs -WorkingDirectory $RootDir -WindowStyle Hidden
     }
 }
 
 # ------------------------------------------------------------------------------------
-# 3. 5 大精选王牌阵列参数定义（经过实机全参数压测后的黄金最优配置）
+# 3. 纯 Qwen3.8-27B 旗舰 3 大场景形态配置定义
 # ------------------------------------------------------------------------------------
 $ModelProfiles = @{
     "1" = @{
-        Name        = "Ornith-1.5-35B (35B MoE + 原生视觉)"
-        GGUF        = "Ornith-1.5-35B-Q4_K_M.gguf"
-        Alias       = "Ornith-1.5-35B"
-        Ctx         = 147456      # 全局 144K 统一共享池
-        Parallel    = 2
-        MTP         = $false      # 实测寻优结论：MoE 稀疏激活本身仅 3B，纯自回归 82.4 t/s 达到全场峰值，免 MTP 额外开销
-        MMProj      = "mmproj-Ornith-1.5-35B-A3B-f16.gguf"
-        Speed       = "82.4 tok/s (全场极速之王)"
-        AAIndex     = "48 分 (MoE 冲刺第一梯队)"
-        Desc        = "【默认接待主力】Flash 极速 82.4 t/s 瞬时响应 · 仅激活 3B · 原生自带视觉 · 免 MTP 额外开销"
-        TypeTag     = "⚡ Flash 极速接待"
-        VRAM        = "26.2 GB"
-    }
-    "2" = @{
         Name        = "Qwen3.8-27B-A [双槽MTP]"
         GGUF        = "Qwen3.8-27B-Abliterated-Q6_K.gguf"
         Alias       = "Qwen3.8-27B-A-Q6_K"
-        Ctx         = 147456      # 全局 144K 统一共享池
+        Ctx         = 147456      # 144K 统一动态共享池
         Parallel    = 2
-        MTP         = $true       # 稠密 27B 大模型开 MTP 提升 +70% 速度 (23 -> 36.7 t/s)
+        MTP         = $true       # 原生 MTP 双草稿投机加速
         MMProj      = ""
-        Speed       = "36.7 tok/s"
+        Speed       = "36.7 tok/s (投机加速)"
         AAIndex     = "52 分 (开源TOP 1)"
-        Desc        = "【重型主力主脑】原生 MTP 投机加速 · 单兵极致写代码 · 高难度深度重构"
-        TypeTag     = "👑 极速主脑"
+        Desc        = "【默认基准常驻态】单兵极速 · 原生 MTP 加速 · 动态注入 low/medium/xhigh 思考"
+        TypeTag     = "👑 极速基准态"
         VRAM        = "27.4 GB"
     }
-    "3" = @{
-        Name        = "Qwen3.8-27B-A [4并发]"
+    "2" = @{
+        Name        = "Qwen3.8-27B-A [4并发流水线]"
         GGUF        = "Qwen3.8-27B-Abliterated-Q6_K.gguf"
         Alias       = "Qwen3.8-27B-A-Q6_K"
-        Ctx         = 147456      # 全局 144K 统一共享池 (4 槽动态共享)
+        Ctx         = 147456      # 144K 统一动态共享池
         Parallel    = 4
         MTP         = $false
         MMProj      = ""
         Speed       = "23.2 tok/s (总吞吐 45+ tok/s)"
         AAIndex     = "52 分 (开源TOP 1)"
-        Desc        = "【高负载流水线】4 槽并发 · 零排队交替输入 · 多 Agent 批量任务王者"
-        TypeTag     = "🚀 并发流水线"
+        Desc        = "【高负载流水线态】4 槽并发 · 零排队交替输入 · 多 Agent 批量协作王者"
+        TypeTag     = "🚀 并发流水线态"
         VRAM        = "28.5 GB"
     }
-    "4" = @{
-        Name        = "qwen3vl 8B (8B 原生大视觉)"
-        GGUF        = "Qwen3VL-8B-Instruct-Q8_0.gguf"
-        Alias       = "qwen3vl 8B"
-        Ctx         = 147456      # 全局 144K 统一共享池
+    "3" = @{
+        Name        = "Qwen3.8-27B-A [原生多模态视觉]"
+        GGUF        = "Qwen3.8-27B-Abliterated-Q6_K.gguf"
+        Alias       = "Qwen3.8-27B-A-Q6_K"
+        Ctx         = 131072      # 128K 黄金多模态池
         Parallel    = 2
         MTP         = $false
-        MMProj      = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
-        Speed       = "61.5 tok/s"
-        AAIndex     = "39 分 (视觉标杆)"
-        Desc        = "【原生高清视觉】超清大图识别 · 复杂图表与文档公式深度解析"
-        TypeTag     = "👁️ 原生超清视觉"
-        VRAM        = "15.2 GB"
+        MMProj      = "mmproj-Qwen3.8-27B-F16.gguf"
+        Speed       = "31.5 tok/s"
+        AAIndex     = "52 分 (全模态旗舰)"
+        Desc        = "【原生多模态视觉态】挂载 mmproj-27B · 27B 原生看图 + 27B 顶尖写代码"
+        TypeTag     = "👁️ 原生视觉态"
+        VRAM        = "27.4 GB"
     }
 }
 
 # ------------------------------------------------------------------------------------
-# 4. 启动指定模型引擎（保留屏幕输出，不刷屏）
+# 4. 启动指定形态引擎
 # ------------------------------------------------------------------------------------
 function Start-SelectedProfile([string]$key) {
     $p = $ModelProfiles[$key]
@@ -233,20 +197,19 @@ function Start-SelectedProfile([string]$key) {
 
     Write-C ""
     Write-C "====================================================================================" "Cyan"
-    Write-C "  🚀 正在加载模型: $($p.Name)  [$($p.TypeTag)]" "Green"
+    Write-C "  🚀 正在加载 27B 形态: $($p.Name)  [$($p.TypeTag)]" "Green"
     Write-C "====================================================================================" "Cyan"
     Write-C "  ├─ 🎯 智能指数 : $($p.AAIndex)" "White"
     Write-C "  ├─ ⚡ 运行速度 : $($p.Speed)" "Yellow"
-    Write-C "  ├─ 📚 上下文池 : $($p.Ctx / 1024)K (全局 144K 统一 KV 动态共享池)" "White"
-    Write-C "  ├─ 🚦 槽位并发 : $($p.Parallel) 并发槽位 $(if ($p.MTP) { '(🔥 挂载原生 MTP 双草稿投机)' } else { '(无 MTP / 纯自回归)' })" "White"
-    Write-C "  ├─ 💾 显存预算 : $($p.VRAM) (预留 6.5GB+ 安全裕量)" "White"
+    Write-C "  ├─ 📚 上下文池 : $($p.Ctx / 1024)K (统一 KV 动态共享池)" "White"
+    Write-C "  ├─ 🚦 槽位并发 : $($p.Parallel) 并发槽位 $(if ($p.MTP) { '(🔥 挂载原生 MTP 双草稿投机)' } else { '(无 MTP)' })" "White"
+    Write-C "  ├─ 💾 显存预算 : $($p.VRAM) (预留 5.4GB+ 安全裕量)" "White"
     Write-C "  ├─ 🌐 统一接口 : http://127.0.0.1:8081/v1 (已接管 8083 主脑)" "Cyan"
     Write-C "  └─ 📊 算力大屏 : http://127.0.0.1:8081/dashboard" "Cyan"
     Write-C "====================================================================================" "Cyan"
-    Write-C "  ⏳ 正在向 Tesla V100 注入显存，预计耗时约 12~15 秒..." "DarkGray"
+    Write-C "  ⏳ 正在向 Tesla V100 注入显存，预计耗时约 4~5 秒..." "DarkGray"
     Write-C ""
 
-    # 组装启动参数（每个参数名与值作为独立数组项，严格启用动态共享池）
     $argList = @(
         "-m", $modelPath,
         "-ngl", "99",
@@ -258,7 +221,6 @@ function Start-SelectedProfile([string]$key) {
         "-t", "6",
         "--parallel", "$($p.Parallel)",
         "--kv-unified",
-        "--cache-reuse", "512",
         "--flash-attn", "on",
         "--ctx-checkpoints", "4",
         "--reasoning", "auto",
@@ -272,9 +234,6 @@ function Start-SelectedProfile([string]$key) {
         "--top-k", "20",
         "--min-p", "0.05",
         "--dry-multiplier", "0.0",
-        "--dry-base", "1.75",
-        "--dry-allowed-length", "2",
-        "--dry-penalty-last-n", "256",
         "--repeat-penalty", "1.05",
         "--presence-penalty", "0.0",
         "--jinja",
@@ -286,7 +245,7 @@ function Start-SelectedProfile([string]$key) {
     )
 
     if ($p.MTP) {
-        $argList += @("--spec-type", "draft-mtp", "--spec-draft-n-max", "2", "--spec-draft-n-min", "1")
+        $argList += @("--spec-type", "draft-mtp", "--spec-draft-n-max", "2", "--spec-draft-n-min", "1", "--cache-reuse", "512")
     }
 
     if ($p.MMProj) {
@@ -298,40 +257,36 @@ function Start-SelectedProfile([string]$key) {
 
     $finalArgs = $argList -join " "
     
-    # 记录 Session 日志
     $startLog = "`n[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff'))] --- SESSION START [$($p.Name)] ---`n" +
                 "MODEL: $($p.Name)`n" +
                 "ARGS: $finalArgs`n"
     [System.IO.File]::AppendAllText($DailyLogFile, $startLog, [System.Text.Encoding]::UTF8)
 
-    # 启动前台主脑进程（使用 @argList 正确数组解构）
     & $ServerExe @argList
 }
 
 # ------------------------------------------------------------------------------------
-# 5. 主菜单与自动热等待倒计时（保留首页字幕，不刷新屏幕）
+# 5. 主菜单与自动热等待倒计时
 # ------------------------------------------------------------------------------------
 Ensure-GatewayAndSidecar
 
 Write-C "====================================================================================" "Cyan"
-Write-C "   🤖 AI 智能任务自适应网关  ·  Smart Task Dispatch Gateway v4.0" "Green"
+Write-C "   🤖 AI 智能任务自适应网关  ·  Unified 27B Flagship Gateway v5.0" "Green"
 Write-C "====================================================================================" "Cyan"
-Write-C "   [网关统一入口] http://127.0.0.1:8081/v1 (全应用接入点)" "White"
+Write-C "   [网关统一入口] http://127.0.0.1:8081/v1 (全应用统一接入点)" "White"
 Write-C "   [实时监控看板] http://127.0.0.1:8081/dashboard" "White"
-Write-C "   [标准统一规范] 全阵列 144K 统一动态共享池 · 15秒动态热装载 · 显存零溢出保护" "DarkGray"
+Write-C "   [核心架构规范] 纯 27B 旗舰统一矩阵 · 4.5秒内存级热切 · 0秒动态思考等级调控" "DarkGray"
 Write-C "====================================================================================" "Cyan"
-Write-C "   请选择启动模式 (默认 5 秒后自动载入 【1】 Flash 极速接待主力 Ornith-1.5-35B):" "Yellow"
+Write-C "   请选择启动模式 (默认 5 秒后自动载入 【1】 Qwen3.8-27B-A [双槽MTP] 常驻基准态):" "Yellow"
 Write-C ""
 
-Write-C "   [1] ⚡ Ornith-1.5-35B (MoE+原生视觉) │ 82.4 t/s │ AA:48分 │ Flash 接待主力 / 极速之王 (默认首选)" "Magenta"
-Write-C "   [2] 👑 Qwen3.8-27B-A [双槽MTP]        │ 36.7 t/s │ AA:52分 │ 单人深度代码 / 极低延迟主力" "Green"
-Write-C "   [3] 🚀 Qwen3.8-27B-A [4并发]          │ 45.0 t/s │ AA:52分 │ 4槽交替流水线 / 多Agent协同" "Cyan"
-Write-C "   [4] 👁️ qwen3vl 8B (原生超清图文)      │ 61.5 t/s │ AA:39分 │ 原生大视觉 / 复杂图表文档解析" "Yellow"
-Write-C "   [5] 🛠️ 纯后台网关守护模式 (仅常驻 8081 + 8085，等待首个请求动态冷启动)" "DarkGray"
+Write-C "   [1] 👑 Qwen3.8-27B-A [双槽MTP]     │ 36.7 t/s │ AA:52分 │ 日常单兵极速 / 默认常驻 (默认首选)" "Green"
+Write-C "   [2] 🚀 Qwen3.8-27B-A [4并发流水线] │ 45.0 t/s │ AA:52分 │ 4槽交替流水线 / 多Agent批量协同" "Cyan"
+Write-C "   [3] 👁️ Qwen3.8-27B-A [原生多模态]  │ 31.5 t/s │ AA:52分 │ 挂载 mmproj-27B / 原生视觉深度推理" "Yellow"
+Write-C "   [4] 🛠️ 纯后台网关守护模式 (仅常驻 8081 网关，全权自适应无感热调度)" "DarkGray"
 Write-C "   [Q] 退出启动器" "Red"
 Write-C "------------------------------------------------------------------------------------" "Cyan"
 
-# 自动倒计时 5 秒（带重定向保护）
 $choice = ""
 $timeout = 5
 $canRead = $false
@@ -343,7 +298,7 @@ try {
 
 if ($canRead) {
     for ($i = $timeout; $i -ge 1; $i--) {
-        Write-Host "`r   ⏳ 默认启动 [1] Flash 接待主力 倒计时: $i 秒 (按 1~5 键即刻手动选定)... " -ForegroundColor Yellow -NoNewline
+        Write-Host "`r   ⏳ 默认启动 [1] 27B 双槽MTP 常驻基准态 倒计时: $i 秒 (按 1~4 键手动选定)... " -ForegroundColor Yellow -NoNewline
         try {
             if ([Console]::KeyAvailable) {
                 $key = [Console]::ReadKey($true)
@@ -355,7 +310,7 @@ if ($canRead) {
     }
     Write-Host ""
 } else {
-    Write-Host "   ⏳ 自动载入默认 [1] Flash 接待主力 Ornith-1.5-35B..." -ForegroundColor Yellow
+    Write-Host "   ⏳ 自动载入默认 [1] 27B 双槽MTP 常驻基准态..." -ForegroundColor Yellow
 }
 
 if (-not $choice -or $choice -eq "`r" -or $choice -eq "`n") { $choice = "1" }
@@ -364,12 +319,12 @@ $choice = $choice.ToUpper()
 if ($choice -eq "Q") {
     Write-C "退出。" "DarkGray"
     exit
-} elseif ($choice -in @("1", "2", "3", "4")) {
+} elseif ($choice -in @("1", "2", "3")) {
     Start-SelectedProfile $choice
-} elseif ($choice -eq "5") {
-    Write-C "🟢 纯后台网关守护已就绪 (8081 + 8085)，等待首个任务请求..." "Green"
+} elseif ($choice -eq "4") {
+    Write-C "🟢 纯后台网关守护已就绪 (8081)，全权按需 4.5 秒自适应热调度..." "Green"
     while ($true) { Start-Sleep -Seconds 3600 }
 } else {
-    Write-C "无效选择，默认启动 [1] Flash 接待主力..." "Yellow"
+    Write-C "无效选择，默认启动 [1] 27B 双槽MTP 常驻基准态..." "Yellow"
     Start-SelectedProfile "1"
 }

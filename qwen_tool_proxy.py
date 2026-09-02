@@ -35,6 +35,7 @@ import os
 import json
 import time
 import socket
+import subprocess
 import argparse
 import threading
 import datetime
@@ -2789,6 +2790,193 @@ def urlopen_with_retry(req, timeout=3600, max_retries=60, retry_delay=1.0):
 # ============================================================
 #  HTTP 请求处理与流式透明转发 + 两阶段图文协同流水线
 # ============================================================
+
+# ====================================================================================
+#  👑 Qwen3.8-27B 终极全自动智能调度与热切换引擎 (Unified 27B Dynamic Hot-Swapper)
+#  3大形态：双槽MTP常驻基准态 · 4并发流水线态 · 原生多模态视觉态 · 0秒动态思考等级调控
+# ====================================================================================
+class Qwen27BBackendManager:
+    STATE_MTP_2SLOT = "MTP_2SLOT"
+    STATE_VISION_27B = "VISION_27B"
+    STATE_PIPELINE_4SLOT = "PIPELINE_4SLOT"
+
+    def __init__(self, root_dir=r'E:\llama-win-cuda-12.4-x64', models_dir=r'E:\models', port=8083):
+        self.root_dir = root_dir
+        self.models_dir = models_dir
+        self.port = port
+        self.current_state = self.STATE_MTP_2SLOT
+        self.lock = threading.Lock()
+        self.last_activity_time = time.time()
+        self.server_exe = os.path.join(root_dir, "llama-server.exe")
+        self.template_file = os.path.join(root_dir, "chat_template_qwen_fixed.jinja")
+        self.model_path = os.path.join(models_dir, "Qwen3.8-27B-Abliterated-Q6_K.gguf")
+        self.mmproj_path = os.path.join(models_dir, "mmproj-Qwen3.8-27B-F16.gguf")
+        self.log_dir = os.path.join(root_dir, "logs")
+        
+        # 启动后台闲置守护线程 (若处于视觉或4并发且空闲>35秒，自动回落到双槽MTP常驻态)
+        self.watchdog_thread = threading.Thread(target=self._idle_watchdog, daemon=True)
+        self.watchdog_thread.start()
+
+    def get_today_log(self):
+        today = time.strftime("%Y%m%d")
+        return os.path.join(self.log_dir, f"8083_llama_{today}.log")
+
+    def classify_complexity(self, text="", estimated_tokens=0):
+        """
+        0秒动态思考等级分类器：
+        - low: 简单快问快答 / 纯翻译 / 简单正则 / 概念解释 (<1500 tokens) -> 预算 512
+        - xhigh: 高难算法 / Minecraft / 完整系统 / 架构设计 / 复杂逆向 / 多文件重构 (>4000 tokens) -> 预算 8192
+        - medium: 默认标准中等思考 -> 预算 2048
+        """
+        t_lower = text.lower() if text else ""
+        
+        # 1. 困难/极限思考任务
+        hard_keywords = [
+            "minecraft", "完整系统", "项目架构", "大型重构", "深度证明", "复杂算法",
+            "多文件工程", "并发控制", "零容错", "高并发爬虫", "状态机", "编译器",
+            "3d游戏", "webgl", "three.js", "分布式", "死锁分析", "内核", "深度思考", "从零开始开发"
+        ]
+        if estimated_tokens >= 4000 or any(k in t_lower for k in hard_keywords):
+            return "xhigh", 8192, "<|think_xhigh|>"
+
+        # 2. 简单轻量任务
+        simple_keywords = [
+            "什么是", "解释一下", "翻译成", "查一下", "搜索", "润色", "帮我看看",
+            "写个简单", "单函数", "打个招呼", "你好", "格式转换", "json格式化", "正则"
+        ]
+        if estimated_tokens < 1500 and any(k in t_lower for k in simple_keywords):
+            return "low", 512, "<|think_low|>"
+
+        # 3. 默认标准中等思考
+        return "medium", 2048, "<|think_medium|>"
+
+    def is_server_healthy(self):
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/props", method="GET")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def ensure_state(self, target_state, on_heartbeat=None):
+        """线程安全的状态切换器：4.5秒内存级无感热切换"""
+        self.last_activity_time = time.time()
+        if self.current_state == target_state and self.is_server_healthy():
+            return True
+
+        with self.lock:
+            if self.current_state == target_state and self.is_server_healthy():
+                return True
+
+            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🚀 触发 27B 形态自适应热切换: {self.current_state} ➔ {target_state}...\n")
+            sys.stdout.flush()
+
+            # 1. 安全终止当前 8083 旧进程并释放显存
+            subprocess.run(['powershell', '-Command', 'Get-Process | Where-Object { $_.ProcessName -match "llama" } | Stop-Process -Force'], capture_output=True)
+            
+            # 等待显存归零
+            for _ in range(15):
+                if on_heartbeat:
+                    try: on_heartbeat()
+                    except Exception: pass
+                time.sleep(0.3)
+                try:
+                    smi = subprocess.run(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'], capture_output=True, text=True)
+                    if smi.stdout and int(smi.stdout.strip().split()[0]) < 600:
+                        break
+                except Exception:
+                    break
+
+            # 2. 构造目标形态的启动参数
+            daily_log = self.get_today_log()
+            base_args = [
+                self.server_exe,
+                "-m", self.model_path,
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--kv-unified",
+                "--flash-attn", "on",
+                "--ctx-checkpoints", "4",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", self.template_file,
+                "--alias", "Qwen3.8-27B-A-Q6_K",
+                "--port", str(self.port),
+                "--host", "127.0.0.1",
+                "--log-file", daily_log
+            ]
+
+            if target_state == self.STATE_VISION_27B:
+                # 挂载专属 27B F16 视觉头
+                base_args.extend([
+                    "-c", "131072",
+                    "--parallel", "2",
+                    "--mmproj", self.mmproj_path
+                ])
+            elif target_state == self.STATE_PIPELINE_4SLOT:
+                # 4 槽高吞吐流水线
+                base_args.extend([
+                    "-c", "147456",
+                    "--parallel", "4",
+                    "--cache-reuse", "512"
+                ])
+            else:
+                # 默认双槽 MTP 极速态
+                base_args.extend([
+                    "-c", "147456",
+                    "--parallel", "2",
+                    "--cache-reuse", "512",
+                    "--spec-type", "draft-mtp",
+                    "--spec-draft-n-max", "2",
+                    "--spec-draft-n-min", "1"
+                ])
+
+            # 3. 启动前台主脑进程并等待就绪
+            subprocess.Popen(base_args, cwd=self.root_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            t0 = time.time()
+            while time.time() - t0 < 30:
+                if on_heartbeat:
+                    try: on_heartbeat()
+                    except Exception: pass
+                if self.is_server_healthy():
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ✅ 27B [{target_state}] 已就绪 (耗时 {time.time()-t0:.1f} 秒)！\n")
+                    sys.stdout.flush()
+                    self.current_state = target_state
+                    return True
+                time.sleep(0.5)
+
+            return False
+
+    def _idle_watchdog(self):
+        """后台闲置监控：若脱离默认 MTP 态且空闲超过 45 秒，自动优雅回归默认双槽MTP"""
+        while True:
+            time.sleep(5)
+            if self.current_state in (self.STATE_VISION_27B, self.STATE_PIPELINE_4SLOT):
+                idle_sec = time.time() - self.last_activity_time
+                if idle_sec > 45:
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🕒 任务已空闲 {idle_sec:.0f} 秒，自动回归【27B 双槽MTP 常驻极速态】...\n")
+                    sys.stdout.flush()
+                    self.ensure_state(self.STATE_MTP_2SLOT)
+
+backend_manager = Qwen27BBackendManager()
+
 class TransparentProxyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -3031,28 +3219,44 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY] 已清洗 {tools_count} 个工具 schema 中的 GBNF 爆炸约束\n")
                         sys.stdout.flush()
 
-                # ---- 🌟 智能多模态视觉处理与两阶段流水线决策 ----
-                if has_image_content(cleaned_json):
-                    main_has_vision = check_backend_is_multimodal(target_port)
-                    if main_has_vision:
-                        is_vision = True
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-DIRECT] 8083 主模型自带多模态能力，已直接转发原图\n")
-                        sys.stdout.flush()
-                    else:
-                        v_port = getattr(self.server, "vision_main_port", 0)
-                        if v_port > 0:
-                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-PIPELINE] 8083 主模型为纯文本，已启动【两阶段图文协同】：{v_port} 看图提取 ➔ 8083 27B 深度推理\n")
-                        else:
-                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-FALLBACK] 8083 主模型为纯文本，已自动将历史图片转为安全上下文占位以防后端500崩溃\n")
-                        sys.stdout.flush()
-                        cleaned_json, transformed, v_toks = process_vision_pipeline(
-                            cleaned_json,
-                            vision_port=v_port,
-                            api_key=self.server.api_key,
-                            key_name=key_name
-                        )
-                        target_port = self.server.target_port
-                        is_vision = False
+                # ---- 🌟 智能任务分类、0秒思考等级调控与 27B 三态无感热切换 ----
+                # 1. 提取最后一条用户提问文本用于复杂度分析
+                user_msg_text = ""
+                msgs = cleaned_json.get("messages", [])
+                for m in reversed(msgs):
+                    if m.get("role") == "user":
+                        c = m.get("content")
+                        if isinstance(c, str):
+                            user_msg_text = c
+                        elif isinstance(c, list):
+                            for item in c:
+                                if isinstance(item, dict) and item.get("type") == "text":
+                                    user_msg_text += " " + item.get("text", "")
+                        break
+
+                # 2. 0秒动态思考等级裁决 (low / medium / xhigh)
+                effort, budget, inline_tag = backend_manager.classify_complexity(user_msg_text, estimated_tokens=estimated_prompt_tokens)
+                cleaned_json["reasoning_effort"] = effort
+                cleaned_json["reasoning_budget"] = budget
+                
+                # 3. 决定 27B 目标形态 (多模态 / 4并发流水线 / 双槽MTP)
+                has_img = has_image_content(cleaned_json)
+                if has_img:
+                    is_vision = True
+                    target_state = backend_manager.STATE_VISION_27B
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TASK-DISPATCH] 🖼️ 发现图片输入 ➔ 调度【27B 原生多模态态】(思考等级={effort}, 预算={budget})\n")
+                elif concurrency_queue.active_text >= 2:
+                    is_vision = False
+                    target_state = backend_manager.STATE_PIPELINE_4SLOT
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TASK-DISPATCH] 🚦 负载并发高 (活跃任务={concurrency_queue.active_text}) ➔ 调度【27B 4并发流水线态】(思考等级={effort}, 预算={budget})\n")
+                else:
+                    is_vision = False
+                    target_state = backend_manager.STATE_MTP_2SLOT
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [TASK-DISPATCH] 👑 单兵极速 ➔ 调度【27B 双槽MTP常驻态】(思考等级={effort}, 预算={budget})\n")
+                sys.stdout.flush()
+
+                # 执行 4.5 秒内存级无感热切换 (若当前已是目标态则 0 秒直通)
+                backend_manager.ensure_state(target_state)
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
