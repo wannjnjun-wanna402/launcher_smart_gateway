@@ -3014,6 +3014,26 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
         if not path:
             path = "/"
 
+        # 0. 状态感知 API (/api/state, /health)
+        if path in ("/api/state", "/api/status", "/health"):
+            st_data = {
+                "status": "ok",
+                "current_state": backend_manager.current_state,
+                "server_healthy": backend_manager.is_server_healthy(),
+                "active_text": concurrency_queue.active_text,
+                "active_vision": concurrency_queue.active_vision,
+                "today_reqs": tracker.get_stats().get("today", {}).get("requests", 0),
+                "today_cost": tracker.get_stats().get("today", {}).get("cost_cny", 0.0)
+            }
+            resp_bytes = json.dumps(st_data, ensure_ascii=False, indent=2).encode("utf-8")
+            self.send_response(200)
+            self._send_cors_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+            return
+
         # 1. 虚拟计费统计完整 API
         if path in ("/v1/billing", "/v1/stats", "/v1/usage"):
             stats_json = json.dumps(tracker.get_stats(), ensure_ascii=False, indent=2).encode("utf-8")
@@ -3199,6 +3219,24 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(content_length) if content_length > 0 else b""
         
+        # 0. 手动触发热切换 API (/api/switch)
+        if path == "/api/switch":
+            try:
+                body_json = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+                target_state = body_json.get("target_state", backend_manager.STATE_MTP_2SLOT)
+                ok = backend_manager.ensure_state(target_state)
+                resp_bytes = json.dumps({"success": ok, "current_state": backend_manager.current_state}, ensure_ascii=False).encode("utf-8")
+                self.send_response(200 if ok else 500)
+            except Exception as e:
+                resp_bytes = json.dumps({"success": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
+                self.send_response(500)
+            self._send_cors_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+            return
+
         is_anthropic_protocol = (path == "/v1/messages" or path == "/messages")
         target_port = self.server.target_port
         is_vision = False
