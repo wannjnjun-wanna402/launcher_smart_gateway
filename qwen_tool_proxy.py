@@ -1758,15 +1758,133 @@ def check_backend_is_multimodal(backend_port=8083):
         pass
     return False
 
-VISION_IMAGE_OCR_CACHE = {}  # img_hash -> desc_text (指纹级OCR缓存，多轮对话中0.001s命中，杜绝每回合重复跑8085)
+# ============================================================
+#  GPU 瞬态视觉引擎 (方案B · 临时热载 · 用完即放 · 0 显存常驻)
+# ============================================================
+class TransientGPUVisionEngine:
+    """利用 V100 闲置 4.6GB 显存，按需临时拉起 3B GPU 视觉引擎，解析完毕立即杀进程彻底释放显存"""
+    def __init__(self, root_dir=r"E:\llama-win-cuda-12.4-x64", models_dir=r"E:\models", port=8085):
+        self.root_dir = root_dir
+        self.models_dir = models_dir
+        self.port = port
+        self.server_exe = os.path.join(root_dir, "llama-server.exe")
+        self.model_path = os.path.join(models_dir, "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf")
+        self.mmproj_path = os.path.join(models_dir, "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf")
+        self.lock = threading.Lock()
 
-def process_vision_pipeline(cleaned_json, vision_port=8085, api_key="llamacpp", key_name="llamacpp"):
+    def analyze_image(self, img_url: str, prompt: str = "请全面高精解析这张图片：1. 完整提取所有文字与代码(OCR)；2. 结构化解析图表数据、界面UI元素与关键视觉细节。") -> tuple:
+        with self.lock:
+            if not os.path.exists(self.model_path) or not os.path.exists(self.mmproj_path):
+                raise FileNotFoundError(f"未找到 3B 视觉模型: {self.model_path}")
+
+            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [GPU-TRANSIENT-VISION] 🚀 检测到新图片输入，临时热载 3B 视觉引擎至 GPU (占 1.9GB 显存，用完即焚)...\n")
+            sys.stdout.flush()
+            t_start = time.time()
+
+            today = time.strftime("%Y%m%d")
+            v_log = os.path.join(self.root_dir, "logs", f"8085_sidecar_{today}.log")
+            log_f = open(v_log, "a", encoding="utf-8")
+            cmd = [
+                self.server_exe,
+                "-m", self.model_path,
+                "--mmproj", self.mmproj_path,
+                "-ngl", "99",
+                "-c", "4096",
+                "--parallel", "1",
+                "-t", "4",
+                "--no-warmup",
+                "--port", str(self.port),
+                "--host", "127.0.0.1",
+                "--log-file", v_log
+            ]
+            
+            creationflags = 0x08000000 if sys.platform == "win32" else 0
+            proc = subprocess.Popen(cmd, cwd=self.root_dir, stdout=log_f, stderr=subprocess.STDOUT, creationflags=creationflags)
+            
+            desc = ""
+            p_tokens = 0
+            c_tokens = 0
+
+            try:
+                # 3. 等待 8085 就绪 (通常 4~5 秒内加载完毕)
+                is_ready = False
+                for _ in range(75):
+                    try:
+                        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/health")
+                        with urllib.request.urlopen(req, timeout=0.35) as resp:
+                            if resp.status == 200:
+                                is_ready = True
+                                break
+                    except Exception:
+                        pass
+                    time.sleep(0.2)
+
+                if not is_ready:
+                    raise TimeoutError("GPU 瞬态视觉引擎拉起超时 (15s)")
+
+                t_ready = time.time()
+                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [GPU-TRANSIENT-VISION] 👁️ GPU 视觉引擎就绪 (拉起耗时 {t_ready-t_start:.2f}s)，正在高精识别...\n")
+                sys.stdout.flush()
+
+                v_payload = {
+                    "model": "Qwen2.5-VL-3B",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": img_url}}
+                            ]
+                        }
+                    ],
+                    "max_tokens": 1500,
+                    "stream": False
+                }
+                v_body = json.dumps(v_payload).encode("utf-8")
+                v_req = urllib.request.Request(
+                    f"http://127.0.0.1:{self.port}/v1/chat/completions",
+                    data=v_body,
+                    headers={"Content-Type": "application/json", "Authorization": "Bearer llamacpp"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(v_req, timeout=60) as v_resp:
+                    v_res_json = json.loads(v_resp.read().decode("utf-8"))
+                    desc = v_res_json.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    v_usage = v_res_json.get("usage", {})
+                    p_tokens = v_usage.get("prompt_tokens", 2048)
+                    c_tokens = v_usage.get("completion_tokens", estimate_tokens(desc))
+
+            finally:
+                # 💥 任务完成立即退出释放显存
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2.0)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                try:
+                    log_f.close()
+                except Exception:
+                    pass
+
+                total_time = time.time() - t_start
+                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [GPU-TRANSIENT-VISION] ✅ GPU 视觉解析完成 (总耗时 {total_time:.2f}s) 并已彻底释放 1.9GB 显存，特征已注入 27B 主脑！\n")
+                sys.stdout.flush()
+
+            return desc, p_tokens, c_tokens, total_time
+
+transient_vision_engine = TransientGPUVisionEngine()
+
+VISION_IMAGE_OCR_CACHE = {}  # img_hash -> desc_text (指纹级OCR缓存，多轮对话中0.001s命中，杜绝每回合重复跑)
+
+def process_vision_pipeline(cleaned_json, key_name="llamacpp"):
     """
     两阶段视觉级联流水线：
-    1. 提取消息中的所有图片对象，通过 8085 (Qwen2.5-VL-3B CPU 视觉帮手) 执行深度视觉与 OCR 解析。
+    1. 提取消息中的所有图片对象，通过 GPU 瞬态 3B 视觉引擎执行深度视觉与 OCR 解析。
     2. 将图像解析特征无缝转化为丰富的高维文本上下文，替换回 messages 中。
-    3. 这样主文本模型 (Qwen3.8-27B-MID-HIGH) 无需显存挂载 mmproj，即可利用 27B 强大脑进行深度逻辑推理！
-    4. 自动将 8085 视觉模型的 OCR 工作独立计入今日清单与账本中。
+    3. 这样纯文本 27B 模型无需常驻挂载 mmproj，即可利用 27B 强大脑进行深度逻辑推理！
     """
     if not isinstance(cleaned_json, dict) or "messages" not in cleaned_json:
         return cleaned_json, False, 0
@@ -1775,7 +1893,7 @@ def process_vision_pipeline(cleaned_json, vision_port=8085, api_key="llamacpp", 
     total_vision_tokens = 0
     new_messages = []
     
-    # 找到最后一条包含图片的用户消息索引（只对最新的图片执行 CPU OCR，历史图片直接安全转为占位，避免每轮耗费40秒重跑）
+    # 找到最后一条包含图片的用户消息索引（只对最新的图片执行 GPU OCR，历史图片直接安全转为占位，避免每轮重跑）
     last_img_msg_idx = -1
     for i, msg in enumerate(messages):
         if isinstance(msg, dict) and isinstance(msg.get("content"), list):
@@ -1817,67 +1935,34 @@ def process_vision_pipeline(cleaned_json, vision_port=8085, api_key="llamacpp", 
                     if img_hash in VISION_IMAGE_OCR_CACHE:
                         cached_desc = VISION_IMAGE_OCR_CACHE[img_hash]
                         vision_descriptions.append(f"【第 {idx+1} 张图片视觉解析 & OCR 内容(已极速命中指纹缓存)】：\n{cached_desc}")
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 图片指纹命中 OCR 缓存 (hash={img_hash[:8]})，0.001s 瞬时注入，跳过 8085 重复运算！\n")
+                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 图片指纹命中 OCR 缓存 (hash={img_hash[:8]})，0.001s 瞬时注入，跳过重复运算！\n")
                         sys.stdout.flush()
                         continue
 
-                    if vision_port > 0 and is_latest_turn:
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-PIPELINE] 正在由 {vision_port} 视觉帮手(Qwen2.5-VL)解析最新第 {idx+1}/{len(image_urls)} 张图片...\n")
-                        sys.stdout.flush()
-                        v_start = time.time()
+                    if is_latest_turn:
                         try:
-                            v_payload = {
-                                "model": "Qwen2.5-VL-3B",
-                                "messages": [
-                                    {
-                                        "role": "user",
-                                        "content": [
-                                            {"type": "text", "text": "请全面解析这张图片：1. 完整提取文字与代码(OCR)；2. 简述视觉关键细节与图表："},
-                                            {"type": "image_url", "image_url": {"url": img_url}}
-                                        ]
-                                    }
-                                ],
-                                "max_tokens": 1500,
-                                "stream": False
-                            }
-                            v_body = json.dumps(v_payload).encode("utf-8")
-                            v_req = urllib.request.Request(
-                                f"http://127.0.0.1:{vision_port}/v1/chat/completions",
-                                data=v_body,
-                                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-                                method="POST"
-                            )
-                            with urllib.request.urlopen(v_req, timeout=90) as v_resp:
-                                v_res_json = json.loads(v_resp.read().decode("utf-8"))
-                                desc = v_res_json.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                                v_usage = v_res_json.get("usage", {})
-                                v_prompt = v_usage.get("prompt_tokens", 2048)
-                                v_comp = v_usage.get("completion_tokens", estimate_tokens(desc))
-                                v_duration = time.time() - v_start
-                                total_vision_tokens += (v_prompt + v_comp)
-                                vision_descriptions.append(f"【第 {idx+1} 张图片视觉解析 & OCR 内容】：\n{desc}")
-                                
-                                # 写入指纹缓存，防止后续 Agent 工具轮次重复跑 8085
-                                VISION_IMAGE_OCR_CACHE[img_hash] = desc
+                            desc, v_prompt, v_comp, v_duration = transient_vision_engine.analyze_image(img_url)
+                            total_vision_tokens += (v_prompt + v_comp)
+                            vision_descriptions.append(f"【第 {idx+1} 张图片视觉解析 & OCR 内容】：\n{desc}")
+                            VISION_IMAGE_OCR_CACHE[img_hash] = desc
 
-                                # 🌟 立即记录 8085 视觉模型的独立工作与用量清单！
-                                try:
-                                    tracker.record(
-                                        model_name="Qwen2.5-VL-3B",
-                                        prompt_tokens=v_prompt,
-                                        cached_tokens=0,
-                                        completion_tokens=v_comp,
-                                        duration_s=round(v_duration, 2),
-                                        key_name=key_name,
-                                        is_vision=True
-                                    )
-                                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-BILLING] 8085 视觉模型(Qwen2.5-VL)已独立入账: Prompt={v_prompt:,}, Output={v_comp:,}, 耗时={v_duration:.2f}s\n")
-                                    sys.stdout.flush()
-                                except Exception as ve_bill:
-                                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-BILLING-ERR] 视觉入账失败: {ve_bill}\n")
-                                    sys.stdout.flush()
+                            try:
+                                tracker.record(
+                                    model_name="Qwen2.5-VL-3B (GPU瞬态)",
+                                    prompt_tokens=v_prompt,
+                                    cached_tokens=0,
+                                    completion_tokens=v_comp,
+                                    duration_s=round(v_duration, 2),
+                                    key_name=key_name,
+                                    is_vision=True
+                                )
+                                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-BILLING] 瞬态视觉模型已独立入账: Prompt={v_prompt:,}, Output={v_comp:,}, 耗时={v_duration:.2f}s\n")
+                                sys.stdout.flush()
+                            except Exception as ve_bill:
+                                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-BILLING-ERR] 视觉入账失败: {ve_bill}\n")
+                                sys.stdout.flush()
                         except Exception as ve:
-                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-WARN] {vision_port} 视觉提取异常: {ve}\n")
+                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-WARN] 瞬态视觉提取异常: {ve}\n")
                             sys.stdout.flush()
                             vision_descriptions.append(f"【第 {idx+1} 张历史附图】：[历史图像上下文（已转为文本占位）]")
                     else:
@@ -1885,7 +1970,7 @@ def process_vision_pipeline(cleaned_json, vision_port=8085, api_key="llamacpp", 
 
                 combined_vision_text = "\n\n".join(vision_descriptions)
                 injected_text = (
-                    f"【🖼️ 视觉帮手(8085 Qwen2.5-VL)高精识别与OCR解析结果】：\n"
+                    f"【🖼️ GPU 瞬态视觉高精识别与OCR解析结果】：\n"
                     f"--------------------------------------------------\n"
                     f"{combined_vision_text}\n"
                     f"--------------------------------------------------\n\n"
@@ -1894,13 +1979,8 @@ def process_vision_pipeline(cleaned_json, vision_port=8085, api_key="llamacpp", 
                 msg_copy = dict(msg)
                 msg_copy["content"] = injected_text
                 new_messages.append(msg_copy)
-                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-PIPELINE] ✅ 8085 视觉识别完毕，已将视觉特征注入并移交给 8083 (27B 强大脑) 深度推理！\n")
-                sys.stdout.flush()
             else:
                 new_messages.append(msg)
-        else:
-            new_messages.append(msg)
-
     cleaned_json["messages"] = new_messages
     return cleaned_json, True, total_vision_tokens
 
@@ -3274,9 +3354,15 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 cleaned_json["reasoning_effort"] = effort
                 cleaned_json["reasoning_budget"] = budget
                 
-                # 3. 动态思考等级注入 (low / medium / xhigh)
+                # 3. 动态思考等级注入与方案B GPU 瞬态视觉协同
                 has_img = has_image_content(cleaned_json)
-                is_vision = has_img
+                is_backend_multi = check_backend_is_multimodal(target_port)
+                if has_img and not is_backend_multi:
+                    # 8083 主脑为纯文本形态（双槽MTP/4并发流水线），执行 GPU 瞬态 3B 视觉解析 (用完即焚)
+                    cleaned_json, was_modified, v_tokens = process_vision_pipeline(cleaned_json, key_name=key_name)
+                    is_vision = False
+                else:
+                    is_vision = has_img
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
