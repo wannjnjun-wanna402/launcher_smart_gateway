@@ -18,6 +18,7 @@ import urllib.request
 import urllib.error
 import subprocess
 import signal
+import atexit
 
 # ------------------------------------------------------------------------------------
 # 基础路径与环境常量
@@ -129,7 +130,13 @@ def ensure_gateway():
 # ------------------------------------------------------------------------------------
 # 2. 显存与进程绝对安全清理（严格遵守 AGENTS.md 标准）
 # ------------------------------------------------------------------------------------
+_cleanup_done = False
+
 def stop_llama_processes():
+    global _cleanup_done
+    if _cleanup_done:
+        return
+    _cleanup_done = True
     print_c("  🧹 正在安全停止所有 AI 进程与显存回收...", "yellow")
     try:
         subprocess.run(
@@ -156,10 +163,14 @@ def stop_llama_processes():
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l.strip() for l in res.stdout.strip().splitlines() if l.strip()]
                 if lines and int(lines[0]) < 600:
+                    print_c("  ✅ GPU 显存已完全释放。", "green")
                     break
         except Exception:
             pass
         time.sleep(0.5)
+
+# 注册 atexit 钩子：覆盖所有退出路径（Ctrl+C、X 关闭按钮、崩溃退出）
+atexit.register(stop_llama_processes)
 
 # ------------------------------------------------------------------------------------
 # 3. 纯 Qwen3.8-27B 旗舰 3 大场景形态配置定义
@@ -251,8 +262,7 @@ def start_selected_profile(key: str):
     # 优雅退出信号捕获
     def handle_sigint(signum, frame):
         print_c("\n\n  ⚠️ 接收到退出信号 (Ctrl+C)，正在安全关闭所有 AI 进程...", "yellow")
-        stop_llama_processes()
-        print_c("  ✅ 服务已完全安全退出。", "green")
+        # stop_llama_processes 已注册为 atexit，sys.exit 会自动触发
         sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_sigint)
