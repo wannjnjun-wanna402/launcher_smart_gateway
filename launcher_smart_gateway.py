@@ -52,11 +52,21 @@ def init_terminal():
             import ctypes
             kernel32 = ctypes.windll.kernel32
             # 启用控制台虚拟终端颜色支持 (ENABLE_VIRTUAL_TERMINAL_PROCESSING)
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            handle_out = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
             mode = ctypes.c_ulong()
-            kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+            kernel32.GetConsoleMode(handle_out, ctypes.byref(mode))
             mode.value |= 0x0004
-            kernel32.SetConsoleMode(handle, mode)
+            kernel32.SetConsoleMode(handle_out, mode)
+
+            # 禁用快速编辑模式：防止鼠标点击窗口内部触发"选择"状态导致 stdout 全部冻结
+            # ENABLE_QUICK_EDIT_MODE = 0x0040, ENABLE_EXTENDED_FLAGS = 0x0080
+            handle_in = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+            in_mode = ctypes.c_ulong()
+            kernel32.GetConsoleMode(handle_in, ctypes.byref(in_mode))
+            in_mode.value &= ~0x0040  # 清除 ENABLE_QUICK_EDIT_MODE
+            in_mode.value |= 0x0080   # 设置 ENABLE_EXTENDED_FLAGS（必须同时设置才生效）
+            kernel32.SetConsoleMode(handle_in, in_mode)
+
             # 设置控制台窗口标题
             kernel32.SetConsoleTitleW("AI 智能任务自适应网关 - Unified 27B Flagship Gateway v5.0")
         except Exception:
