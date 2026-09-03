@@ -2488,6 +2488,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="header">
     <div class="title">🚀 奇迹算力网关 3.0 <span class="badge">Claude Code & OpenAI 原生双协议</span></div>
     <div class="header-actions">
+      <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border);">
+        <span style="font-size: 11px; color: var(--text-muted); margin-right: 2px;">形态快切:</span>
+        <button class="btn-action" style="padding: 3px 8px; font-size: 11px; border-color: rgba(56,189,248,0.4);" onclick="quickSwitch('MTP_2SLOT')">👑 双槽MTP</button>
+        <button class="btn-action" style="padding: 3px 8px; font-size: 11px; border-color: rgba(251,146,60,0.4);" onclick="quickSwitch('PIPELINE_4SLOT')">🚀 4并发流水线</button>
+        <button class="btn-action" style="padding: 3px 8px; font-size: 11px; border-color: rgba(192,132,252,0.4);" onclick="quickSwitch('VISION_27B')">👁️ 原生多模态</button>
+      </div>
       <span class="slot-pill" id="header-gpu-pill"><span class="dot-green" id="gpu-dot"></span> <span id="gpu-status">GPU: 检测中...</span></span>
       <span class="slot-pill" id="header-slot-pill"><span class="dot-orange" id="slot-dot"></span> <span id="slot-status">⏳ 等待加载模型</span></span>
       <button class="btn-action" onclick="updateStats()">🔄 刷新</button>
@@ -3309,6 +3315,30 @@ async function updateStats() {
   }
 }
 
+async function quickSwitch(targetState) {
+  const descMap = {
+    'MTP_2SLOT': '👑 双槽MTP 极速态 (投机加速)',
+    'PIPELINE_4SLOT': '🚀 4并发流水线 (4槽并行高吞吐)',
+    'VISION_27B': '👁️ 原生多模态视觉态 (挂载 mmproj)'
+  };
+  if (!confirm(`确认将 27B 主脑置换为【${descMap[targetState] || targetState}】吗？\n(内存级自适应切换仅需约 4.5 秒)`)) return;
+  try {
+    const res = await fetch('/api/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_state: targetState })
+    });
+    const d = await res.json();
+    if (d.success) {
+      updateStats();
+    } else {
+      alert('切换失败: ' + (d.error || '未知错误'));
+    }
+  } catch (e) {
+    alert('请求异常: ' + e);
+  }
+}
+
 // 🌟 1.2 秒高灵敏度实时刷新 (精准同步预填进度、瞬时吐字速度与槽位状态)
 setInterval(updateStats, 1200);
 updateStats();
@@ -3608,13 +3638,13 @@ class Qwen27BBackendManager:
             return False
 
     def _idle_watchdog(self):
-        """后台闲置监控：若脱离默认 MTP 态且空闲超过 300 秒(5分钟)，自动优雅回归默认双槽MTP"""
+        """后台闲置监控：若脱离默认 MTP 态且空闲超过 120 秒(2分钟)，自动优雅回归默认双槽MTP"""
         while True:
             time.sleep(10)
             if self.current_state in (self.STATE_VISION_27B, self.STATE_PIPELINE_4SLOT):
                 idle_sec = time.time() - self.last_activity_time
-                if idle_sec > 300:
-                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🕒 任务已空闲 {idle_sec:.0f} 秒 (超5分钟)，自动优雅回归【27B 双槽MTP 常驻极速态】...\n")
+                if idle_sec > 120:
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🕒 任务已空闲 {idle_sec:.0f} 秒 (超2分钟)，自动优雅回归【27B 双槽MTP 常驻极速态】...\n")
                     sys.stdout.flush()
                     self.ensure_state(self.STATE_MTP_2SLOT)
 
@@ -3947,7 +3977,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 need_vision = has_img or is_vision_model_req
 
                 if need_vision:
-                    # 检查 8083 主脑是否已加载原生多模态视觉头 (mmproj)
+                    # 需求1：检测到图像理解需求 -> 自适应置换为【原生多模态视觉态】
                     if not check_backend_is_multimodal(target_port):
                         sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-VISION] 👁️ 检测到图像理解需求，正在自适应将 27B 主脑置换为【原生多模态视觉态】(挂载 mmproj-27B)...\n")
                         sys.stdout.flush()
@@ -3958,6 +3988,28 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                     is_vision = True
                 else:
                     is_vision = False
+                    # 需求2：纯文本提问 -> 智能自适应调度【4并发流水线】与【双槽MTP极速态】
+                    cur_state = getattr(backend_manager, "current_state", "")
+                    
+                    # 判定是否需要 4并发流水线 (多任务并发竞争 或 显式请求4并发/pipeline)
+                    is_pipeline_explicit = "4并发" in actual_model or "pipeline" in requested_model.lower() or "4slot" in requested_model.lower()
+                    has_concurrency = (concurrency_queue.active_text >= 1)
+
+                    if is_pipeline_explicit or has_concurrency:
+                        target_text_state = backend_manager.STATE_PIPELINE_4SLOT
+                        target_desc = "4并发流水线 (4槽并行高吞吐)"
+                    else:
+                        target_text_state = backend_manager.STATE_MTP_2SLOT
+                        target_desc = "双槽MTP (极速投机加速)"
+
+                    # 若当前仍在多模态视觉态，或当前纯文本形态与目标形态不符，智能无感置换
+                    if cur_state == backend_manager.STATE_VISION_27B or (cur_state != target_text_state and is_pipeline_explicit):
+                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🚀 检测到纯文本任务，正在自适应置换主模型为【{target_desc}】...\n")
+                        sys.stdout.flush()
+                        ok = backend_manager.ensure_state(target_text_state)
+                        if not ok:
+                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ⚠️ 置换至 {target_desc} 失败，保持当前状态运行...\n")
+                            sys.stdout.flush()
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
@@ -4209,8 +4261,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 # ---- 记录 DeepSeek-V4-Flash 虚拟计费 ----
                 duration = time.time() - start_time
                 if prompt_tokens_recorded > 0 or completion_tokens_recorded > 0:
-                    b_state = getattr(backend_manager, "current_state", "")
-                    if is_vision or need_vision or b_state == backend_manager.STATE_VISION_27B:
+                    if is_vision or need_vision or (b_state == backend_manager.STATE_VISION_27B and has_img):
                         recorded_model_name = "Qwen3.8-27B-A [原生多模态]"
                     elif b_state == backend_manager.STATE_PIPELINE_4SLOT or "4并发" in actual_model:
                         recorded_model_name = "Qwen3.8-27B-A [4并发流水线]"
