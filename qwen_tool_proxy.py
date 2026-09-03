@@ -209,7 +209,7 @@ class GPUTelemetry:
         self.lock = threading.Lock()
         self.data = {
             "online": True,
-            "gpu_name": "Tesla V100-SXM2-32GB",
+            "gpu_name": "Tesla V100-PCIE-32GB",
             "vram_used_mb": 27340,
             "vram_total_mb": 32768,
             "vram_pct": 83.4,
@@ -220,6 +220,17 @@ class GPUTelemetry:
             "last_updated": time.time()
         }
         self._silent_probe_once()
+        self._worker = threading.Thread(target=self._loop_probe, daemon=True, name="GPUTelemetryWorker")
+        self._worker.start()
+
+    def _loop_probe(self):
+        """后台轻量守护线程：每 2.5 秒自适应采样真实硬件遥测指标"""
+        while True:
+            time.sleep(2.5)
+            try:
+                self._silent_probe_once()
+            except Exception:
+                pass
 
     def _silent_probe_once(self):
         try:
@@ -243,18 +254,19 @@ class GPUTelemetry:
                 if len(parts) >= 7:
                     v_used = int(float(parts[1]))
                     v_total = int(float(parts[2]))
-                    self.data = {
-                        "online": True,
-                        "gpu_name": parts[0],
-                        "vram_used_mb": v_used,
-                        "vram_total_mb": v_total,
-                        "vram_pct": round((v_used / v_total * 100), 1) if v_total > 0 else 0.0,
-                        "gpu_util_pct": int(float(parts[3])),
-                        "power_w": int(float(parts[4])),
-                        "power_limit_w": int(float(parts[5])),
-                        "temp_c": int(float(parts[6])),
-                        "last_updated": time.time()
-                    }
+                    with self.lock:
+                        self.data = {
+                            "online": True,
+                            "gpu_name": parts[0],
+                            "vram_used_mb": v_used,
+                            "vram_total_mb": v_total,
+                            "vram_pct": round((v_used / v_total * 100), 1) if v_total > 0 else 0.0,
+                            "gpu_util_pct": int(float(parts[3])),
+                            "power_w": int(float(parts[4])),
+                            "power_limit_w": int(float(parts[5])),
+                            "temp_c": int(float(parts[6])),
+                            "last_updated": time.time()
+                        }
         except Exception:
             pass
 
@@ -1458,6 +1470,7 @@ class BillingTracker:
             st["concurrency"] = concurrency_queue.get_dynamic_status()
             st["gpu"] = gpu_telemetry.get_status()
             st["speed"] = speed_engine.get_speed()
+            st["backend_state"] = getattr(backend_manager, "current_state", "MTP_2SLOT")
             st["reasoning_levels"] = self.data.get("reasoning_levels", {
                 "today": {"simple": 0, "medium": 0, "hard": 0},
                 "total": {"simple": 0, "medium": 0, "hard": 0}
@@ -2481,18 +2494,97 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .config-box { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-size: 12px; }
   .config-title { font-weight: 600; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
   .code-snippet { background: rgba(0,0,0,0.5); padding: 8px 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; color: #e2e8f0; margin-top: 6px; word-break: break-all; }
+
+  /* 现代高端分段控制器 (Segmented Mode Controller) */
+  .mode-segmented-control {
+    display: flex;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 3px;
+    gap: 4px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  .mode-seg-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+  }
+  .mode-seg-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .mode-seg-btn.active-mtp {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(56, 189, 248, 0.1));
+    border-color: rgba(56, 189, 248, 0.55);
+    color: #38bdf8;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+  }
+  .mode-seg-btn.active-pipe {
+    background: linear-gradient(135deg, rgba(251, 146, 60, 0.25), rgba(251, 146, 60, 0.1));
+    border-color: rgba(251, 146, 60, 0.55);
+    color: #fb923c;
+    box-shadow: 0 0 12px rgba(251, 146, 60, 0.3);
+  }
+  .mode-seg-btn.active-vision {
+    background: linear-gradient(135deg, rgba(192, 132, 252, 0.25), rgba(192, 132, 252, 0.1));
+    border-color: rgba(192, 132, 252, 0.55);
+    color: #c084fc;
+    box-shadow: 0 0 12px rgba(192, 132, 252, 0.3);
+  }
+  .seg-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 6px currentColor;
+    display: none;
+  }
+  .mode-seg-btn.active-mtp .seg-dot,
+  .mode-seg-btn.active-pipe .seg-dot,
+  .mode-seg-btn.active-vision .seg-dot {
+    display: inline-block;
+    animation: pulse-dot 1.8s infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.6; }
+  }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
+<div id="switch-toast" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 99999; background: rgba(15, 23, 42, 0.96); border: 1px solid rgba(56, 189, 248, 0.5); border-radius: 12px; padding: 12px 24px; box-shadow: 0 12px 36px rgba(0,0,0,0.85); backdrop-filter: blur(20px); font-size: 13px; color: #fff; align-items: center; gap: 12px;">
+  <span id="switch-toast-icon" style="display:inline-block; width:14px; height:14px; border:2px solid #38bdf8; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
+  <span id="switch-toast-text" style="font-weight: 500;">正在置换主模型形态...</span>
+</div>
+
 <div class="container">
   <div class="header">
     <div class="title">🚀 奇迹算力网关 3.0 <span class="badge">Claude Code & OpenAI 原生双协议</span></div>
     <div class="header-actions">
-      <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border);">
-        <span style="font-size: 11px; color: var(--text-muted); margin-right: 2px;">形态快切:</span>
-        <button class="btn-action" style="padding: 3px 8px; font-size: 11px; border-color: rgba(56,189,248,0.4);" onclick="quickSwitch('MTP_2SLOT')">👑 双槽MTP</button>
-        <button class="btn-action" style="padding: 3px 8px; font-size: 11px; border-color: rgba(251,146,60,0.4);" onclick="quickSwitch('PIPELINE_4SLOT')">🚀 4并发流水线</button>
-        <button class="btn-action" style="padding: 3px 8px; font-size: 11px; border-color: rgba(192,132,252,0.4);" onclick="quickSwitch('VISION_27B')">👁️ 原生多模态</button>
+      <div class="mode-segmented-control" id="mode-seg-group">
+        <button class="mode-seg-btn" id="btn-mode-mtp" onclick="quickSwitch('MTP_2SLOT')">
+          <span class="seg-dot"></span>👑 双槽MTP
+        </button>
+        <button class="mode-seg-btn" id="btn-mode-pipe" onclick="quickSwitch('PIPELINE_4SLOT')">
+          <span class="seg-dot"></span>🚀 4并发流水线
+        </button>
+        <button class="mode-seg-btn" id="btn-mode-vision" onclick="quickSwitch('VISION_27B')">
+          <span class="seg-dot"></span>👁️ 原生多模态
+        </button>
       </div>
       <span class="slot-pill" id="header-gpu-pill"><span class="dot-green" id="gpu-dot"></span> <span id="gpu-status">GPU: 检测中...</span></span>
       <span class="slot-pill" id="header-slot-pill"><span class="dot-orange" id="slot-dot"></span> <span id="slot-status">⏳ 等待加载模型</span></span>
@@ -3310,8 +3402,35 @@ async function updateStats() {
         `;
       }).join('');
     }
+    // 更新形态分段控制器的激活高亮
+    const bState = data.backend_state || 'MTP_2SLOT';
+    const btnMtp = document.getElementById('btn-mode-mtp');
+    const btnPipe = document.getElementById('btn-mode-pipe');
+    const btnVision = document.getElementById('btn-mode-vision');
+    if (btnMtp && btnPipe && btnVision) {
+      btnMtp.className = 'mode-seg-btn' + (bState === 'MTP_2SLOT' ? ' active-mtp' : '');
+      btnPipe.className = 'mode-seg-btn' + (bState === 'PIPELINE_4SLOT' ? ' active-pipe' : '');
+      btnVision.className = 'mode-seg-btn' + (bState === 'VISION_27B' ? ' active-vision' : '');
+    }
   } catch (e) {
     console.error(e);
+  }
+}
+
+function showToast(text, isSuccess = false) {
+  const toast = document.getElementById('switch-toast');
+  const icon = document.getElementById('switch-toast-icon');
+  const textEl = document.getElementById('switch-toast-text');
+  if (!toast || !icon || !textEl) return;
+  textEl.innerText = text;
+  toast.style.display = 'flex';
+  if (isSuccess) {
+    icon.style.display = 'none';
+    toast.style.borderColor = '#4ade80';
+    setTimeout(() => { toast.style.display = 'none'; }, 2200);
+  } else {
+    icon.style.display = 'inline-block';
+    toast.style.borderColor = '#38bdf8';
   }
 }
 
@@ -3321,7 +3440,13 @@ async function quickSwitch(targetState) {
     'PIPELINE_4SLOT': '🚀 4并发流水线 (4槽并行高吞吐)',
     'VISION_27B': '👁️ 原生多模态视觉态 (挂载 mmproj)'
   };
-  if (!confirm(`确认将 27B 主脑置换为【${descMap[targetState] || targetState}】吗？\n(内存级自适应切换仅需约 4.5 秒)`)) return;
+  const targetDesc = descMap[targetState] || targetState;
+  if (!confirm(`确认将 27B 主脑置换为【${targetDesc}】吗？\n(内存级自适应切换仅需约 4.5 秒)`)) return;
+  
+  showToast(`正在置换主模型为【${targetDesc}】，请稍候...`);
+  const btns = document.querySelectorAll('.mode-seg-btn');
+  btns.forEach(b => b.style.pointerEvents = 'none');
+  
   try {
     const res = await fetch('/api/switch', {
       method: 'POST',
@@ -3330,12 +3455,17 @@ async function quickSwitch(targetState) {
     });
     const d = await res.json();
     if (d.success) {
+      showToast(`✅ 主模型已成功置换为【${targetDesc}】！`, true);
       updateStats();
     } else {
       alert('切换失败: ' + (d.error || '未知错误'));
+      document.getElementById('switch-toast').style.display = 'none';
     }
   } catch (e) {
     alert('请求异常: ' + e);
+    document.getElementById('switch-toast').style.display = 'none';
+  } finally {
+    btns.forEach(b => b.style.pointerEvents = 'auto');
   }
 }
 
@@ -4106,8 +4236,30 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         self.wfile.write(chunk_len + ping_evt + b"\r\n")
                         self.wfile.flush()
 
+                    # 启动超长上下文预填保活心跳守护：面对 100K+ 预填，每 5 秒发送一次 SSE 注释保持 TCP 强连接
+                    first_token_received = threading.Event()
+                    def _prefill_heartbeat(wfile_ref, stop_event, is_anth):
+                        ping_body = b"event: ping\r\ndata: {}\r\n\r\n" if is_anth else b": ping\r\n\r\n"
+                        chunk = f"{len(ping_body):X}\r\n".encode("ascii") + ping_body + b"\r\n"
+                        while not stop_event.wait(timeout=5.0):
+                            try:
+                                wfile_ref.write(chunk)
+                                wfile_ref.flush()
+                            except Exception:
+                                break
+
+                    heartbeat_worker = threading.Thread(
+                        target=_prefill_heartbeat,
+                        args=(self.wfile, first_token_received, is_anthropic_protocol),
+                        daemon=True,
+                        name="SSEPrefillHeartbeat"
+                    )
+                    heartbeat_worker.start()
+
                     while True:
                         line = resp.readline()
+                        if not first_token_received.is_set():
+                            first_token_received.set()
                         if not line:
                             if not is_anthropic_protocol:
                                 try:
@@ -4201,6 +4353,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                                 except Exception:
                                     pass
                                 break
+                    first_token_received.set()
 
                     # Anthropic SSE 结束事件
                     if is_anthropic_protocol and anthropic_started:
