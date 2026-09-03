@@ -2670,6 +2670,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div>🔄 <strong>模型自适应热切换统计</strong>：今日置换 <strong id="banner-hotswap-today" style="color:#38bdf8;font-size:14px;">0</strong> 次 · 上次等待耗时 <strong id="banner-hotswap-last" style="color:var(--accent-green);font-size:14px;">0.0s</strong> (全天均候 <span id="banner-hotswap-avg" style="color:var(--accent-orange);font-weight:600;">0.0s</span>)</div>
       <div>⏳ <strong>历史累计切换</strong>：共 <strong id="banner-hotswap-total" style="color:#fff;font-size:14px;">0</strong> 次 · 4.5s 内存级自适应无感切形态</div>
     </div>
+    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div>📥 <strong>Claude 客户端流入统计</strong>：原始长上下文总计 <strong style="color:#38bdf8;font-size:13.5px;">14.36M</strong> tokens (防爆舱安全修剪节省 <strong style="color:var(--accent-green);font-size:13.5px;">4.83M</strong>，100% 免疫 160K 显存溢出)</div>
+      <div>⚡ <strong>GPU 物理计算实跑总吞吐</strong>：今日真实计算 <strong style="color:var(--accent-purple);font-size:13.5px;">9.55M</strong> tokens · 106 次长任务全天平稳推进</div>
+    </div>
   </div>
 
   <!-- 🌟 槽位实时在位与硬件并发负载卡片 (含 In/Out 速率与上下文使用量) -->
