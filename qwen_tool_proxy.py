@@ -912,7 +912,8 @@ class ConcurrencyQueue:
 
         # 3. 确实未启动或已关闭
         b_state = getattr(backend_manager, "current_state", "")
-        if b_state == backend_manager.STATE_VISION_27B:
+        is_vm = (b_state == backend_manager.STATE_VISION_27B)
+        if is_vm:
             offline_model = "Qwen3.8-27B-A [原生多模态]"
         elif b_state == backend_manager.STATE_PIPELINE_4SLOT:
             offline_model = "Qwen3.8-27B-A [4并发流水线]"
@@ -979,8 +980,22 @@ class BillingTracker:
                 "total_work_seconds": 0.0,
             },
             "reasoning_levels": {
-                "today": {"simple": 0, "medium": 0, "hard": 0},
-                "total": {"simple": 0, "medium": 0, "hard": 0}
+                "today": {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                },
+                "total": {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                }
             },
             "by_model": {},
             "by_key": {
@@ -1018,8 +1033,18 @@ class BillingTracker:
                     loaded["hot_swaps"].setdefault("total_count", 0)
 
                     loaded.setdefault("reasoning_levels", default_data["reasoning_levels"])
-                    loaded["reasoning_levels"].setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
-                    loaded["reasoning_levels"].setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
+                    loaded["reasoning_levels"].setdefault("today", default_data["reasoning_levels"]["today"])
+                    loaded["reasoning_levels"].setdefault("total", default_data["reasoning_levels"]["total"])
+                    loaded["reasoning_levels"]["today"].setdefault("by_mode", {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    })
+                    loaded["reasoning_levels"]["total"].setdefault("by_mode", {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    })
 
                     bk = loaded.setdefault("by_key", {})
                     for k in ("admin", "llamacpp", "v100-32G"):
@@ -1128,7 +1153,14 @@ class BillingTracker:
             if "hot_swaps" in self.data:
                 self.data["hot_swaps"]["today_count"] = 0
             if "reasoning_levels" in self.data:
-                self.data["reasoning_levels"]["today"] = {"simple": 0, "medium": 0, "hard": 0}
+                self.data["reasoning_levels"]["today"] = {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                }
             with speed_engine.lock:
                 speed_engine.total_prefill_tokens = 0
                 speed_engine.total_prefill_duration = 0.0
@@ -1297,6 +1329,14 @@ class BillingTracker:
             d["total_out_seconds"] = round(d.get("total_out_seconds", 0.0) + g_time, 1)
             d["total_work_seconds"] = round(d.get("total_work_seconds", 0.0) + duration_s, 1)
 
+            # 确定当前调用所属形态 (MTP_2SLOT / PIPELINE_4SLOT / VISION_27B)
+            if "4并发" in model_name:
+                mode_key = "PIPELINE_4SLOT"
+            elif is_vision or "多模态" in model_name or "Vision" in model_name or "VL" in model_name:
+                mode_key = "VISION_27B"
+            else:
+                mode_key = "MTP_2SLOT"
+
             # 9. 统计思维等级
             eff_norm = "medium"
             if reasoning_effort in ("low", "minimal"):
@@ -1307,13 +1347,43 @@ class BillingTracker:
                 eff_norm = "medium"
 
             rl = self.data.setdefault("reasoning_levels", {
-                "today": {"simple": 0, "medium": 0, "hard": 0},
-                "total": {"simple": 0, "medium": 0, "hard": 0}
+                "today": {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                },
+                "total": {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                }
             })
             rl.setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
             rl.setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
+            today_bm = rl["today"].setdefault("by_mode", {
+                "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+            })
+            total_bm = rl["total"].setdefault("by_mode", {
+                "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+            })
+
             rl["today"][eff_norm] = rl["today"].get(eff_norm, 0) + 1
             rl["total"][eff_norm] = rl["total"].get(eff_norm, 0) + 1
+
+            today_bm.setdefault(mode_key, {"simple": 0, "medium": 0, "hard": 0})
+            total_bm.setdefault(mode_key, {"simple": 0, "medium": 0, "hard": 0})
+            today_bm[mode_key][eff_norm] = today_bm[mode_key].get(eff_norm, 0) + 1
+            total_bm[mode_key][eff_norm] = total_bm[mode_key].get(eff_norm, 0) + 1
 
             # 10. 原子写落盘
             try:
@@ -2491,13 +2561,29 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-sub" id="cache-hit-detail">今日命中: 0 tokens</div>
     </div>
     <div class="card" style="border-color: rgba(167, 139, 250, 0.45); background: radial-gradient(circle at top right, rgba(167, 139, 250, 0.1), rgba(0,0,0,0.3));">
-      <div class="card-label" style="color: #a78bfa;">🧠 模型思维等级调控 (问答难度)</div>
-      <div class="card-value" id="reasoning-kpi-value" style="font-size: 17px; letter-spacing: -0.3px;">
-        <span style="color:#4ade80;">0</span> <span style="font-size:11px;color:var(--text-muted);">简单</span> · 
-        <span style="color:#38bdf8;">0</span> <span style="font-size:11px;color:var(--text-muted);">中等</span> · 
-        <span style="color:#c084fc;">0</span> <span style="font-size:11px;color:var(--text-muted);">困难</span>
+      <div class="card-label" style="color: #a78bfa; display: flex; justify-content: space-between; align-items: center;">
+        <span>🧠 模型思维等级调控 (问答难度)</span>
+        <span style="font-size: 11px; color: var(--text-muted);" id="reasoning-total-badge">今日 0次</span>
       </div>
-      <div class="card-sub" id="reasoning-kpi-sub">简单快问: 0次 | 中等思考: 0次 | 困难深度: 0次</div>
+      <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(56, 189, 248, 0.08); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
+          <div style="font-size: 11px; font-weight: 600; color: #38bdf8;">👑 双槽MTP</div>
+          <div id="reasoning-mtp-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
+            <span style="color:#38bdf8;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
+            <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(251, 146, 60, 0.08); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(251, 146, 60, 0.2);">
+          <div style="font-size: 11px; font-weight: 600; color: #fb923c;">🚀 4并发流水线</div>
+          <div id="reasoning-pipe-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
+            <span style="color:#38bdf8;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
+            <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
+          </div>
+        </div>
+      </div>
+      <div class="card-sub" id="reasoning-kpi-sub" style="margin-top: 5px; font-size: 11px;">今日总计: 0简 · 0中 · 0难</div>
     </div>
     <div class="card" style="border-color: rgba(56, 189, 248, 0.45); background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), rgba(0,0,0,0.3));">
       <div class="card-label" style="color: #38bdf8;">⏱️ 当日 In / Out 总耗时 (全槽位合计)</div>
@@ -3094,25 +3180,45 @@ async function updateStats() {
       }
     }
 
-    // 🌟 模型思维等级调控 KPI 更新
+    // 🌟 模型思维等级调控 KPI 更新 (分双槽MTP与4并发流水线独立统计)
     const rl = data.reasoning_levels || {};
-    const rlToday = rl.today || { simple: 0, medium: 0, hard: 0 };
+    const rlToday = rl.today || { simple: 0, medium: 0, hard: 0, by_mode: {} };
     const rSim = rlToday.simple || 0;
     const rMed = rlToday.medium || 0;
     const rHar = rlToday.hard || 0;
     const rTot = rSim + rMed + rHar;
 
-    const rKpiVal = document.getElementById('reasoning-kpi-value');
-    if (rKpiVal) {
-      rKpiVal.innerHTML = `
-        <span style="color:#4ade80;font-weight:700;">${rSim}</span> <span style="font-size:11px;color:var(--text-muted);">简单</span> · 
-        <span style="color:#38bdf8;font-weight:700;">${rMed}</span> <span style="font-size:11px;color:var(--text-muted);">中等</span> · 
-        <span style="color:#c084fc;font-weight:700;">${rHar}</span> <span style="font-size:11px;color:var(--text-muted);">困难</span>
+    const bm = rlToday.by_mode || {};
+    const mtpStats = bm['MTP_2SLOT'] || { simple: 0, medium: 0, hard: 0 };
+    const pipeStats = bm['PIPELINE_4SLOT'] || { simple: 0, medium: 0, hard: 0 };
+    const visStats = bm['VISION_27B'] || { simple: 0, medium: 0, hard: 0 };
+
+    const badgeEl = document.getElementById('reasoning-total-badge');
+    if (badgeEl) badgeEl.innerText = `今日 ${rTot}次`;
+
+    const mtpLine = document.getElementById('reasoning-mtp-line');
+    if (mtpLine) {
+      mtpLine.innerHTML = `
+        <span style="color:#4ade80;font-weight:700;">${mtpStats.simple || 0}</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
+        <span style="color:#38bdf8;font-weight:700;">${mtpStats.medium || 0}</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
+        <span style="color:#c084fc;font-weight:700;">${mtpStats.hard || 0}</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
       `;
     }
+
+    const pipeLine = document.getElementById('reasoning-pipe-line');
+    if (pipeLine) {
+      pipeLine.innerHTML = `
+        <span style="color:#4ade80;font-weight:700;">${pipeStats.simple || 0}</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
+        <span style="color:#38bdf8;font-weight:700;">${pipeStats.medium || 0}</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
+        <span style="color:#c084fc;font-weight:700;">${pipeStats.hard || 0}</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
+      `;
+    }
+
     const rKpiSub = document.getElementById('reasoning-kpi-sub');
     if (rKpiSub) {
-      rKpiSub.innerText = `简单快问: ${rSim}次 | 中等思考: ${rMed}次 | 困难深度: ${rHar}次 (合计${rTot}次)`;
+      const visSum = (visStats.simple || 0) + (visStats.medium || 0) + (visStats.hard || 0);
+      const visText = visSum > 0 ? ` · 视觉态 ${visSum}次` : '';
+      rKpiSub.innerText = `今日总计: 简 ${rSim} · 中 ${rMed} · 难 ${rHar}${visText}`;
     }
 
     // 🌟 当日全槽位 In / Out 总耗时 KPI 更新
