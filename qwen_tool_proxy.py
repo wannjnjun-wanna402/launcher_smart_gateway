@@ -2486,9 +2486,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-sub" id="today-token-detail">输入: 0 | 输出: 0</div>
     </div>
     <div class="card">
-      <div class="card-label">Prompt 缓存命中率</div>
+      <div class="card-label">Prompt 缓存命中率 (当日)</div>
       <div class="card-value" id="cache-hit-rate" style="color: var(--accent-orange);">0.0%</div>
-      <div class="card-sub" id="cache-hit-detail">命中: 0 tokens</div>
+      <div class="card-sub" id="cache-hit-detail">今日命中: 0 tokens</div>
     </div>
     <div class="card" style="border-color: rgba(167, 139, 250, 0.45); background: radial-gradient(circle at top right, rgba(167, 139, 250, 0.1), rgba(0,0,0,0.3));">
       <div class="card-label" style="color: #a78bfa;">🧠 模型思维等级调控 (问答难度)</div>
@@ -3031,11 +3031,12 @@ async function updateStats() {
     document.getElementById('today-tokens').innerText = (data.today.total_tokens || 0).toLocaleString();
     document.getElementById('today-token-detail').innerText = '输入: ' + (data.today.prompt_tokens || 0).toLocaleString() + ' | 输出: ' + (data.today.completion_tokens || 0).toLocaleString();
     
-    const promptTotal = data.total.prompt_tokens || 0;
-    const cachedTotal = data.total.prompt_tokens_cached || 0;
-    const hitRate = promptTotal > 0 ? ((cachedTotal / promptTotal) * 100).toFixed(1) : '0.0';
+    // 🌟 Prompt 缓存命中率（只计算当日）
+    const promptToday = (data.today && data.today.prompt_tokens) || 0;
+    const cachedToday = (data.today && data.today.prompt_tokens_cached) || 0;
+    const hitRate = promptToday > 0 ? ((cachedToday / promptToday) * 100).toFixed(1) : '0.0';
     document.getElementById('cache-hit-rate').innerText = hitRate + '%';
-    document.getElementById('cache-hit-detail').innerText = '命中: ' + cachedTotal.toLocaleString() + ' tokens (极速)';
+    document.getElementById('cache-hit-detail').innerText = '今日命中: ' + cachedToday.toLocaleString() + ' tokens (极速)';
 
     // 🌟 原生多模态指标更新 (横幅与卡片)
     const vs = data.vision_summary || {};
