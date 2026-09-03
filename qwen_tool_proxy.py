@@ -966,6 +966,17 @@ class BillingTracker:
                 "llamacpp": {"name": "llamacpp 测试机", "requests": 0, "total_tokens": 0, "cost_cny": 0.0},
                 "v100-32G": {"name": "v100-32G 工作机", "requests": 0, "total_tokens": 0, "cost_cny": 0.0}
             },
+            "hot_swaps": {
+                "total_count": 0,
+                "today_count": 0,
+                "last_duration_s": 0.0,
+                "total_duration_s": 0.0,
+                "avg_duration_s": 0.0,
+                "last_from": "",
+                "last_to": "",
+                "last_time": "",
+                "history": []
+            },
             "daily_history": {},
             "recent_requests": []
         }
@@ -978,6 +989,11 @@ class BillingTracker:
                     loaded.setdefault("total", default_data["total"])
                     loaded["total"].setdefault("vision_images", 0)
                     loaded["total"].setdefault("vision_duration_s", 0.0)
+
+                    loaded.setdefault("hot_swaps", default_data["hot_swaps"])
+                    loaded["hot_swaps"].setdefault("history", [])
+                    loaded["hot_swaps"].setdefault("today_count", 0)
+                    loaded["hot_swaps"].setdefault("total_count", 0)
 
                     bk = loaded.setdefault("by_key", {})
                     for k in ("admin", "llamacpp", "v100-32G"):
@@ -1068,6 +1084,8 @@ class BillingTracker:
                 "vision_duration_s": 0.0,
                 "by_device_model": {}
             }
+            if "hot_swaps" in self.data:
+                self.data["hot_swaps"]["today_count"] = 0
 
     def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0):
         with self.lock:
@@ -1242,6 +1260,53 @@ class BillingTracker:
 
             return cost, d["cost_cny"], d["requests"]
 
+    def record_hot_swap(self, from_state, to_state, duration_s):
+        """记录模型热切换等待耗时与次数，原子写落盘"""
+        with self.lock:
+            self._check_day_rollover()
+            hs = self.data.setdefault("hot_swaps", {
+                "total_count": 0,
+                "today_count": 0,
+                "last_duration_s": 0.0,
+                "total_duration_s": 0.0,
+                "avg_duration_s": 0.0,
+                "last_from": "",
+                "last_to": "",
+                "last_time": "",
+                "history": []
+            })
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            hs["total_count"] = hs.get("total_count", 0) + 1
+            hs["today_count"] = hs.get("today_count", 0) + 1
+            hs["last_duration_s"] = round(duration_s, 2)
+            hs["total_duration_s"] = round(hs.get("total_duration_s", 0.0) + duration_s, 2)
+            hs["avg_duration_s"] = round(hs["total_duration_s"] / max(1, hs["total_count"]), 2)
+            hs["last_from"] = from_state or "待命"
+            hs["last_to"] = to_state
+            hs["last_time"] = now_str
+
+            hist = hs.setdefault("history", [])
+            hist.insert(0, {
+                "time": now_str,
+                "from": from_state or "待命",
+                "to": to_state,
+                "duration_s": round(duration_s, 2)
+            })
+            if len(hist) > 20:
+                hs["history"] = hist[:20]
+
+            try:
+                tmp_file = self.filepath + ".tmp"
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+                if os.path.exists(self.filepath):
+                    os.replace(tmp_file, self.filepath)
+                else:
+                    os.rename(tmp_file, self.filepath)
+            except Exception as e:
+                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [BILLING-WARN] 保存热切换统计失败: {e}\n")
+                sys.stdout.flush()
+
     def get_stats(self):
         with self.lock:
             self._check_day_rollover()
@@ -1250,6 +1315,17 @@ class BillingTracker:
             st["concurrency"] = concurrency_queue.get_dynamic_status()
             st["gpu"] = gpu_telemetry.get_status()
             st["speed"] = speed_engine.get_speed()
+            st["hot_swaps"] = self.data.get("hot_swaps", {
+                "total_count": 0,
+                "today_count": 0,
+                "last_duration_s": 0.0,
+                "total_duration_s": 0.0,
+                "avg_duration_s": 0.0,
+                "last_from": "",
+                "last_to": "",
+                "last_time": "",
+                "history": []
+            })
             st["vision_summary"] = {
                 "today_images": self.data.get("today", {}).get("vision_images", 0),
                 "today_duration_s": round(self.data.get("today", {}).get("vision_duration_s", 0.0), 2),
@@ -2281,6 +2357,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div>👁️ <strong>Qwen3.8-27B-A [原生多模态] 专项核算</strong>：今日读图 <strong id="banner-vision-today-imgs" style="color:var(--accent-purple);font-size:14px;">0</strong> 张 (总耗时 <span id="banner-vision-today-time" style="color:#38bdf8;font-weight:600;">0.0s</span>) · 历史累计 <strong id="banner-vision-total-imgs" style="color:var(--accent);font-size:14px;">0</strong> 张图</div>
       <div>⚡ <strong>图像指纹高速缓存</strong>：已收录 <strong id="banner-vision-cache-count" style="color:var(--accent-green);font-size:14px;">0</strong> 个 (多轮追问 0.001s 瞬时复用)</div>
     </div>
+    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div>🔄 <strong>模型自适应热切换统计</strong>：今日置换 <strong id="banner-hotswap-today" style="color:#38bdf8;font-size:14px;">0</strong> 次 · 上次等待耗时 <strong id="banner-hotswap-last" style="color:var(--accent-green);font-size:14px;">0.0s</strong> (全天均候 <span id="banner-hotswap-avg" style="color:var(--accent-orange);font-weight:600;">0.0s</span>)</div>
+      <div>⏳ <strong>历史累计切换</strong>：共 <strong id="banner-hotswap-total" style="color:#fff;font-size:14px;">0</strong> 次 · 4.5s 内存级自适应无感切形态</div>
+    </div>
   </div>
 
   <!-- 🌟 槽位实时在位与硬件并发负载卡片 (含 In/Out 速率与上下文使用量) -->
@@ -2313,6 +2393,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-value" id="vision-kpi-value" style="color: #c084fc; font-size: 19px;">0 张 · 0.0s</div>
       <div class="card-sub" id="vision-kpi-sub">今日读图: 0 张 | 累计: 0 张图</div>
     </div>
+    <div class="card" style="border-color: rgba(56, 189, 248, 0.45); background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), rgba(0,0,0,0.3));">
+      <div class="card-label" style="color: #38bdf8;">🔄 模型热切换与等待耗时统计</div>
+      <div class="card-value" id="hotswap-kpi-value" style="color: #38bdf8; font-size: 19px;">0 次 · 0.0s</div>
+      <div class="card-sub" id="hotswap-kpi-sub">今日切换: 0 次 | 均候: 0.0s</div>
+    </div>
     <div class="card">
       <div class="card-label">全天工作累计总均速 (In / Out)</div>
       <div class="card-value" id="current-tps" style="color: #38bdf8; font-size: 19px;">0.0 tok/s</div>
@@ -2330,7 +2415,76 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- 3台电脑设备分账卡片 -->
+  <!-- 🌟 今日当前累计调用流水 (按设备与模型累计 · 一直累加) -->
+  <div class="table-card">
+    <div class="table-title">
+      <span>📊 今日当前累计调用清单 (按设备与模型实时累计 · 一直累加)</span>
+      <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">JSON 接口: <code style="color: var(--accent);">GET /v1/billing</code></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>最后活跃时间</th>
+          <th>调用设备 (Key)</th>
+          <th>请求模型 (文本 / 原生多模态)</th>
+          <th>Prompt (未命中 / 命中)</th>
+          <th>Output</th>
+          <th>累计耗时 (调用次数)</th>
+          <th>🖼️ 识图统计</th>
+          <th>今日累计价值</th>
+        </tr>
+      </thead>
+      <tbody id="recents-tbody">
+        <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 🌟 月度 Token & 算力热力日历方块卡片 -->
+  <div class="table-card">
+    <div class="table-title">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <span>🗓️ 月度 Token & 算力日历热力图</span>
+        <div class="heatmap-nav">
+          <button class="btn-nav" onclick="changeMonth(-1)">◀ 上月</button>
+          <strong id="heatmap-month-label" style="color: #fff; font-family: 'JetBrains Mono'; font-size: 14px; min-width: 110px; text-align: center;">2026年 9月</strong>
+          <button class="btn-nav" onclick="changeMonth(1)">下月 ▶</button>
+          <button class="btn-nav" onclick="resetToCurrentMonth()">本月</button>
+        </div>
+      </div>
+      
+      <div class="tab-pills">
+        <button class="tab-pill active" onclick="switchKeyTab('all', this)">全部汇总</button>
+        <button class="tab-pill" onclick="switchKeyTab('v100-32G', this)">v100-32G</button>
+        <button class="tab-pill" onclick="switchKeyTab('llamacpp', this)">llamacpp</button>
+        <button class="tab-pill" onclick="switchKeyTab('admin', this)">admin</button>
+      </div>
+    </div>
+
+    <div class="calendar-container">
+      <div class="calendar-weekdays">
+        <div>周一</div><div>周二</div><div>周三</div><div>周四</div><div>周五</div><div>周六</div><div>周日</div>
+      </div>
+      <div class="calendar-grid" id="cal-grid">
+        <!-- JS 动态渲染当月方块 -->
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; gap: 10px;">
+      <div id="month-summary-stat">本月总天数: 30天 | 活跃天数: 1天 | 本月总消耗: ¥0.0000</div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span>活跃度：少</span>
+        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:#161b22; border:1px solid rgba(255,255,255,0.1);"></span>
+        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:rgba(56,189,248,0.22);"></span>
+        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:rgba(56,189,248,0.50);"></span>
+        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:rgba(74,222,128,0.65);"></span>
+        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:#4ade80;"></span>
+        <span>多</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🖥️ 3台电脑设备分账卡片 (排在最后板块) -->
   <div class="table-card">
     <div class="table-title">
       <span>🖥️ 3台电脑独立调用分账与用量排行</span>
@@ -2376,32 +2530,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </table>
   </div>
 
-  <!-- 🌟 今日当前累计调用流水 (按设备与模型累计 · 一直累加) -->
-  <div class="table-card">
-    <div class="table-title">
-      <span>📊 今日当前累计调用清单 (按设备与模型实时累计 · 一直累加)</span>
-      <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">JSON 接口: <code style="color: var(--accent);">GET /v1/billing</code></span>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>最后活跃时间</th>
-          <th>调用设备 (Key)</th>
-          <th>请求模型 (文本 / 原生多模态)</th>
-          <th>Prompt (未命中 / 命中)</th>
-          <th>Output</th>
-          <th>累计耗时 (调用次数)</th>
-          <th>🖼️ 识图统计</th>
-          <th>今日累计价值</th>
-        </tr>
-      </thead>
-      <tbody id="recents-tbody">
-        <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- 🌟 多客户端无缝接入指南卡片 -->
+  <!-- 💡 多客户端无缝接入指南卡片 (排在最后板块) -->
   <div class="table-card">
     <div class="table-title">
       <span>💡 多客户端与智能开发工具快速接入指南</span>
@@ -2423,50 +2552,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div>余额查询 URL 与计费端点：</div>
         <div class="code-snippet">GET http://127.0.0.1:8081/user/balance<br>GET http://127.0.0.1:8081/v1/billing</div>
         <div style="font-size: 11px; color: var(--accent-orange); margin-top: 4px;">⚠️ 建议在 CC Switch 设置中将【上游超时】设为 ≥ 300s，防 60K+ 超长预填中断</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 🌟 月度 Token & 算力热力日历方块卡片 -->
-  <div class="table-card">
-    <div class="table-title">
-      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-        <span>🗓️ 月度 Token & 算力日历热力图</span>
-        <div class="heatmap-nav">
-          <button class="btn-nav" onclick="changeMonth(-1)">◀ 上月</button>
-          <strong id="heatmap-month-label" style="color: #fff; font-family: 'JetBrains Mono'; font-size: 14px; min-width: 110px; text-align: center;">2026年 9月</strong>
-          <button class="btn-nav" onclick="changeMonth(1)">下月 ▶</button>
-          <button class="btn-nav" onclick="resetToCurrentMonth()">本月</button>
-        </div>
-      </div>
-      
-      <div class="tab-pills">
-        <button class="tab-pill active" onclick="switchKeyTab('all', this)">全部汇总</button>
-        <button class="tab-pill" onclick="switchKeyTab('v100-32G', this)">v100-32G</button>
-        <button class="tab-pill" onclick="switchKeyTab('llamacpp', this)">llamacpp</button>
-        <button class="tab-pill" onclick="switchKeyTab('admin', this)">admin</button>
-      </div>
-    </div>
-
-    <div class="calendar-container">
-      <div class="calendar-weekdays">
-        <div>周一</div><div>周二</div><div>周三</div><div>周四</div><div>周五</div><div>周六</div><div>周日</div>
-      </div>
-      <div class="calendar-grid" id="cal-grid">
-        <!-- JS 动态渲染当月方块 -->
-      </div>
-    </div>
-
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; gap: 10px;">
-      <div id="month-summary-stat">本月总天数: 30天 | 活跃天数: 1天 | 本月总消耗: ¥0.0000</div>
-      <div style="display: flex; align-items: center; gap: 6px;">
-        <span>活跃度：少</span>
-        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:#161b22; border:1px solid rgba(255,255,255,0.1);"></span>
-        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:rgba(56,189,248,0.22);"></span>
-        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:rgba(56,189,248,0.50);"></span>
-        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:rgba(74,222,128,0.65);"></span>
-        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:#4ade80;"></span>
-        <span>多</span>
       </div>
     </div>
   </div>
@@ -2879,6 +2964,41 @@ async function updateStats() {
     const vKpiSub = document.getElementById('vision-kpi-sub');
     if (vKpiSub) vKpiSub.innerText = `今日读图: ${vTodayImgs} 张 | 累计: ${vTotalImgs} 张图`;
 
+    // 🌟 模型自适应热切换指标更新
+    const hs = data.hot_swaps || {};
+    const hsToday = hs.today_count || 0;
+    const hsTotal = hs.total_count || 0;
+    const hsLast = (hs.last_duration_s || 0).toFixed(1);
+    const hsAvg = (hs.avg_duration_s || 0).toFixed(1);
+
+    function formatStateName(s) {
+      if (!s) return '待命';
+      if (s === 'MTP_2SLOT') return '双槽MTP';
+      if (s === 'PIPELINE_4SLOT') return '4并发流水线';
+      if (s === 'VISION_27B') return '原生多模态';
+      return s.replace('STATE_', '');
+    }
+
+    const bHsToday = document.getElementById('banner-hotswap-today');
+    if (bHsToday) bHsToday.innerText = hsToday;
+    const bHsLast = document.getElementById('banner-hotswap-last');
+    if (bHsLast) bHsLast.innerText = hsLast + 's';
+    const bHsAvg = document.getElementById('banner-hotswap-avg');
+    if (bHsAvg) bHsAvg.innerText = hsAvg + 's';
+    const bHsTotal = document.getElementById('banner-hotswap-total');
+    if (bHsTotal) bHsTotal.innerText = hsTotal;
+
+    const hsKpiVal = document.getElementById('hotswap-kpi-value');
+    if (hsKpiVal) hsKpiVal.innerText = `${hsToday} 次 · 等待 ${hsLast}s`;
+    const hsKpiSub = document.getElementById('hotswap-kpi-sub');
+    if (hsKpiSub) {
+      if (hs.last_to) {
+        hsKpiSub.innerText = `最近: ${formatStateName(hs.last_from)} ➔ ${formatStateName(hs.last_to)} (${hsLast}s) · 均候 ${hsAvg}s`;
+      } else {
+        hsKpiSub.innerText = `今日切换: ${hsToday} 次 | 均候: ${hsAvg}s | 累计: ${hsTotal}次`;
+      }
+    }
+
     // 更新动态槽位与 GPU 监控卡片
     updateSlotsUI(data.concurrency, data.gpu, data.vision_summary);
 
@@ -3093,6 +3213,9 @@ class Qwen27BBackendManager:
                 self.current_state = target_state
                 return True
 
+            t_switch_start = time.time()
+            old_state = self.current_state or actual or "待命"
+
             state_names = {
                 self.STATE_MTP_2SLOT: "👑 Qwen3.8-27B-A [双槽MTP 极速基准态] (36.7 t/s · 144K)",
                 self.STATE_PIPELINE_4SLOT: "🚀 Qwen3.8-27B-A [4并发流水线态] (45.0 t/s · 144K)",
@@ -3205,7 +3328,7 @@ class Qwen27BBackendManager:
                     try: on_heartbeat()
                     except Exception: pass
                 if self.is_server_healthy():
-                    t_elapsed = time.time() - t0
+                    t_elapsed = time.time() - t_switch_start
                     banner_done = (
                         f"\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -3222,6 +3345,12 @@ class Qwen27BBackendManager:
 
                     sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ✅ 27B [{target_state}] 已就绪 (耗时 {t_elapsed:.1f} 秒)！\n")
                     sys.stdout.flush()
+                    try:
+                        tracker.record_hot_swap(old_state, target_state, round(t_elapsed, 2))
+                    except Exception as e:
+                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [WARN] 记录热切换统计异常: {e}\n")
+                        sys.stdout.flush()
+
                     self.current_state = target_state
                     return True
                 time.sleep(0.5)
