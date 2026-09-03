@@ -3488,14 +3488,28 @@ async function updateStats() {
         }
         const keyColor = r.key === 'admin' ? 'var(--accent)' : (r.key === 'llamacpp' ? 'var(--accent-purple)' : 'var(--accent-orange)');
         const imgDisplay = (r.image_count && r.image_count > 0) ? `<strong style="color:var(--accent-purple);">${r.image_count} 张图</strong>` : (isVision ? '<span style="color:var(--accent-purple);">1 张图</span>' : '<span style="color:var(--text-muted);">-</span>');
+        
+        // 判定当前行模型是否正在槽位中实时计算
+        const bState = data.backend_state || 'MTP_2SLOT';
+        const isThisModelRunning = inFlightTokens > 0 && (
+          (r.model.includes('MTP') && bState === 'MTP_2SLOT') ||
+          (r.model.includes('4并发') && bState === 'PIPELINE_4SLOT') ||
+          (isVision && bState === 'VISION_27B')
+        );
+
+        const activeRowStyle = isThisModelRunning ? 'style="background:rgba(56,189,248,0.06);border-left:3px solid #38bdf8;"' : '';
+        const timeDisplay = isThisModelRunning ? `<span style="color:#38bdf8;font-weight:700;">🟢 实时推理中</span> <span style="font-size:10px;color:var(--text-muted);">(${r.last_time ? r.last_time.slice(11) : ''})</span>` : r.last_time;
+        const outDisplay = isThisModelRunning ? `${(r.completion_tokens || 0).toLocaleString()} <span style="color:#4ade80;font-size:11px;font-weight:600;">(+${inFlightTokens}实时)</span>` : (r.completion_tokens || 0).toLocaleString();
+        const activeTag = isThisModelRunning ? ' <span style="font-size:10px;color:#38bdf8;font-weight:600;">(计算中)</span>' : '';
+
         return `
-          <tr>
-            <td style="color: var(--text-muted);">${r.last_time}</td>
+          <tr ${activeRowStyle}>
+            <td style="color: var(--text-muted);">${timeDisplay}</td>
             <td><strong style="color: ${keyColor};">${r.key_name || r.key}</strong></td>
             <td><strong style="color: #fff;">${r.model}</strong> ${modelBadge}</td>
             <td>${(r.prompt_tokens || 0).toLocaleString()} <span style="color: var(--accent-green); font-size: 11px;">(命中: ${(r.prompt_tokens_cached || 0).toLocaleString()})</span></td>
-            <td>${(r.completion_tokens || 0).toLocaleString()}</td>
-            <td>${(r.duration_s || 0).toFixed(2)}s <span style="color: var(--text-muted); font-size: 11px;">(${(r.requests || 0)}次累计)</span></td>
+            <td>${outDisplay}</td>
+            <td>${(r.duration_s || 0).toFixed(2)}s <span style="color: var(--text-muted); font-size: 11px;">(${(r.requests || 0)}次累计)</span>${activeTag}</td>
             <td>${imgDisplay}</td>
             <td style="color: var(--accent-green); font-weight: 700;">¥${(r.cost_cny || 0).toFixed(5)}</td>
           </tr>
@@ -4517,8 +4531,11 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
 
                 # ---- 记录 DeepSeek-V4-Flash 虚拟计费 ----
                 duration = time.time() - start_time
+                b_state = getattr(backend_manager, "current_state", "")
+                has_image_req = bool(locals().get("has_img") or is_vision or need_vision)
+
                 if prompt_tokens_recorded > 0 or completion_tokens_recorded > 0:
-                    if is_vision or need_vision or (b_state == backend_manager.STATE_VISION_27B and has_img):
+                    if has_image_req:
                         recorded_model_name = "Qwen3.8-27B-A [原生多模态]"
                     elif b_state == backend_manager.STATE_PIPELINE_4SLOT or "4并发" in actual_model:
                         recorded_model_name = "Qwen3.8-27B-A [4并发流水线]"
@@ -4527,7 +4544,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                     else:
                         recorded_model_name = actual_model
 
-                    img_count = len(pending_vision_hashes) if pending_vision_hashes else (1 if is_vision else 0)
+                    p_hashes = locals().get("pending_vision_hashes")
+                    img_count = len(p_hashes) if p_hashes else (1 if has_image_req else 0)
                     cost, today_cost, today_reqs = tracker.record(
                         model_name=recorded_model_name,
                         prompt_tokens=prompt_tokens_recorded,
