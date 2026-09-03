@@ -158,13 +158,15 @@ def resolve_model_alias(requested_model="", default_model=None):
         "qwen3.8-27b-vision": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-a [原生多模态]": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-a [多模态]": "Qwen3.8-27B-A [原生多模态]",
-        "qwen3.8-27b-a-q6_k": "Qwen3.8-27B-A-Q6_K",
-        "qwen3.8-27b-a": "Qwen3.8-27B-A-Q6_K",
-        "qwen3.8-27b-abliterated-q6_k": "Qwen3.8-27B-A-Q6_K",
-        "qwen3.8-27b-a [双槽mtp]": "Qwen3.8-27B-A-Q6_K",
-        "qwen3.8-27b-a [4并发]": "Qwen3.8-27B-A-Q6_K",
-        "双槽mtp": "Qwen3.8-27B-A-Q6_K",
-        "4并发": "Qwen3.8-27B-A-Q6_K",
+        "qwen3.8-27b-a-q6_k": "Qwen3.8-27B-A [双槽MTP]",
+        "qwen3.8-27b-a": "Qwen3.8-27B-A [双槽MTP]",
+        "qwen3.8-27b-abliterated-q6_k": "Qwen3.8-27B-A [双槽MTP]",
+        "qwen3.8-27b-a [双槽mtp]": "Qwen3.8-27B-A [双槽MTP]",
+        "qwen3.8-27b-a [4并发]": "Qwen3.8-27B-A [4并发流水线]",
+        "qwen3.8-27b-a [4并发流水线]": "Qwen3.8-27B-A [4并发流水线]",
+        "双槽mtp": "Qwen3.8-27B-A [双槽MTP]",
+        "4并发": "Qwen3.8-27B-A [4并发流水线]",
+        "4并发流水线": "Qwen3.8-27B-A [4并发流水线]",
         "多模态": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-uncensored-q6_k": "Qwen3.8-27B-U-Q6_K",
         # 27B NVFP4 系列
@@ -868,12 +870,16 @@ class ConcurrencyQueue:
                     except Exception:
                         pass
                     
-                    if getattr(backend_manager, "current_state", "") == backend_manager.STATE_VISION_27B:
+                    b_state = getattr(backend_manager, "current_state", "")
+                    if b_state == backend_manager.STATE_VISION_27B or is_multimodal:
                         is_multimodal = True
                         if not mmproj_file:
                             mmproj_file = "mmproj-Qwen3.8-27B-F16.gguf"
-
-                    display_model_name = "Qwen3.8-27B-A [原生多模态]" if is_multimodal else model_alias
+                        display_model_name = "Qwen3.8-27B-A [原生多模态]"
+                    elif b_state == backend_manager.STATE_PIPELINE_4SLOT or len(slots_data) == 4:
+                        display_model_name = "Qwen3.8-27B-A [4并发流水线]"
+                    else:
+                        display_model_name = "Qwen3.8-27B-A [双槽MTP]"
 
                     with self.lock:
                         self.current_model_alias = display_model_name
@@ -903,10 +909,17 @@ class ConcurrencyQueue:
                 return self.cached_status
 
         # 3. 确实未启动或已关闭
-        is_vm = getattr(backend_manager, "current_state", "") == backend_manager.STATE_VISION_27B
+        b_state = getattr(backend_manager, "current_state", "")
+        if b_state == backend_manager.STATE_VISION_27B:
+            offline_model = "Qwen3.8-27B-A [原生多模态]"
+        elif b_state == backend_manager.STATE_PIPELINE_4SLOT:
+            offline_model = "Qwen3.8-27B-A [4并发流水线]"
+        else:
+            offline_model = "Qwen3.8-27B-A [双槽MTP]"
+
         return {
             "backend_online": False,
-            "model_name": ("Qwen3.8-27B-A [原生多模态]" if is_vm else (self.current_model_alias or "等待启动器加载模型...")),
+            "model_name": offline_model,
             "total_ctx": 0,
             "text_active": 0,
             "text_max": 0,
@@ -3037,7 +3050,14 @@ async function updateStats() {
     } else {
       tbody.innerHTML = todayDM.map(r => {
         const isVision = r.is_vision || (r.model && (r.model.includes('VL') || r.model.includes('Vision') || r.model.includes('多模态')));
-        const modelBadge = isVision ? `<span class="badge-vision">👁️ 原生多模态</span>` : `<span class="badge-text">⚡ 纯文本基准</span>`;
+        let modelBadge = '<span class="badge-text">⚡ 纯文本基准</span>';
+        if (isVision) {
+          modelBadge = '<span class="badge-vision">👁️ 原生多模态</span>';
+        } else if (r.model.includes('双槽MTP') || r.model.includes('MTP')) {
+          modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">👑 双槽MTP</span>';
+        } else if (r.model.includes('4并发') || r.model.includes('流水线')) {
+          modelBadge = '<span class="badge-text" style="background:rgba(251,146,60,0.18);color:#fb923c;border:1px solid rgba(251,146,60,0.4);">🚀 4并发流水线</span>';
+        }
         const keyColor = r.key === 'admin' ? 'var(--accent)' : (r.key === 'llamacpp' ? 'var(--accent-purple)' : 'var(--accent-orange)');
         const imgDisplay = (r.image_count && r.image_count > 0) ? `<strong style="color:var(--accent-purple);">${r.image_count} 张图</strong>` : (isVision ? '<span style="color:var(--accent-purple);">1 张图</span>' : '<span style="color:var(--text-muted);">-</span>');
         return `
@@ -3949,7 +3969,16 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 # ---- 记录 DeepSeek-V4-Flash 虚拟计费 ----
                 duration = time.time() - start_time
                 if prompt_tokens_recorded > 0 or completion_tokens_recorded > 0:
-                    recorded_model_name = "Qwen3.8-27B-A [原生多模态]" if (is_vision or need_vision) else actual_model
+                    b_state = getattr(backend_manager, "current_state", "")
+                    if is_vision or need_vision or b_state == backend_manager.STATE_VISION_27B:
+                        recorded_model_name = "Qwen3.8-27B-A [原生多模态]"
+                    elif b_state == backend_manager.STATE_PIPELINE_4SLOT or "4并发" in actual_model:
+                        recorded_model_name = "Qwen3.8-27B-A [4并发流水线]"
+                    elif b_state == backend_manager.STATE_MTP_2SLOT or "MTP" in actual_model or "27B" in actual_model:
+                        recorded_model_name = "Qwen3.8-27B-A [双槽MTP]"
+                    else:
+                        recorded_model_name = actual_model
+
                     img_count = len(pending_vision_hashes) if pending_vision_hashes else (1 if is_vision else 0)
                     cost, today_cost, today_reqs = tracker.record(
                         model_name=recorded_model_name,
