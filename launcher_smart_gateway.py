@@ -219,9 +219,42 @@ MODEL_PROFILES = {
     }
 }
 
-# ------------------------------------------------------------------------------------
-# 4. 触发网关热切换与全量 llamacpp 日志连续流式投屏
-# ------------------------------------------------------------------------------------
+import threading
+
+def _tail_log_worker(daily_log: str, stop_event: threading.Event):
+    cur_pos = 0
+    if os.path.exists(daily_log):
+        file_sz = os.path.getsize(daily_log)
+        # 初始只输出末尾约 2KB 既有日志，随后立即进入持续增量跟随
+        with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
+            if file_sz > 3072:
+                f.seek(file_sz - 3072)
+                f.readline()
+            initial_lines = f.readlines()
+            for l in initial_lines:
+                sys.stdout.write(l)
+            sys.stdout.flush()
+            cur_pos = f.tell()
+
+    while not stop_event.is_set():
+        try:
+            if os.path.exists(daily_log):
+                cur_size = os.path.getsize(daily_log)
+                if cur_size > cur_pos:
+                    with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
+                        f.seek(cur_pos)
+                        chunk = f.read()
+                        if chunk:
+                            sys.stdout.write(chunk)
+                            sys.stdout.flush()
+                            cur_pos = f.tell()
+                elif cur_size < cur_pos:
+                    # 日志文件被截断或重新创建
+                    cur_pos = 0
+            time.sleep(0.04)
+        except Exception:
+            time.sleep(0.1)
+
 def switch_backend_state(target_state: str) -> bool:
     url = "http://127.0.0.1:8081/api/switch"
     payload = json.dumps({"target_state": target_state}).encode("utf-8")
@@ -242,6 +275,11 @@ def start_selected_profile(key: str):
     today = time.strftime("%Y%m%d")
     daily_log = os.path.join(LOG_DIR, f"8083_llama_{today}.log")
 
+    # 确保日志文件存在
+    if not os.path.exists(daily_log):
+        with open(daily_log, "a", encoding="utf-8") as f:
+            pass
+
     print_c("", "white")
     print_c("====================================================================================", "cyan")
     print_c(f"  🚀 正在向 Tesla V100 注入显存，载入形态: {p['name'] if p else target_state}...", "green")
@@ -251,68 +289,37 @@ def start_selected_profile(key: str):
     print_c(f"  ├─ ⚡ 运行基准 : 27B 双槽MTP / 4并发 / 原生视觉 4.5秒自适应热切换矩阵", "white")
     print_c(f"  └─ 💾 今日日志 : {daily_log}", "white")
     print_c("====================================================================================", "cyan")
-    print_c("  ⏳ 正在进行内存级初始化，预计耗时约 4~5 秒...\n", "gray")
-
-    # 触发初始形态加载
-    ok = switch_backend_state(target_state)
-    if ok:
-        print_c(f"  ✅ 初始形态 [{target_state}] 已就绪！\n", "green")
-    else:
-        print_c("  ⏳ 网关正在自适应调度中...\n", "yellow")
-
     print_c("=" * 84, "cyan")
-    print_c(f"  🟢 llamacpp 主脑引擎原生日志连续投屏中 (按 Ctrl+C 停止服务)", "green")
+    print_c(f"  🟢 llamacpp 主脑引擎原生日志实时投屏中 (按 Ctrl+C 停止服务)", "green")
     print_c("=" * 84 + "\n", "cyan")
 
-    # 确保日志文件存在
-    if not os.path.exists(daily_log):
-        with open(daily_log, "a", encoding="utf-8") as f:
-            pass
-
     # 优雅退出信号捕获
+    stop_event = threading.Event()
+
     def handle_sigint(signum, frame):
+        stop_event.set()
         print_c("\n\n  ⚠️ 接收到退出信号 (Ctrl+C)，正在安全关闭所有 AI 进程...", "yellow")
-        # stop_llama_processes 已注册为 atexit，sys.exit 会自动触发
         sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_sigint)
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, handle_sigint)
 
-    # 连续无缝日志投屏循环（基于 Windows 增量偏移量轮询，跨越所有热切换，永不停滞，永不闪退）
-    try:
-        cur_pos = 0
-        if os.path.exists(daily_log):
-            file_sz = os.path.getsize(daily_log)
-            # 初始输出末尾约 2KB 内容
-            with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
-                if file_sz > 3072:
-                    f.seek(file_sz - 3072)
-                    f.readline()  # 丢弃不完整首行
-                initial_lines = f.readlines()
-                for l in initial_lines:
-                    sys.stdout.write(l)
-                sys.stdout.flush()
-                cur_pos = f.tell()
+    # 关键：在触发形态初始化之前，立刻拉起后台实时日志投屏线程，确保加载过程与推理日志 100% 实时可见
+    tail_thread = threading.Thread(target=_tail_log_worker, args=(daily_log, stop_event), daemon=True)
+    tail_thread.start()
 
-        while True:
-            try:
-                if os.path.exists(daily_log):
-                    cur_size = os.path.getsize(daily_log)
-                    if cur_size > cur_pos:
-                        with open(daily_log, "r", encoding="utf-8", errors="replace") as f:
-                            f.seek(cur_pos)
-                            chunk = f.read()
-                            if chunk:
-                                sys.stdout.write(chunk)
-                                sys.stdout.flush()
-                                cur_pos = f.tell()
-                    elif cur_size < cur_pos:
-                        # 日志文件被截断或重新创建
-                        cur_pos = 0
-                time.sleep(0.04)
-            except Exception:
-                time.sleep(0.1)
+    # 异步/并发触发初始形态加载（日志会毫秒级实时投屏）
+    def trigger_init():
+        switch_backend_state(target_state)
+
+    init_thread = threading.Thread(target=trigger_init, daemon=True)
+    init_thread.start()
+
+    # 主线程维持常驻并监听退出
+    try:
+        while not stop_event.is_set():
+            time.sleep(0.5)
     except KeyboardInterrupt:
         handle_sigint(None, None)
 
