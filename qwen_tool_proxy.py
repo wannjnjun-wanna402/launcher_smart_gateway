@@ -224,9 +224,9 @@ class GPUTelemetry:
         self._worker.start()
 
     def _loop_probe(self):
-        """后台轻量守护线程：每 2.5 秒自适应采样真实硬件遥测指标"""
+        """后台轻量守护线程：每 10 秒自适应采样真实硬件遥测指标 (低功耗省资源)"""
         while True:
-            time.sleep(2.5)
+            time.sleep(10.0)
             try:
                 self._silent_probe_once()
             except Exception:
