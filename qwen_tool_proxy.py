@@ -1180,7 +1180,70 @@ class BillingTracker:
                 speed_engine.total_gen_duration = 0.0
                 speed_engine.total_work_duration = 0.0
 
-    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0, reasoning_effort="medium"):
+    def record_reasoning_hit(self, reasoning_effort="medium", mode_key="MTP_2SLOT"):
+        """0秒即提即显：请求一到达立即记录思维等级，前端大屏即时跳变响应"""
+        with self.lock:
+            self._check_day_rollover()
+            eff_norm = "medium"
+            if reasoning_effort in ("low", "minimal"):
+                eff_norm = "simple"
+            elif reasoning_effort in ("high", "xhigh", "max"):
+                eff_norm = "hard"
+            else:
+                eff_norm = "medium"
+
+            rl = self.data.setdefault("reasoning_levels", {
+                "today": {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                },
+                "total": {
+                    "simple": 0, "medium": 0, "hard": 0,
+                    "by_mode": {
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                    }
+                }
+            })
+            rl.setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
+            rl.setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
+            today_bm = rl["today"].setdefault("by_mode", {
+                "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+            })
+            total_bm = rl["total"].setdefault("by_mode", {
+                "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+            })
+
+            rl["today"][eff_norm] = rl["today"].get(eff_norm, 0) + 1
+            rl["total"][eff_norm] = rl["total"].get(eff_norm, 0) + 1
+
+            mk = mode_key if mode_key in today_bm else "MTP_2SLOT"
+            today_bm.setdefault(mk, {"simple": 0, "medium": 0, "hard": 0})
+            total_bm.setdefault(mk, {"simple": 0, "medium": 0, "hard": 0})
+            today_bm[mk][eff_norm] = today_bm[mk].get(eff_norm, 0) + 1
+            total_bm[mk][eff_norm] = total_bm[mk].get(eff_norm, 0) + 1
+
+            try:
+                tmp_file = self.filepath + ".tmp"
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+                if os.path.exists(self.filepath):
+                    os.replace(tmp_file, self.filepath)
+                else:
+                    os.rename(tmp_file, self.filepath)
+            except Exception:
+                pass
+
+    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0, reasoning_effort=None):
         with self.lock:
             self._check_day_rollover()
             cached = max(0, min(cached_tokens, prompt_tokens))
@@ -1349,53 +1412,54 @@ class BillingTracker:
             else:
                 mode_key = "MTP_2SLOT"
 
-            # 9. 统计思维等级
-            eff_norm = "medium"
-            if reasoning_effort in ("low", "minimal"):
-                eff_norm = "simple"
-            elif reasoning_effort in ("high", "xhigh", "max"):
-                eff_norm = "hard"
-            else:
+            # 9. 统计思维等级 (若未在提问时即时记录，在此补充兜底)
+            if reasoning_effort:
                 eff_norm = "medium"
+                if reasoning_effort in ("low", "minimal"):
+                    eff_norm = "simple"
+                elif reasoning_effort in ("high", "xhigh", "max"):
+                    eff_norm = "hard"
+                else:
+                    eff_norm = "medium"
 
-            rl = self.data.setdefault("reasoning_levels", {
-                "today": {
-                    "simple": 0, "medium": 0, "hard": 0,
-                    "by_mode": {
-                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                rl = self.data.setdefault("reasoning_levels", {
+                    "today": {
+                        "simple": 0, "medium": 0, "hard": 0,
+                        "by_mode": {
+                            "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                            "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                            "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                        }
+                    },
+                    "total": {
+                        "simple": 0, "medium": 0, "hard": 0,
+                        "by_mode": {
+                            "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                            "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                            "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                        }
                     }
-                },
-                "total": {
-                    "simple": 0, "medium": 0, "hard": 0,
-                    "by_mode": {
-                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
-                    }
-                }
-            })
-            rl.setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
-            rl.setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
-            today_bm = rl["today"].setdefault("by_mode", {
-                "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
-            })
-            total_bm = rl["total"].setdefault("by_mode", {
-                "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
-            })
+                })
+                rl.setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
+                rl.setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
+                today_bm = rl["today"].setdefault("by_mode", {
+                    "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                    "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                    "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                })
+                total_bm = rl["total"].setdefault("by_mode", {
+                    "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                    "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
+                    "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                })
 
-            rl["today"][eff_norm] = rl["today"].get(eff_norm, 0) + 1
-            rl["total"][eff_norm] = rl["total"].get(eff_norm, 0) + 1
+                rl["today"][eff_norm] = rl["today"].get(eff_norm, 0) + 1
+                rl["total"][eff_norm] = rl["total"].get(eff_norm, 0) + 1
 
-            today_bm.setdefault(mode_key, {"simple": 0, "medium": 0, "hard": 0})
-            total_bm.setdefault(mode_key, {"simple": 0, "medium": 0, "hard": 0})
-            today_bm[mode_key][eff_norm] = today_bm[mode_key].get(eff_norm, 0) + 1
-            total_bm[mode_key][eff_norm] = total_bm[mode_key].get(eff_norm, 0) + 1
+                today_bm.setdefault(mode_key, {"simple": 0, "medium": 0, "hard": 0})
+                total_bm.setdefault(mode_key, {"simple": 0, "medium": 0, "hard": 0})
+                today_bm[mode_key][eff_norm] = today_bm[mode_key].get(eff_norm, 0) + 1
+                total_bm[mode_key][eff_norm] = total_bm[mode_key].get(eff_norm, 0) + 1
 
             # 10. 原子写落盘
             try:
@@ -2663,8 +2727,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <span>🧠 模型思维等级调控 (问答难度)</span>
         <span style="font-size: 11px; color: var(--text-muted);" id="reasoning-total-badge">今日 0次</span>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(56, 189, 248, 0.08); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
+      <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 5px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(56, 189, 248, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
           <div style="font-size: 11px; font-weight: 600; color: #38bdf8;">👑 双槽MTP</div>
           <div id="reasoning-mtp-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
             <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
@@ -2672,7 +2736,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
           </div>
         </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(251, 146, 60, 0.08); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(251, 146, 60, 0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(251, 146, 60, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(251, 146, 60, 0.2);">
           <div style="font-size: 11px; font-weight: 600; color: #fb923c;">🚀 4并发流水线</div>
           <div id="reasoning-pipe-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
             <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
@@ -2680,8 +2744,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
           </div>
         </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(192, 132, 252, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(192, 132, 252, 0.2);">
+          <div style="font-size: 11px; font-weight: 600; color: #c084fc;">👁️ 原生多模态</div>
+          <div id="reasoning-vision-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
+            <span style="color:#38bdf8;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
+            <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
+          </div>
+        </div>
       </div>
-      <div class="card-sub" id="reasoning-kpi-sub" style="margin-top: 5px; font-size: 11px;">今日总计: 0简 · 0中 · 0难</div>
+      <div class="card-sub" id="reasoning-kpi-sub" style="margin-top: 4px; font-size: 11px;">今日总计: 0简 · 0中 · 0难</div>
     </div>
     <div class="card" style="border-color: rgba(56, 189, 248, 0.45); background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), rgba(0,0,0,0.3));">
       <div class="card-label" style="color: #38bdf8;">⏱️ 当日 In / Out 总耗时 (全槽位合计)</div>
@@ -3212,8 +3284,29 @@ async function updateStats() {
       document.getElementById('peak-tps').innerText = `今日纯工作耗时: ${workSec}s (剔除空闲)`;
     }
 
-    document.getElementById('today-tokens').innerText = (data.today.total_tokens || 0).toLocaleString();
-    document.getElementById('today-token-detail').innerText = '输入: ' + (data.today.prompt_tokens || 0).toLocaleString() + ' | 输出: ' + (data.today.completion_tokens || 0).toLocaleString();
+    // 计算当前所有活跃槽位正在进行的实时 Token (正在预填已处理 + 正在吐字已生成)
+    const cSlots = (data.concurrency && data.concurrency.slots_detail) || [];
+    const inFlightTokens = cSlots.reduce((acc, s) => {
+      if (!s.is_active) return acc;
+      return acc + (s.n_decoded || 0) + (s.stage === 'prefill' ? (s.n_prompt_proc || 0) : 0);
+    }, 0);
+
+    const completedTokens = (data.today && data.today.total_tokens) || 0;
+    const liveTotalTokens = completedTokens + inFlightTokens;
+
+    const tokEl = document.getElementById('today-tokens');
+    if (inFlightTokens > 0) {
+      tokEl.innerHTML = `
+        <span>${liveTotalTokens.toLocaleString()}</span>
+        <span style="font-size:13px;color:#4ade80;font-weight:600;margin-left:6px;">
+          (⚡ 实时+${inFlightTokens.toLocaleString()})
+        </span>
+      `;
+      document.getElementById('today-token-detail').innerHTML = `输入: ${(data.today.prompt_tokens || 0).toLocaleString()} | 输出: ${(data.today.completion_tokens || 0).toLocaleString()} <span style="color:#38bdf8;font-weight:600;">(🟢 槽位实时吐字计算中)</span>`;
+    } else {
+      tokEl.innerText = completedTokens.toLocaleString();
+      document.getElementById('today-token-detail').innerText = '输入: ' + (data.today.prompt_tokens || 0).toLocaleString() + ' | 输出: ' + (data.today.completion_tokens || 0).toLocaleString();
+    }
     
     // 🌟 Prompt 缓存命中率（只计算当日）
     const promptToday = (data.today && data.today.prompt_tokens) || 0;
@@ -3312,11 +3405,18 @@ async function updateStats() {
       `;
     }
 
+    const visLine = document.getElementById('reasoning-vision-line');
+    if (visLine) {
+      visLine.innerHTML = `
+        <span style="color:#4ade80;font-weight:700;">${visStats.simple || 0}</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
+        <span style="color:#38bdf8;font-weight:700;">${visStats.medium || 0}</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
+        <span style="color:#c084fc;font-weight:700;">${visStats.hard || 0}</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
+      `;
+    }
+
     const rKpiSub = document.getElementById('reasoning-kpi-sub');
     if (rKpiSub) {
-      const visSum = (visStats.simple || 0) + (visStats.medium || 0) + (visStats.hard || 0);
-      const visText = visSum > 0 ? ` · 视觉态 ${visSum}次` : '';
-      rKpiSub.innerText = `今日总计: 简 ${rSim} · 中 ${rMed} · 难 ${rHar}${visText}`;
+      rKpiSub.innerText = `今日总计: 简 ${rSim} · 中 ${rMed} · 难 ${rHar} (三大形态实时同频)`;
     }
 
     // 🌟 当日全槽位 In / Out 总耗时 KPI 更新
@@ -4141,6 +4241,10 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                             sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ⚠️ 置换至 {target_desc} 失败，保持当前状态运行...\n")
                             sys.stdout.flush()
 
+                # 🌟 0秒即提即显：请求一到达立即记录思维等级，前端大屏即时跳变响应！
+                eff_mode = "VISION_27B" if need_vision else (target_text_state if 'target_text_state' in locals() else "MTP_2SLOT")
+                tracker.record_reasoning_hit(reasoning_effort=effort, mode_key=eff_mode)
+
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
                 cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
 
@@ -4433,7 +4537,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         key_name=key_name,
                         is_vision=(is_vision or need_vision),
                         image_count=img_count,
-                        reasoning_effort=locals().get("effort", "medium")
+                        reasoning_effort=None
                     )
                     tps = round(completion_tokens_recorded / duration, 1) if duration > 0.05 else 0.0
                     prefill_tps = round(prompt_tokens_recorded / max(0.05, duration * 0.15), 1)
