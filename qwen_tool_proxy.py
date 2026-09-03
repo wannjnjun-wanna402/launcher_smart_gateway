@@ -331,6 +331,8 @@ class SpeedEngine:
                 "peak_tps": self.peak_tps,
                 "today_in_avg": in_avg,
                 "today_out_avg": out_avg,
+                "today_in_seconds": round(self.total_prefill_duration, 1),
+                "today_out_seconds": round(self.total_gen_duration, 1),
                 "today_work_seconds": round(self.total_work_duration, 1),
                 "total_prefill_tokens": self.total_prefill_tokens,
                 "total_gen_tokens": self.total_gen_tokens,
@@ -972,6 +974,13 @@ class BillingTracker:
                 "cost_cny": 0.0,
                 "vision_images": 0,
                 "vision_duration_s": 0.0,
+                "total_in_seconds": 0.0,
+                "total_out_seconds": 0.0,
+                "total_work_seconds": 0.0,
+            },
+            "reasoning_levels": {
+                "today": {"simple": 0, "medium": 0, "hard": 0},
+                "total": {"simple": 0, "medium": 0, "hard": 0}
             },
             "by_model": {},
             "by_key": {
@@ -1008,6 +1017,10 @@ class BillingTracker:
                     loaded["hot_swaps"].setdefault("today_count", 0)
                     loaded["hot_swaps"].setdefault("total_count", 0)
 
+                    loaded.setdefault("reasoning_levels", default_data["reasoning_levels"])
+                    loaded["reasoning_levels"].setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
+                    loaded["reasoning_levels"].setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
+
                     bk = loaded.setdefault("by_key", {})
                     for k in ("admin", "llamacpp", "v100-32G"):
                         if k not in bk:
@@ -1017,13 +1030,16 @@ class BillingTracker:
                     today_obj = loaded.setdefault("today", default_data["today"])
                     today_obj.setdefault("vision_images", 0)
                     today_obj.setdefault("vision_duration_s", 0.0)
+                    today_obj.setdefault("total_in_seconds", 0.0)
+                    today_obj.setdefault("total_out_seconds", 0.0)
+                    today_obj.setdefault("total_work_seconds", 0.0)
                     today_dm = today_obj.setdefault("by_device_model", {})
                     if not today_dm:
                         today_str = today_obj.get("date", datetime.date.today().isoformat())
                         for r in loaded.get("recent_requests", []):
                             if r.get("time", "").startswith(today_str):
                                 r_key = r.get("key", "admin")
-                                r_model = r.get("model", "Qwen3.8-27B-A-Q6_K")
+                                r_model = r.get("model", "Qwen3.8-27B-A [双槽MTP]")
                                 k_m = f"{r_key}::{r_model}"
                                 if k_m not in today_dm:
                                     today_dm[k_m] = {
@@ -1073,9 +1089,18 @@ class BillingTracker:
                         speed_engine.total_prefill_tokens = today_p
                         speed_engine.total_gen_tokens = today_c
                         speed_engine.total_work_duration = today_dur
-                        p_t = max(0.01, today_dur * (today_p / max(1, today_p + today_c * 20)))
-                        speed_engine.total_prefill_duration = p_t
-                        speed_engine.total_gen_duration = max(0.01, today_dur - p_t)
+                        saved_in = today_obj.get("total_in_seconds", 0.0)
+                        saved_out = today_obj.get("total_out_seconds", 0.0)
+                        if saved_in > 0 and saved_out > 0:
+                            speed_engine.total_prefill_duration = saved_in
+                            speed_engine.total_gen_duration = saved_out
+                        else:
+                            p_t = max(0.01, today_dur * (today_p / max(1, today_p + today_c * 20)))
+                            speed_engine.total_prefill_duration = p_t
+                            speed_engine.total_gen_duration = max(0.01, today_dur - p_t)
+                            today_obj["total_in_seconds"] = round(p_t, 1)
+                            today_obj["total_out_seconds"] = round(max(0.01, today_dur - p_t), 1)
+                            today_obj["total_work_seconds"] = round(today_dur, 1)
                     return loaded
             except Exception:
                 pass
@@ -1095,12 +1120,23 @@ class BillingTracker:
                 "cost_cny": 0.0,
                 "vision_images": 0,
                 "vision_duration_s": 0.0,
+                "total_in_seconds": 0.0,
+                "total_out_seconds": 0.0,
+                "total_work_seconds": 0.0,
                 "by_device_model": {}
             }
             if "hot_swaps" in self.data:
                 self.data["hot_swaps"]["today_count"] = 0
+            if "reasoning_levels" in self.data:
+                self.data["reasoning_levels"]["today"] = {"simple": 0, "medium": 0, "hard": 0}
+            with speed_engine.lock:
+                speed_engine.total_prefill_tokens = 0
+                speed_engine.total_prefill_duration = 0.0
+                speed_engine.total_gen_tokens = 0
+                speed_engine.total_gen_duration = 0.0
+                speed_engine.total_work_duration = 0.0
 
-    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0):
+    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0, reasoning_effort="medium"):
         with self.lock:
             self._check_day_rollover()
             cached = max(0, min(cached_tokens, prompt_tokens))
@@ -1253,7 +1289,33 @@ class BillingTracker:
             if len(recents) > 50:
                 self.data["recent_requests"] = recents[:50]
 
-            # 8. 原子写落盘
+            # 8. 累计 In/Out 纯工作耗时
+            p_time = max(0.01, duration_s * (prompt_tokens / max(1, prompt_tokens + completion_tokens * 20)))
+            g_time = max(0.01, duration_s - p_time)
+
+            d["total_in_seconds"] = round(d.get("total_in_seconds", 0.0) + p_time, 1)
+            d["total_out_seconds"] = round(d.get("total_out_seconds", 0.0) + g_time, 1)
+            d["total_work_seconds"] = round(d.get("total_work_seconds", 0.0) + duration_s, 1)
+
+            # 9. 统计思维等级
+            eff_norm = "medium"
+            if reasoning_effort in ("low", "minimal"):
+                eff_norm = "simple"
+            elif reasoning_effort in ("high", "xhigh", "max"):
+                eff_norm = "hard"
+            else:
+                eff_norm = "medium"
+
+            rl = self.data.setdefault("reasoning_levels", {
+                "today": {"simple": 0, "medium": 0, "hard": 0},
+                "total": {"simple": 0, "medium": 0, "hard": 0}
+            })
+            rl.setdefault("today", {"simple": 0, "medium": 0, "hard": 0})
+            rl.setdefault("total", {"simple": 0, "medium": 0, "hard": 0})
+            rl["today"][eff_norm] = rl["today"].get(eff_norm, 0) + 1
+            rl["total"][eff_norm] = rl["total"].get(eff_norm, 0) + 1
+
+            # 10. 原子写落盘
             try:
                 tmp_file = self.filepath + ".tmp"
                 with open(tmp_file, "w", encoding="utf-8") as f:
@@ -1266,9 +1328,7 @@ class BillingTracker:
                 sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [BILLING-WARN] 保存统计失败: {e}\n")
                 sys.stdout.flush()
 
-            # 记录到测速引擎（精确分段纯工作耗时，剔除空闲时间）
-            p_time = max(0.01, duration_s * (prompt_tokens / max(1, prompt_tokens + completion_tokens * 20)))
-            g_time = max(0.01, duration_s - p_time)
+            # 记录到测速引擎
             speed_engine.record_detailed(prompt_tokens, p_time, completion_tokens, g_time, duration_s)
 
             return cost, d["cost_cny"], d["requests"]
@@ -1328,6 +1388,10 @@ class BillingTracker:
             st["concurrency"] = concurrency_queue.get_dynamic_status()
             st["gpu"] = gpu_telemetry.get_status()
             st["speed"] = speed_engine.get_speed()
+            st["reasoning_levels"] = self.data.get("reasoning_levels", {
+                "today": {"simple": 0, "medium": 0, "hard": 0},
+                "total": {"simple": 0, "medium": 0, "hard": 0}
+            })
             st["hot_swaps"] = self.data.get("hot_swaps", {
                 "total_count": 0,
                 "today_count": 0,
@@ -2426,6 +2490,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-value" id="cache-hit-rate" style="color: var(--accent-orange);">0.0%</div>
       <div class="card-sub" id="cache-hit-detail">命中: 0 tokens</div>
     </div>
+    <div class="card" style="border-color: rgba(167, 139, 250, 0.45); background: radial-gradient(circle at top right, rgba(167, 139, 250, 0.1), rgba(0,0,0,0.3));">
+      <div class="card-label" style="color: #a78bfa;">🧠 模型思维等级调控 (问答难度)</div>
+      <div class="card-value" id="reasoning-kpi-value" style="font-size: 17px; letter-spacing: -0.3px;">
+        <span style="color:#4ade80;">0</span> <span style="font-size:11px;color:var(--text-muted);">简单</span> · 
+        <span style="color:#38bdf8;">0</span> <span style="font-size:11px;color:var(--text-muted);">中等</span> · 
+        <span style="color:#c084fc;">0</span> <span style="font-size:11px;color:var(--text-muted);">困难</span>
+      </div>
+      <div class="card-sub" id="reasoning-kpi-sub">简单快问: 0次 | 中等思考: 0次 | 困难深度: 0次</div>
+    </div>
+    <div class="card" style="border-color: rgba(56, 189, 248, 0.45); background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), rgba(0,0,0,0.3));">
+      <div class="card-label" style="color: #38bdf8;">⏱️ 当日 In / Out 总耗时 (全槽位合计)</div>
+      <div class="card-value" id="inout-kpi-value" style="font-size: 17px; letter-spacing: -0.3px;">
+        <span style="color:#38bdf8;font-weight:700;">📥 0.0s</span> <span style="font-size:11px;color:var(--text-muted);">In</span> · 
+        <span style="color:var(--accent-purple);font-weight:700;">📤 0.0s</span> <span style="font-size:11px;color:var(--text-muted);">Out</span>
+      </div>
+      <div class="card-sub" id="inout-kpi-sub">全槽位纯工作耗时: 0.0s (预填 0% · 解码 0%)</div>
+    </div>
   </div>
 
   <!-- 🌟 今日当前累计调用流水 (按设备与模型累计 · 一直累加) -->
@@ -3010,6 +3091,48 @@ async function updateStats() {
       } else {
         hsKpiSub.innerText = `今日切换: ${hsToday} 次 | 均候: ${hsAvg}s | 累计: ${hsTotal}次`;
       }
+    }
+
+    // 🌟 模型思维等级调控 KPI 更新
+    const rl = data.reasoning_levels || {};
+    const rlToday = rl.today || { simple: 0, medium: 0, hard: 0 };
+    const rSim = rlToday.simple || 0;
+    const rMed = rlToday.medium || 0;
+    const rHar = rlToday.hard || 0;
+    const rTot = rSim + rMed + rHar;
+
+    const rKpiVal = document.getElementById('reasoning-kpi-value');
+    if (rKpiVal) {
+      rKpiVal.innerHTML = `
+        <span style="color:#4ade80;font-weight:700;">${rSim}</span> <span style="font-size:11px;color:var(--text-muted);">简单</span> · 
+        <span style="color:#38bdf8;font-weight:700;">${rMed}</span> <span style="font-size:11px;color:var(--text-muted);">中等</span> · 
+        <span style="color:#c084fc;font-weight:700;">${rHar}</span> <span style="font-size:11px;color:var(--text-muted);">困难</span>
+      `;
+    }
+    const rKpiSub = document.getElementById('reasoning-kpi-sub');
+    if (rKpiSub) {
+      rKpiSub.innerText = `简单快问: ${rSim}次 | 中等思考: ${rMed}次 | 困难深度: ${rHar}次 (合计${rTot}次)`;
+    }
+
+    // 🌟 当日全槽位 In / Out 总耗时 KPI 更新
+    const sp = data.speed || {};
+    const todayInSec = (data.today && data.today.total_in_seconds) || sp.today_in_seconds || 0;
+    const todayOutSec = (data.today && data.today.total_out_seconds) || sp.today_out_seconds || 0;
+    const todayWorkSec = (data.today && data.today.total_work_seconds) || sp.today_work_seconds || (todayInSec + todayOutSec) || 0;
+    
+    const inPct = todayWorkSec > 0 ? ((todayInSec / todayWorkSec) * 100).toFixed(1) : '0.0';
+    const outPct = todayWorkSec > 0 ? ((todayOutSec / todayWorkSec) * 100).toFixed(1) : '0.0';
+
+    const ioKpiVal = document.getElementById('inout-kpi-value');
+    if (ioKpiVal) {
+      ioKpiVal.innerHTML = `
+        <span style="color:#38bdf8;font-weight:700;">📥 ${Number(todayInSec).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}s</span> <span style="font-size:11px;color:var(--text-muted);">In</span> · 
+        <span style="color:var(--accent-purple);font-weight:700;">📤 ${Number(todayOutSec).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}s</span> <span style="font-size:11px;color:var(--text-muted);">Out</span>
+      `;
+    }
+    const ioKpiSub = document.getElementById('inout-kpi-sub');
+    if (ioKpiSub) {
+      ioKpiSub.innerText = `全槽位纯工作耗时: ${Number(todayWorkSec).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}s (预填 ${inPct}% · 解码 ${outPct}%)`;
     }
 
     // 更新动态槽位与 GPU 监控卡片
@@ -3695,7 +3818,17 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         break
 
                 # 2. 0秒动态思考等级裁决 (low / medium / xhigh)
-                effort, budget, inline_tag = backend_manager.classify_complexity(user_msg_text, estimated_tokens=estimated_prompt_tokens)
+                req_effort = cleaned_json.get("reasoning_effort")
+                if req_effort and isinstance(req_effort, str) and req_effort.lower() in ("low", "minimal", "medium", "standard", "high", "xhigh", "max"):
+                    eff_val = req_effort.lower()
+                    if eff_val in ("low", "minimal"):
+                        effort, budget, inline_tag = "low", 512, "<|think_low|>"
+                    elif eff_val in ("high", "xhigh", "max"):
+                        effort, budget, inline_tag = "xhigh", 8192, "<|think_xhigh|>"
+                    else:
+                        effort, budget, inline_tag = "medium", 2048, "<|think_medium|>"
+                else:
+                    effort, budget, inline_tag = backend_manager.classify_complexity(user_msg_text, estimated_tokens=estimated_prompt_tokens)
                 cleaned_json["reasoning_effort"] = effort
                 cleaned_json["reasoning_budget"] = budget
                 
@@ -3988,7 +4121,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         duration_s=duration,
                         key_name=key_name,
                         is_vision=(is_vision or need_vision),
-                        image_count=img_count
+                        image_count=img_count,
+                        reasoning_effort=locals().get("effort", "medium")
                     )
                     tps = round(completion_tokens_recorded / duration, 1) if duration > 0.05 else 0.0
                     prefill_tps = round(prompt_tokens_recorded / max(0.05, duration * 0.15), 1)
