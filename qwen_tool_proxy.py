@@ -104,12 +104,12 @@ sys.stdout = _proxy_daily_logger
 sys.stderr = _proxy_daily_logger
 
 # ============================================================
-#  DeepSeek-V4-Flash-0731 / Vision-Exp 空闲时段虚拟定价标准
+#  DeepSeek-V4-Flash-0731 / Qwen3.8-27B-A 原生多模态 虚拟定价标准
 # ============================================================
 PRICING = {
-    "standard": "DeepSeek-V4-Flash-0731 / Vision-Exp (Off-peak / 空闲时段)",
+    "standard": "DeepSeek-V4-Flash-0731 (纯文本) & Qwen3.8-27B-A [原生多模态] (空闲时段)",
     "text_model": "DeepSeek-V4-Flash-0731",
-    "vision_model": "DeepSeek-V4-Flash-Vision-Exp",
+    "vision_model": "Qwen3.8-27B-A [原生多模态]",
     "input_cache_hit_per_m": 0.05,   # 0.05元 / 100万 tokens (¥0.00000005/token)
     "input_cache_miss_per_m": 1.50,  # 1.50元 / 100万 tokens (¥0.0000015/token)
     "output_per_m": 4.50,            # 4.50元 / 100万 tokens (¥0.0000045/token)
@@ -124,7 +124,7 @@ KEYS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mirac
 def resolve_model_alias(requested_model="", default_model=None):
     """
     动态智能模型别名映射器：
-    1. 显式请求视觉眼 (如 Qwen2.5-VL / vision / 3b) -> Qwen2.5-VL-3B;
+    1. 显式请求视觉模型 -> Qwen3.8-27B-A [原生多模态];
     2. 显式请求 OCR / 定位专项 -> PaddleOCR-VL-1.6 / locate-anything-f16;
     3. 具体本地模型名与缩写 (27B, 35B, 8B, 4B, 双槽MTP, 4并发, 多模态, NVFP4 等) -> 对应规范模型名;
     4. 所有通用/云端别名 (Claude 5/4/3, DeepSeek V4/R1, GPT-4o, default, local, auto, qwen 等)
@@ -144,7 +144,7 @@ def resolve_model_alias(requested_model="", default_model=None):
     
     # 显式请求视觉模型 -> 统一由 27B 原生多模态旗舰承载 (Track 1)
     if req_lower in ("qwen2.5-vl", "qwen2.5-vl-3b", "qwen-vl", "deepseek-v4-flash-vision-exp", "vision", "3b", "qwen3.8-27b-vision", "27b-vision", "qwen3.8-vl", "qwen3.8-27b-a-vision"):
-        return "Qwen3.8-27B-A-Vision"
+        return "Qwen3.8-27B-A [原生多模态]"
 
     # 显式请求 OCR / 定位专项
     if "paddleocr" in req_lower or "ocr" in req_lower:
@@ -154,10 +154,10 @@ def resolve_model_alias(requested_model="", default_model=None):
         
     exact_map = {
         # 27B Abliterated 系列（支持各种启动标签和缩写）
-        "qwen3.8-27b-a-vision": "Qwen3.8-27B-A-Vision",
-        "qwen3.8-27b-vision": "Qwen3.8-27B-A-Vision",
-        "qwen3.8-27b-a [原生多模态]": "Qwen3.8-27B-A-Vision",
-        "qwen3.8-27b-a [多模态]": "Qwen3.8-27B-A-Vision",
+        "qwen3.8-27b-a-vision": "Qwen3.8-27B-A [原生多模态]",
+        "qwen3.8-27b-vision": "Qwen3.8-27B-A [原生多模态]",
+        "qwen3.8-27b-a [原生多模态]": "Qwen3.8-27B-A [原生多模态]",
+        "qwen3.8-27b-a [多模态]": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-a-q6_k": "Qwen3.8-27B-A-Q6_K",
         "qwen3.8-27b-a": "Qwen3.8-27B-A-Q6_K",
         "qwen3.8-27b-abliterated-q6_k": "Qwen3.8-27B-A-Q6_K",
@@ -165,7 +165,7 @@ def resolve_model_alias(requested_model="", default_model=None):
         "qwen3.8-27b-a [4并发]": "Qwen3.8-27B-A-Q6_K",
         "双槽mtp": "Qwen3.8-27B-A-Q6_K",
         "4并发": "Qwen3.8-27B-A-Q6_K",
-        "多模态": "Qwen3.8-27B-A-Vision",
+        "多模态": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-uncensored-q6_k": "Qwen3.8-27B-U-Q6_K",
         # 27B NVFP4 系列
         "qwen3.8-27b-mid-high": "Qwen3.8-27B-MID-HIGH",
@@ -868,18 +868,27 @@ class ConcurrencyQueue:
                     except Exception:
                         pass
                     
+                    if getattr(backend_manager, "current_state", "") == backend_manager.STATE_VISION_27B:
+                        is_multimodal = True
+                        if not mmproj_file:
+                            mmproj_file = "mmproj-Qwen3.8-27B-F16.gguf"
+
+                    display_model_name = "Qwen3.8-27B-A [原生多模态]" if is_multimodal else model_alias
+
                     with self.lock:
-                        self.current_model_alias = model_alias
+                        self.current_model_alias = display_model_name
 
                     st = {
                         "backend_online": True,
-                        "model_name": model_alias,
+                        "model_name": display_model_name,
                         "total_ctx": total_ctx,
                         "text_active": active_count,
                         "text_max": len(slots_data),
                         "slots_detail": slots_detail,
                         "is_multimodal": is_multimodal,
-                        "mmproj_file": mmproj_file
+                        "mmproj_file": mmproj_file,
+                        "vision_cache_count": len(VISION_IMAGE_OCR_CACHE),
+                        "active_vision": self.active_vision
                     }
                     with self.lock:
                         self.cached_status = st
@@ -894,21 +903,18 @@ class ConcurrencyQueue:
                 return self.cached_status
 
         # 3. 确实未启动或已关闭
+        is_vm = getattr(backend_manager, "current_state", "") == backend_manager.STATE_VISION_27B
         return {
             "backend_online": False,
-            "model_name": self.current_model_alias or "等待启动器加载模型...",
+            "model_name": ("Qwen3.8-27B-A [原生多模态]" if is_vm else (self.current_model_alias or "等待启动器加载模型...")),
             "total_ctx": 0,
             "text_active": 0,
             "text_max": 0,
             "slots_detail": [],
-            "vision_status": {
-                "configured": True,
-                "online": True,
-                "port": 8083,
-                "model": "Qwen3.8-27B-A-Vision",
-                "is_active": (self.active_vision > 0),
-                "status_text": "👁️ 27B 原生多模态直通"
-            }
+            "is_multimodal": is_vm,
+            "mmproj_file": ("mmproj-Qwen3.8-27B-F16.gguf" if is_vm else ""),
+            "vision_cache_count": len(VISION_IMAGE_OCR_CACHE),
+            "active_vision": self.active_vision
         }
 
 concurrency_queue = ConcurrencyQueue(max_slots=4)
@@ -939,6 +945,8 @@ class BillingTracker:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "cost_cny": 0.0,
+                "vision_images": 0,
+                "vision_duration_s": 0.0,
             },
             "today": {
                 "date": today_str,
@@ -949,6 +957,8 @@ class BillingTracker:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "cost_cny": 0.0,
+                "vision_images": 0,
+                "vision_duration_s": 0.0,
             },
             "by_model": {},
             "by_key": {
@@ -965,6 +975,10 @@ class BillingTracker:
                     loaded = json.load(f)
                     loaded["pricing_rates"] = default_data["pricing_rates"]
                     loaded["pricing_standard"] = default_data["pricing_standard"]
+                    loaded.setdefault("total", default_data["total"])
+                    loaded["total"].setdefault("vision_images", 0)
+                    loaded["total"].setdefault("vision_duration_s", 0.0)
+
                     bk = loaded.setdefault("by_key", {})
                     for k in ("admin", "llamacpp", "v100-32G"):
                         if k not in bk:
@@ -972,6 +986,8 @@ class BillingTracker:
                     
                     # 确保 today.by_device_model 存在并自愈补全
                     today_obj = loaded.setdefault("today", default_data["today"])
+                    today_obj.setdefault("vision_images", 0)
+                    today_obj.setdefault("vision_duration_s", 0.0)
                     today_dm = today_obj.setdefault("by_device_model", {})
                     if not today_dm:
                         today_str = today_obj.get("date", datetime.date.today().isoformat())
@@ -985,7 +1001,7 @@ class BillingTracker:
                                         "key": r_key,
                                         "key_name": default_data["by_key"].get(r_key, {}).get("name", r_key),
                                         "model": r_model,
-                                        "is_vision": bool("VL" in r_model or "Vision" in r_model),
+                                        "is_vision": bool("VL" in r_model or "Vision" in r_model or "多模态" in r_model),
                                         "last_time": r.get("time", ""),
                                         "requests": 0,
                                         "prompt_tokens": 0,
@@ -994,6 +1010,7 @@ class BillingTracker:
                                         "completion_tokens": 0,
                                         "total_tokens": 0,
                                         "duration_s": 0.0,
+                                        "image_count": 0,
                                         "cost_cny": 0.0
                                     }
                                 stat = today_dm[k_m]
@@ -1004,6 +1021,21 @@ class BillingTracker:
                                 stat["completion_tokens"] += r.get("completion_tokens", 0)
                                 stat["total_tokens"] += r.get("total_tokens", 0)
                                 stat["duration_s"] = round(stat["duration_s"] + r.get("duration_s", 0.0), 2)
+                    
+                    # 校验与自动汇总今日视觉统计
+                    today_v_imgs = 0
+                    today_v_dur = 0.0
+                    for dm in today_dm.values():
+                        if dm.get("is_vision") or "多模态" in dm.get("model", "") or "Vision" in dm.get("model", "") or "VL" in dm.get("model", ""):
+                            today_v_imgs += dm.get("image_count", dm.get("requests", 0))
+                            today_v_dur += dm.get("duration_s", 0.0)
+                    if today_obj.get("vision_images", 0) == 0 and today_v_imgs > 0:
+                        today_obj["vision_images"] = today_v_imgs
+                        today_obj["vision_duration_s"] = round(today_v_dur, 2)
+                    if loaded["total"].get("vision_images", 0) == 0 and today_v_imgs > 0:
+                        loaded["total"]["vision_images"] = today_v_imgs
+                        loaded["total"]["vision_duration_s"] = round(today_v_dur, 2)
+
                     # 同步今日总纯工作时间与 Token 吞吐至测速引擎
                     today_p = today_obj.get("prompt_tokens", 0)
                     today_c = today_obj.get("completion_tokens", 0)
@@ -1032,17 +1064,18 @@ class BillingTracker:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "cost_cny": 0.0,
+                "vision_images": 0,
+                "vision_duration_s": 0.0,
                 "by_device_model": {}
             }
 
-    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False):
+    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0):
         with self.lock:
             self._check_day_rollover()
             cached = max(0, min(cached_tokens, prompt_tokens))
             miss = max(0, prompt_tokens - cached)
             total_tokens = prompt_tokens + completion_tokens
 
-            # 按 DeepSeek-V4-Flash-0731 / Vision-Exp 空闲时段计算
             cost = (
                 (miss * PRICING["input_cache_miss_per_m"]) +
                 (cached * PRICING["input_cache_hit_per_m"]) +
@@ -1050,6 +1083,8 @@ class BillingTracker:
             ) / 1_000_000.0
 
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            img_delta = image_count if image_count > 0 else (1 if is_vision else 0)
 
             # 1. Total 历史累计
             t = self.data["total"]
@@ -1060,6 +1095,9 @@ class BillingTracker:
             t["completion_tokens"] += completion_tokens
             t["total_tokens"] += total_tokens
             t["cost_cny"] = round(t["cost_cny"] + cost, 6)
+            if is_vision or img_delta > 0:
+                t["vision_images"] = t.get("vision_images", 0) + img_delta
+                t["vision_duration_s"] = round(t.get("vision_duration_s", 0.0) + duration_s, 2)
 
             # 2. Today 当日统计
             d = self.data["today"]
@@ -1070,12 +1108,16 @@ class BillingTracker:
             d["completion_tokens"] += completion_tokens
             d["total_tokens"] += total_tokens
             d["cost_cny"] = round(d["cost_cny"] + cost, 6)
+            if is_vision or img_delta > 0:
+                d["vision_images"] = d.get("vision_images", 0) + img_delta
+                d["vision_duration_s"] = round(d.get("vision_duration_s", 0.0) + duration_s, 2)
 
             # 3. By Model 模型维度
             bm = self.data.setdefault("by_model", {})
             m_stat = bm.setdefault(model_name, {
                 "requests": 0, "prompt_tokens": 0, "prompt_tokens_cached": 0,
-                "completion_tokens": 0, "total_tokens": 0, "cost_cny": 0.0
+                "completion_tokens": 0, "total_tokens": 0, "cost_cny": 0.0,
+                "duration_s": 0.0, "image_count": 0
             })
             m_stat["requests"] += 1
             m_stat["prompt_tokens"] += prompt_tokens
@@ -1083,6 +1125,9 @@ class BillingTracker:
             m_stat["completion_tokens"] += completion_tokens
             m_stat["total_tokens"] += total_tokens
             m_stat["cost_cny"] = round(m_stat["cost_cny"] + cost, 6)
+            m_stat["duration_s"] = round(m_stat.get("duration_s", 0.0) + duration_s, 2)
+            if is_vision or img_delta > 0:
+                m_stat["image_count"] = m_stat.get("image_count", 0) + img_delta
 
             # 4. By Key (3台设备历史分账)
             bk = self.data.setdefault("by_key", {})
@@ -1098,11 +1143,12 @@ class BillingTracker:
             today_dm = d.setdefault("by_device_model", {})
             dm_key = f"{key_name}::{model_name}"
             human_k_name = key_manager.keys.get(key_name, {}).get("name", key_name)
+            is_vis = bool(is_vision or ("VL" in model_name or "Vision" in model_name or "多模态" in model_name))
             dm_stat = today_dm.setdefault(dm_key, {
                 "key": key_name,
                 "key_name": human_k_name,
                 "model": model_name,
-                "is_vision": bool(is_vision or ("VL" in model_name or "Vision" in model_name)),
+                "is_vision": is_vis,
                 "last_time": now_str,
                 "requests": 0,
                 "prompt_tokens": 0,
@@ -1111,6 +1157,7 @@ class BillingTracker:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "duration_s": 0.0,
+                "image_count": 0,
                 "cost_cny": 0.0
             })
             dm_stat["last_time"] = now_str
@@ -1121,6 +1168,8 @@ class BillingTracker:
             dm_stat["completion_tokens"] += completion_tokens
             dm_stat["total_tokens"] += total_tokens
             dm_stat["duration_s"] = round(dm_stat["duration_s"] + duration_s, 2)
+            if is_vision or img_delta > 0:
+                dm_stat["image_count"] = dm_stat.get("image_count", 0) + img_delta
             dm_stat["cost_cny"] = round(dm_stat["cost_cny"] + cost, 6)
 
             # 6. 每日历史明细记录 (用于月度方块热力图与日历浮窗)
@@ -1201,6 +1250,19 @@ class BillingTracker:
             st["concurrency"] = concurrency_queue.get_dynamic_status()
             st["gpu"] = gpu_telemetry.get_status()
             st["speed"] = speed_engine.get_speed()
+            st["vision_summary"] = {
+                "today_images": self.data.get("today", {}).get("vision_images", 0),
+                "today_duration_s": round(self.data.get("today", {}).get("vision_duration_s", 0.0), 2),
+                "total_images": self.data.get("total", {}).get("vision_images", 0),
+                "total_duration_s": round(self.data.get("total", {}).get("vision_duration_s", 0.0), 2),
+                "cache_count": len(VISION_IMAGE_OCR_CACHE),
+                "pricing": {
+                    "model_name": "Qwen3.8-27B-A [原生多模态]",
+                    "input_cache_hit_per_m": PRICING["input_cache_hit_per_m"],
+                    "input_cache_miss_per_m": PRICING["input_cache_miss_per_m"],
+                    "output_per_m": PRICING["output_per_m"]
+                }
+            }
             return st
 
 tracker = BillingTracker()
@@ -2105,14 +2167,27 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   }
   .slot-card.active { border-color: rgba(192, 132, 252, 0.6); background: rgba(192, 132, 252, 0.06); box-shadow: 0 0 16px rgba(192, 132, 252, 0.15); }
   .slot-card.active-prefill { border-color: rgba(56, 189, 248, 0.7); background: rgba(56, 189, 248, 0.08); box-shadow: 0 0 16px rgba(56, 189, 248, 0.2); }
-  .slot-card-vision { border-color: rgba(192, 132, 252, 0.35); background: rgba(192, 132, 252, 0.03); }
-  .slot-card.active-vision { border-color: rgba(192, 132, 252, 0.8); background: rgba(192, 132, 252, 0.12); box-shadow: 0 0 16px rgba(192, 132, 252, 0.3); }
+  .slot-card-vision {
+    border-color: rgba(192, 132, 252, 0.45);
+    background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.12), rgba(0,0,0,0.45));
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.12);
+  }
+  .slot-card-vision:hover {
+    border-color: rgba(192, 132, 252, 0.8);
+    box-shadow: 0 0 22px rgba(192, 132, 252, 0.25);
+  }
+  .slot-card.active-vision {
+    border-color: rgba(192, 132, 252, 0.9);
+    background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.2), rgba(0,0,0,0.5));
+    box-shadow: 0 0 24px rgba(192, 132, 252, 0.35);
+  }
   
   .slot-card-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; }
   .slot-badge-idle { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(74, 222, 128, 0.15); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.3); }
   .slot-badge-busy { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(192, 132, 252, 0.2); color: var(--accent-purple); border: 1px solid rgba(192, 132, 252, 0.4); animation: pulse-purple 1.5s infinite; }
   .slot-badge-prefill { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(56, 189, 248, 0.25); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.5); animation: pulse-blue 1.5s infinite; }
-  .slot-badge-vision-busy { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(192, 132, 252, 0.25); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.5); animation: pulse-purple 1.5s infinite; }
+  .slot-badge-vision-active { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(192, 132, 252, 0.25); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.6); animation: pulse-purple 1.5s infinite; }
+  .slot-badge-vision-standby { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
   .slot-badge-vision-idle { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(74, 222, 128, 0.15); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.3); }
   .slot-badge-vision-off { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(255, 255, 255, 0.08); color: var(--text-muted); border: 1px solid var(--border); }
   
@@ -2198,8 +2273,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="pricing-banner">
-    <div>🏷️ <strong>当前计价标准</strong>：DeepSeek-V4-Flash-0731 (文本) & DeepSeek-V4-Flash-Vision-Exp (识图) | 空闲时段</div>
-    <div>缓存命中: <strong style="color:var(--accent-green);">¥0.05/M</strong> | 未命中: <strong style="color:var(--accent-orange);">¥1.50/M</strong> | 输出生成: <strong style="color:var(--accent-purple);">¥4.50/M</strong></div>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div>🏷️ <strong>当前计价标准</strong>：纯文本 <code>DeepSeek-V4-Flash-0731</code> & 原生多模态 <code>Qwen3.8-27B-A [原生多模态]</code> | 空闲时段</div>
+      <div>Token计费率: 缓存命中 <strong style="color:var(--accent-green);">¥0.05/M</strong> | 未命中 <strong style="color:var(--accent-orange);">¥1.50/M</strong> | 输出生成 <strong style="color:var(--accent-purple);">¥4.50/M</strong></div>
+    </div>
+    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div>👁️ <strong>Qwen3.8-27B-A [原生多模态] 专项核算</strong>：今日读图 <strong id="banner-vision-today-imgs" style="color:var(--accent-purple);font-size:14px;">0</strong> 张 (总耗时 <span id="banner-vision-today-time" style="color:#38bdf8;font-weight:600;">0.0s</span>) · 历史累计 <strong id="banner-vision-total-imgs" style="color:var(--accent);font-size:14px;">0</strong> 张图</div>
+      <div>⚡ <strong>图像指纹高速缓存</strong>：已收录 <strong id="banner-vision-cache-count" style="color:var(--accent-green);font-size:14px;">0</strong> 个 (多轮追问 0.001s 瞬时复用)</div>
+    </div>
   </div>
 
   <!-- 🌟 槽位实时在位与硬件并发负载卡片 (含 In/Out 速率与上下文使用量) -->
@@ -2226,6 +2307,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-label">历史累计算力总价值</div>
       <div class="card-value" id="total-cost" style="color: var(--accent);">¥0.0000</div>
       <div class="card-sub" id="total-reqs">累计 0 次对话</div>
+    </div>
+    <div class="card" style="border-color: rgba(192, 132, 252, 0.4); background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.08), rgba(0,0,0,0.3));">
+      <div class="card-label" style="color: #c084fc;">👁️ 原生多模态读图与耗时统计</div>
+      <div class="card-value" id="vision-kpi-value" style="color: #c084fc; font-size: 19px;">0 张 · 0.0s</div>
+      <div class="card-sub" id="vision-kpi-sub">今日读图: 0 张 | 累计: 0 张图</div>
     </div>
     <div class="card">
       <div class="card-label">全天工作累计总均速 (In / Out)</div>
@@ -2301,15 +2387,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <tr>
           <th>最后活跃时间</th>
           <th>调用设备 (Key)</th>
-          <th>请求模型 (支持 Claude 5/4/3 & DeepSeek V4)</th>
+          <th>请求模型 (文本 / 原生多模态)</th>
           <th>Prompt (未命中 / 命中)</th>
           <th>Output</th>
           <th>累计耗时 (调用次数)</th>
+          <th>🖼️ 识图统计</th>
           <th>今日累计价值</th>
         </tr>
       </thead>
       <tbody id="recents-tbody">
-        <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>
+        <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>
       </tbody>
     </table>
   </div>
@@ -2553,7 +2640,7 @@ function hideTooltip() {
 }
 
 // 动态渲染槽位与 GPU 状态 (含 in tok/S, out tok/S, 约上下文已用)
-function updateSlotsUI(c, gpu) {
+function updateSlotsUI(c, gpu, v) {
   const monitorCard = document.getElementById('slots-monitor-card');
   const slotPill = document.getElementById('header-slot-pill');
   const slotDot = document.getElementById('slot-dot');
@@ -2579,9 +2666,9 @@ function updateSlotsUI(c, gpu) {
   const totalCtx = (c && c.total_ctx) ? (c.total_ctx >= 1024 ? (c.total_ctx/1024)+'K' : c.total_ctx) : '160K';
 
   document.getElementById('active-model-title').innerText = modelName;
-  const isMulti = c && c.is_multimodal;
+  const isMulti = c && (c.is_multimodal || modelName.includes('Vision') || modelName.includes('多模态'));
   const mmprojInfo = (c && c.mmproj_file) ? ` (${c.mmproj_file})` : '';
-  const modeTag = isMulti ? `<span style="margin-left:8px;padding:2px 8px;border-radius:6px;font-size:11px;background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);">👁️ 原生多模态视觉${mmprojInfo}</span>` : `<span style="margin-left:8px;padding:2px 8px;border-radius:6px;font-size:11px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);">⚡ 纯文本极速矩阵</span>`;
+  const modeTag = isMulti ? `<span style="margin-left:8px;padding:2px 8px;border-radius:6px;font-size:11px;background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);">👁️ 原生多模态视觉${mmprojInfo}</span>` : `<span style="margin-left:8px;padding:2px 8px;border-radius:6px;font-size:11px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);">⚡ 纯文本极速矩阵 (视觉守护待命中)</span>`;
   document.getElementById('active-ctx-desc').innerHTML = `(${maxSlots} 并发 · ${totalCtx} 共享统一 KV 资源池) ${modeTag}`;
   
   if (!isOnline) {
@@ -2603,8 +2690,14 @@ function updateSlotsUI(c, gpu) {
     { slot_num: 1, raw_id: 0, is_active: false, stage: 'idle', n_ctx: 73728, in_tok_s: 0, out_tok_s: 0 },
     { slot_num: 2, raw_id: 1, is_active: false, stage: 'idle', n_ctx: 73728, in_tok_s: 0, out_tok_s: 0 }
   ];
-  
-  let html = details.map((s, idx) => {
+
+  const vCacheCount = (v && v.cache_count !== undefined) ? v.cache_count : (c ? (c.vision_cache_count || 0) : 0);
+  const vTodayImgs = (v && v.today_images !== undefined) ? v.today_images : 0;
+  const vTodayTime = (v && v.today_duration_s !== undefined) ? v.today_duration_s.toFixed(1) : '0.0';
+  const vTotalImgs = (v && v.total_images !== undefined) ? v.total_images : 0;
+  const isVisionActive = (c && c.active_vision > 0);
+
+  function renderSlotCard(s, titlePrefix) {
     const isBusy = s.is_active;
     const stage = s.stage || (isBusy ? 'generating' : 'idle');
     const slotCtx = s.n_ctx ? (s.n_ctx >= 1024 ? (s.n_ctx/1024)+'K' : s.n_ctx) : '72K';
@@ -2649,7 +2742,7 @@ function updateSlotsUI(c, gpu) {
     return `
       <div class="slot-card ${isBusy ? (stage === 'prefill' ? 'active-prefill' : 'active') : ''}">
         <div class="slot-card-header">
-          <span>槽位 #${s.slot_num} <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(ID ${s.raw_id})</span> ${isMulti ? '<span style="font-size:10px;padding:1px 6px;background:rgba(168,85,247,0.2);color:#c084fc;border-radius:4px;margin-left:4px;border:1px solid rgba(168,85,247,0.35);">👁️ 多模态</span>' : ''}</span>
+          <span>${titlePrefix || ('槽位 #' + s.slot_num)} <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(ID ${s.raw_id})</span></span>
           ${badgeHtml}
         </div>
         <div class="slot-card-body">
@@ -2671,7 +2764,62 @@ function updateSlotsUI(c, gpu) {
         </div>
       </div>
     `;
-  }).join('');
+  }
+
+  function renderVisionTowerCard(isMainModel) {
+    const badge = isMainModel 
+      ? (isVisionActive ? '<span class="slot-badge-vision-active">⚡ 视觉特征编码中...</span>' : '<span class="slot-badge-idle">🟣 原生视觉激活挂载 (Online)</span>')
+      : '<span class="slot-badge-vision-standby">🟢 待命随行 (Standby)</span>';
+    
+    const cardTitle = isMainModel ? '👁️ F16 视觉特征投影塔 (Vision Tower)' : '👁️ 27B 原生多模态视觉塔 (守护随行)';
+    const statusNote = isMainModel ? 'mmproj-Qwen3.8-27B-F16.gguf (F16高精)' : 'mmproj-Qwen3.8-27B-F16.gguf (随时热切)';
+    const featureNote = isMainModel ? '128K 超大上下文 · 原生像素直通' : '纯文本常驻 · 遇到识图 4.5s 内存级置换';
+    const fillBg = isMainModel ? 'linear-gradient(90deg, #c084fc, #ec4899)' : 'linear-gradient(90deg, #10b981, #38bdf8)';
+
+    return `
+      <div class="slot-card slot-card-vision ${isVisionActive ? 'active-vision' : ''}">
+        <div class="slot-card-header">
+          <span style="color: #c084fc;">${cardTitle}</span>
+          ${badge}
+        </div>
+        <div class="slot-card-body">
+          <div class="slot-stat-row">
+            <span>🧬 视觉投影挂载:</span>
+            <span class="slot-stat-val" style="color: #c084fc; font-size: 11.5px;">${statusNote}</span>
+          </div>
+          <div class="slot-stat-row">
+            <span>🖼️ 图像指纹高速缓存:</span>
+            <span class="slot-stat-val" style="color: var(--accent-green); font-size: 11.5px;">已收录 ${vCacheCount} 张 (0.001s 复用)</span>
+          </div>
+          <div class="slot-stat-row">
+            <span>📈 识图统计 (今日/累计):</span>
+            <span class="slot-stat-val" style="color: #38bdf8; font-size: 11.5px;">今日 ${vTodayImgs} 张 (${vTodayTime}s) · 累计 ${vTotalImgs} 张</span>
+          </div>
+          <div class="slot-stat-row" style="margin-top: 4px;">
+            <span>🛡️ 调度特性:</span>
+            <span class="slot-stat-val" style="color: var(--text-muted); font-size: 11px;">${featureNote}</span>
+          </div>
+          <div class="slot-progress-bg">
+            <div class="slot-progress-fill" style="width: 100%; background: ${fillBg};"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let html = '';
+  if (isMulti) {
+    // 🌟 用户需求1：当主模型为 Qwen3.8-27B-A [原生多模态] 时：
+    // 槽位区域展示 1 个主脑推理槽位信息 + 1 个多模态视觉塔信息！
+    const mainSlot = details[0] || { slot_num: 1, raw_id: 0, is_active: false, stage: 'idle', n_ctx: 131072 };
+    html += renderSlotCard(mainSlot, '👑 27B 主脑推理槽位 (Slot #1)');
+    html += renderVisionTowerCard(true);
+  } else {
+    // 🌟 用户需求2：当切换到其他工作型纯文本模型时：
+    // 视觉多模态组件不隐身！渲染所有纯文本推理槽位 + 常驻视觉多模态守护卡片！
+    html += details.map(s => renderSlotCard(s, `槽位 #${s.slot_num}`)).join('');
+    html += renderVisionTowerCard(false);
+  }
 
   container.innerHTML = html;
 }
@@ -2709,9 +2857,30 @@ async function updateStats() {
     const hitRate = promptTotal > 0 ? ((cachedTotal / promptTotal) * 100).toFixed(1) : '0.0';
     document.getElementById('cache-hit-rate').innerText = hitRate + '%';
     document.getElementById('cache-hit-detail').innerText = '命中: ' + cachedTotal.toLocaleString() + ' tokens (极速)';
-    
+
+    // 🌟 原生多模态指标更新 (横幅与卡片)
+    const vs = data.vision_summary || {};
+    const vTodayImgs = vs.today_images || 0;
+    const vTodayTime = (vs.today_duration_s || 0).toFixed(1);
+    const vTotalImgs = vs.total_images || 0;
+    const vCacheCount = vs.cache_count || 0;
+
+    const bTodayImgs = document.getElementById('banner-vision-today-imgs');
+    if (bTodayImgs) bTodayImgs.innerText = vTodayImgs;
+    const bTodayTime = document.getElementById('banner-vision-today-time');
+    if (bTodayTime) bTodayTime.innerText = vTodayTime + 's';
+    const bTotalImgs = document.getElementById('banner-vision-total-imgs');
+    if (bTotalImgs) bTotalImgs.innerText = vTotalImgs;
+    const bCacheCount = document.getElementById('banner-vision-cache-count');
+    if (bCacheCount) bCacheCount.innerText = vCacheCount;
+
+    const vKpiVal = document.getElementById('vision-kpi-value');
+    if (vKpiVal) vKpiVal.innerText = `${vTodayImgs} 张 · ${vTodayTime}s`;
+    const vKpiSub = document.getElementById('vision-kpi-sub');
+    if (vKpiSub) vKpiSub.innerText = `今日读图: ${vTodayImgs} 张 | 累计: ${vTotalImgs} 张图`;
+
     // 更新动态槽位与 GPU 监控卡片
-    updateSlotsUI(data.concurrency, data.gpu);
+    updateSlotsUI(data.concurrency, data.gpu, data.vision_summary);
 
     // 更新 3 台设备用量数据
     const totalCost = Math.max(0.000001, data.total.cost_cny || 0);
@@ -2744,12 +2913,13 @@ async function updateStats() {
     
     const tbody = document.getElementById('recents-tbody');
     if (todayDM.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>';
     } else {
       tbody.innerHTML = todayDM.map(r => {
-        const isVision = r.is_vision || (r.model && (r.model.includes('VL') || r.model.includes('Vision')));
-        const modelBadge = isVision ? `<span class="badge-vision">👁️ 视觉眼睛 · 8085 OCR</span>` : `<span class="badge-text">⚡ 文本主模型</span>`;
+        const isVision = r.is_vision || (r.model && (r.model.includes('VL') || r.model.includes('Vision') || r.model.includes('多模态')));
+        const modelBadge = isVision ? `<span class="badge-vision">👁️ 原生多模态</span>` : `<span class="badge-text">⚡ 纯文本基准</span>`;
         const keyColor = r.key === 'admin' ? 'var(--accent)' : (r.key === 'llamacpp' ? 'var(--accent-purple)' : 'var(--accent-orange)');
+        const imgDisplay = (r.image_count && r.image_count > 0) ? `<strong style="color:var(--accent-purple);">${r.image_count} 张图</strong>` : (isVision ? '<span style="color:var(--accent-purple);">1 张图</span>' : '<span style="color:var(--text-muted);">-</span>');
         return `
           <tr>
             <td style="color: var(--text-muted);">${r.last_time}</td>
@@ -2758,6 +2928,7 @@ async function updateStats() {
             <td>${(r.prompt_tokens || 0).toLocaleString()} <span style="color: var(--accent-green); font-size: 11px;">(命中: ${(r.prompt_tokens_cached || 0).toLocaleString()})</span></td>
             <td>${(r.completion_tokens || 0).toLocaleString()}</td>
             <td>${(r.duration_s || 0).toFixed(2)}s <span style="color: var(--text-muted); font-size: 11px;">(${(r.requests || 0)}次累计)</span></td>
+            <td>${imgDisplay}</td>
             <td style="color: var(--accent-green); font-weight: 700;">¥${(r.cost_cny || 0).toFixed(5)}</td>
           </tr>
         `;
@@ -3649,14 +3820,17 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 # ---- 记录 DeepSeek-V4-Flash 虚拟计费 ----
                 duration = time.time() - start_time
                 if prompt_tokens_recorded > 0 or completion_tokens_recorded > 0:
+                    recorded_model_name = "Qwen3.8-27B-A [原生多模态]" if (is_vision or need_vision) else actual_model
+                    img_count = len(pending_vision_hashes) if pending_vision_hashes else (1 if is_vision else 0)
                     cost, today_cost, today_reqs = tracker.record(
-                        model_name=actual_model,
+                        model_name=recorded_model_name,
                         prompt_tokens=prompt_tokens_recorded,
                         cached_tokens=cached_tokens_recorded,
                         completion_tokens=completion_tokens_recorded,
                         duration_s=duration,
                         key_name=key_name,
-                        is_vision=is_vision
+                        is_vision=(is_vision or need_vision),
+                        image_count=img_count
                     )
                     tps = round(completion_tokens_recorded / duration, 1) if duration > 0.05 else 0.0
                     prefill_tps = round(prompt_tokens_recorded / max(0.05, duration * 0.15), 1)
