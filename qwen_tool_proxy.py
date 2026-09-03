@@ -4036,7 +4036,7 @@ class ThreadedHTTPServer(ThreadingHTTPServer):
             return
         super().handle_error(request, client_address)
 
-def run_proxy(listen_port=8081, target_port=8083, api_key="llamacpp", host="127.0.0.1"):
+def run_proxy(listen_port=8081, target_port=8083, api_key="llamacpp", host="127.0.0.1", **kwargs):
     server_address = (host, listen_port)
     httpd = ThreadedHTTPServer(server_address, TransparentProxyHandler)
     httpd.target_host = host
@@ -4058,7 +4058,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="llama.cpp Enterprise Dual-Protocol Vision Pipeline & Dynamic Slot Gateway 3.0")
     parser.add_argument("--listen", type=int, default=8081, help="Listening port (default: 8081)")
     parser.add_argument("--target", type=int, default=8083, help="Backend llama-server port (default: 8083)")
-    parser.add_argument("--vision-main", type=int, default=0, help="Vision Main VLM port (e.g. 8085)")
+    parser.add_argument("--vision-main", type=int, default=0, help="Vision Main VLM port (deprecated)")
     parser.add_argument("--vision-ocr", type=int, default=0, help="Legacy vision OCR port (deprecated)")
     parser.add_argument("--api-key", type=str, default="llamacpp", help="Backend API Key")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host interface (default: 127.0.0.1)")
@@ -4067,7 +4067,6 @@ if __name__ == "__main__":
     run_proxy(
         listen_port=args.listen,
         target_port=args.target,
-        vision_main_port=args.vision_main,
         api_key=args.api_key,
         host=args.host
     )
