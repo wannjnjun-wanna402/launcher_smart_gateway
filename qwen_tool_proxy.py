@@ -2669,10 +2669,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
       <div>🔄 <strong>模型自适应热切换统计</strong>：今日置换 <strong id="banner-hotswap-today" style="color:#38bdf8;font-size:14px;">0</strong> 次 · 上次等待耗时 <strong id="banner-hotswap-last" style="color:var(--accent-green);font-size:14px;">0.0s</strong> (全天均候 <span id="banner-hotswap-avg" style="color:var(--accent-orange);font-weight:600;">0.0s</span>)</div>
       <div>⏳ <strong>历史累计切换</strong>：共 <strong id="banner-hotswap-total" style="color:#fff;font-size:14px;">0</strong> 次 · 4.5s 内存级自适应无感切形态</div>
-    </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>🎯 <strong>ccswitch 客户端权威结算</strong>：今日实际交付总吞吐 <strong style="color:#38bdf8;font-size:13.5px;">6.12M</strong> tokens (6,121,654) · 100% 权威对齐</div>
-      <div>🛡️ <strong>防爆舱安全守护</strong>：累计平滑修剪节省 <strong style="color:var(--accent-green);font-size:13.5px;">4.83M</strong> 溢出上下文 · 杜绝显存 OOM 崩溃</div>
+      <div>🎯 <strong>ccswitch 客户端实时对账</strong>：今日实际交付总吞吐 <strong id="banner-sync-tokens" style="color:#38bdf8;font-size:13.5px;">0</strong> (约 <span id="banner-sync-m" style="color:#38bdf8;font-weight:700;">0.0万</span>) · 真实调用 <strong id="banner-sync-reqs" style="color:var(--accent);font-size:13.5px;">0</strong></div>
+      <div>⚡ <strong>多维吞吐流速</strong>：新增输入 <strong id="banner-sync-in" style="color:var(--accent-green);font-size:13px;">0</strong> · Output 生成 <strong id="banner-sync-out" style="color:var(--accent-purple);font-size:13px;">0</strong> · 命中 <strong id="banner-sync-cached" style="color:var(--accent-orange);font-size:13px;">0</strong> (命中率 <span id="banner-sync-hitrate" style="color:var(--accent-green);font-weight:600;">0.0%</span>)</div>
     </div>
   </div>
 
@@ -3363,6 +3362,27 @@ async function updateStats() {
     if (bHsAvg) bHsAvg.innerText = hsAvg + 's';
     const bHsTotal = document.getElementById('banner-hotswap-total');
     if (bHsTotal) bHsTotal.innerText = hsTotal;
+
+    const bannerSyncTokens = document.getElementById('banner-sync-tokens');
+    if (bannerSyncTokens) {
+      bannerSyncTokens.innerText = liveTotal.toLocaleString();
+      const bM = document.getElementById('banner-sync-m');
+      if (bM) bM.innerText = (liveTotal / 1e4).toFixed(1) + '万';
+      const bReqs = document.getElementById('banner-sync-reqs');
+      if (bReqs) bReqs.innerText = (data.today.requests || 0) + '次';
+      const bIn = document.getElementById('banner-sync-in');
+      if (bIn) bIn.innerText = ((data.today.prompt_tokens || 0) / 1e4).toFixed(1) + '万';
+      const bOut = document.getElementById('banner-sync-out');
+      if (bOut) bOut.innerText = ((data.today.completion_tokens || 0) + inFlightTokens).toLocaleString();
+      const bCached = document.getElementById('banner-sync-cached');
+      if (bCached) bCached.innerText = ((data.today.prompt_tokens_cached || 0) / 1e4).toFixed(1) + '万';
+      const bHitrate = document.getElementById('banner-sync-hitrate');
+      if (bHitrate) {
+        const pTotal = (data.today.prompt_tokens || 0) + (data.today.prompt_tokens_cached || 0);
+        const hr = pTotal > 0 ? ((data.today.prompt_tokens_cached || 0) / pTotal * 100).toFixed(1) : '0.0';
+        bHitrate.innerText = hr + '%';
+      }
+    }
 
     const hsKpiVal = document.getElementById('hotswap-kpi-value');
     if (hsKpiVal) hsKpiVal.innerText = `${hsToday} 次 · 等待 ${hsLast}s`;
