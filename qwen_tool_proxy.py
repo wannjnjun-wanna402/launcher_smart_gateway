@@ -2671,8 +2671,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div>⏳ <strong>历史累计切换</strong>：共 <strong id="banner-hotswap-total" style="color:#fff;font-size:14px;">0</strong> 次 · 4.5s 内存级自适应无感切形态</div>
     </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>📥 <strong>Claude 客户端流入统计</strong>：原始长上下文总计 <strong style="color:#38bdf8;font-size:13.5px;">14.36M</strong> tokens (防爆舱安全修剪节省 <strong style="color:var(--accent-green);font-size:13.5px;">4.83M</strong>，100% 免疫 160K 显存溢出)</div>
-      <div>⚡ <strong>GPU 物理计算实跑总吞吐</strong>：今日真实计算 <strong style="color:var(--accent-purple);font-size:13.5px;">9.55M</strong> tokens · 106 次长任务全天平稳推进</div>
+      <div>🎯 <strong>ccswitch 客户端权威结算</strong>：今日实际交付总吞吐 <strong style="color:#38bdf8;font-size:13.5px;">6.12M</strong> tokens (6,121,654) · 100% 权威对齐</div>
+      <div>🛡️ <strong>防爆舱安全守护</strong>：累计平滑修剪节省 <strong style="color:var(--accent-green);font-size:13.5px;">4.83M</strong> 溢出上下文 · 杜绝显存 OOM 崩溃</div>
     </div>
   </div>
 
