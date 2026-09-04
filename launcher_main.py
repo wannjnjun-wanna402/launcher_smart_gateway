@@ -91,18 +91,14 @@ class MiracleTrayManager:
             size = 64
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
-            # 背景色：深色科技底座，运行态为科技黑绿，待机态为沉稳黑灰
-            bg = (15, 23, 42, 245) if active else (30, 41, 59, 230)
-            border = (0, 229, 153, 255) if active else (148, 163, 184, 255)
-            draw.rounded_rectangle([(4, 4), (size - 5, size - 5)], radius=16, fill=bg, outline=border, width=3)
-            cx, cy = size // 2, size // 2
-            if active:
-                # 绿色高亮能量核心 + 科技菱形
-                draw.ellipse([(cx - 7, cy - 7), (cx + 7, cy + 7)], fill=(0, 229, 153, 255))
-                draw.polygon([(cx, cy - 18), (cx + 14, cy), (cx, cy + 18), (cx - 14, cy)], outline=(56, 189, 248, 255), width=2)
-            else:
-                # 待机银灰菱形
-                draw.polygon([(cx, cy - 14), (cx + 12, cy), (cx, cy + 14), (cx - 12, cy)], fill=(148, 163, 184, 255))
+            # 超高对比度荧光色：运行态极亮翠绿 (#00EB8C)，待机态明亮极光青 (#38BDF8)，绝不与任务栏黑底混淆
+            main_color = (0, 235, 140, 255) if active else (56, 189, 248, 255)
+            # 外环能量圈
+            draw.ellipse([(6, 6), (size - 7, size - 7)], fill=main_color)
+            # 中层对比圈
+            draw.ellipse([(14, 14), (size - 15, size - 15)], fill=(15, 23, 42, 255))
+            # 核心纯白高光眼
+            draw.ellipse([(22, 22), (size - 23, size - 23)], fill=(255, 255, 255, 255))
             return img
         except Exception:
             return None
@@ -186,7 +182,13 @@ class MiracleTrayManager:
                 f"奇迹AI启动器: {self.model_name}",
                 menu=self._build_menu()
             )
-            self.thread = threading.Thread(target=self.icon.run, daemon=True)
+            def on_setup(i):
+                i.visible = True
+                try:
+                    i.notify("奇迹AI服务已常驻托盘，右键图标可呼出快捷控制菜单！\n(若任务栏未见，请查看右下角 ^ 折叠抽屉)", "🤖 奇迹AI高能底座")
+                except Exception:
+                    pass
+            self.thread = threading.Thread(target=self.icon.run, args=(on_setup,), daemon=True)
             self.thread.start()
         except Exception:
             pass
@@ -1129,7 +1131,7 @@ def main():
         sys.stdout.write(f"  🎉 主脑引擎已成功常驻！端口: http://127.0.0.1:8083/v1\n")
         sys.stdout.write(f"  📡 网关双通接口: http://127.0.0.1:8081/v1 (Claude Code / ccswitch)\n")
         sys.stdout.write(f"  📊 算力监控大屏: http://127.0.0.1:8081/dashboard\n")
-        sys.stdout.write(f"  🔔 任务栏托盘状态已激活：右下角图标可双击打开大屏，右键随时完全退出/隐藏黑框\n")
+        sys.stdout.write(f"  🔔 任务栏托盘状态已激活：位于屏幕右下角通知区域 (若被折叠请点击 ^ 向上小箭头查看/拖出)\n")
         sys.stdout.write(f"{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
         sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
     else:
