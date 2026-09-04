@@ -6,7 +6,7 @@
     "rpm": 0
   },
   "llamacpp": {
-    "name": "llamacpp 测试机",
+    "name": "llamacpp",
     "enabled": true,
     "quota_cny": 0,
     "rpm": 0

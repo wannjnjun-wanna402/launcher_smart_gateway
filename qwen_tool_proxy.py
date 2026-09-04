@@ -366,7 +366,7 @@ class KeyManager:
     def _load(self):
         default_keys = {
             "admin": {"name": "Admin 主控机", "enabled": True, "quota_cny": 0, "rpm": 0},
-            "llamacpp": {"name": "llamacpp 测试机", "enabled": True, "quota_cny": 0, "rpm": 0},
+            "llamacpp": {"name": "Llamacpp", "enabled": True, "quota_cny": 0, "rpm": 0},
             "v100-32G": {"name": "v100-32G 工作机", "enabled": True, "quota_cny": 0, "rpm": 0}
         }
         if os.path.exists(self.filepath):
@@ -418,7 +418,7 @@ class KeyManager:
                 key_name = "v100-32G 工作机"
             elif "llama" in token_clean.lower():
                 key_id = "llamacpp"
-                key_name = "llamacpp 测试机"
+                key_name = "Llamacpp"
             elif "admin" in token_clean.lower() or not token_clean:
                 key_id = "admin"
                 key_name = "Admin 主控机"
@@ -884,14 +884,35 @@ class ConcurrencyQueue:
                     except Exception:
                         pass
                     
-                    tag = ""
-                    if is_multimodal:
-                        tag = " [原生多模态]"
-                    elif len(slots_data) >= 4:
-                        tag = " [4并发流水线]"
-                    elif len(slots_data) == 2:
-                        tag = " [双槽MTP]"
-                    display_model_name = f"{model_alias}{tag}" if tag else model_alias
+                    # 🌟 动态模型名称识别（优先读取 active_backend.json 宣告名称）
+                    active_backend_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
+                    if os.path.exists(active_backend_file):
+                        try:
+                            with open(active_backend_file, "r", encoding="utf-8") as abf:
+                                ab_data = json.load(abf)
+                                if ab_data.get("model_name"):
+                                    model_alias = ab_data["model_name"]
+                        except Exception:
+                            pass
+
+                    # 动态格式化显示名：若已有明确方括号标签直接使用，否则根据特性轻量呈现
+                    if "[" in model_alias and "]" in model_alias:
+                        display_model_name = model_alias
+                    else:
+                        if "27B-A" in model_alias or "27B-Abliterated" in model_alias:
+                            if len(slots_data) >= 4:
+                                display_model_name = "Qwen3.8-27B-A [全能底座]"
+                            else:
+                                display_model_name = "Qwen3.8-27B-A [双槽MTP]"
+                        else:
+                            tag = ""
+                            if is_multimodal:
+                                tag = " [原生多模态]"
+                            elif len(slots_data) >= 4:
+                                tag = " [4并发流水线]"
+                            elif len(slots_data) == 2:
+                                tag = " [双槽MTP]"
+                            display_model_name = f"{model_alias}{tag}" if tag else model_alias
 
                     with self.lock:
                         self.current_model_alias = display_model_name
@@ -957,14 +978,17 @@ class ConcurrencyQueue:
                 return self.cached_status
 
         # 3. 确实未启动或已关闭
-        b_state = getattr(backend_manager, "current_state", "")
-        is_vm = (b_state == backend_manager.STATE_VISION_27B)
-        if is_vm:
-            offline_model = "Qwen3.8-27B-A [原生多模态]"
-        elif b_state == backend_manager.STATE_PIPELINE_4SLOT:
-            offline_model = "Qwen3.8-27B-A [4并发流水线]"
-        else:
-            offline_model = "Qwen3.8-27B-A [双槽MTP]"
+        active_backend_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
+        offline_model = ""
+        if os.path.exists(active_backend_file):
+            try:
+                with open(active_backend_file, "r", encoding="utf-8") as abf:
+                    offline_model = json.load(abf).get("model_name", "")
+            except Exception:
+                pass
+        if not offline_model:
+            with self.lock:
+                offline_model = self.current_model_alias if self.current_model_alias and self.current_model_alias != "待探测" else "Llamacpp 推理引擎 (未启动)"
 
         sidecar_online = False
         sidecar_model = ""
@@ -1071,7 +1095,7 @@ class BillingTracker:
             "by_model": {},
             "by_key": {
                 "admin": {"name": "Admin 主控机", "requests": 0, "total_tokens": 0, "cost_cny": 0.0},
-                "llamacpp": {"name": "llamacpp 测试机", "requests": 0, "total_tokens": 0, "cost_cny": 0.0},
+                "llamacpp": {"name": "Llamacpp", "requests": 0, "total_tokens": 0, "cost_cny": 0.0},
                 "v100-32G": {"name": "v100-32G 工作机", "requests": 0, "total_tokens": 0, "cost_cny": 0.0}
             },
             "hot_swaps": {
@@ -2968,7 +2992,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </tr>
         <tr>
           <td><strong style="color: var(--accent-purple);">llamacpp</strong></td>
-          <td>llamacpp 测试机</td>
+          <td>Llamacpp</td>
           <td id="key-llama-reqs">0 次</td>
           <td id="key-llama-tokens">0</td>
           <td id="key-llama-cost" style="color: var(--accent-green);">¥0.0000</td>
@@ -3601,12 +3625,20 @@ async function updateStats() {
         let modelBadge = '<span class="badge-text">⚡ 纯文本基准</span>';
         if (isVision) {
           modelBadge = '<span class="badge-vision">👁️ 原生多模态</span>';
-        } else if (r.model.includes('双槽MTP') || r.model.includes('MTP')) {
-          modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">👑 双槽MTP</span>';
-        } else if (r.model.includes('4并发') || r.model.includes('流水线')) {
+        } else if (r.model && r.model.includes('全能底座')) {
+          modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">👑 全能底座</span>';
+        } else if (r.model && (r.model.includes('双槽MTP') || r.model.includes('MTP'))) {
+          modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">⚡ 双槽MTP</span>';
+        } else if (r.model && (r.model.includes('4并发') || r.model.includes('流水线'))) {
           modelBadge = '<span class="badge-text" style="background:rgba(251,146,60,0.18);color:#fb923c;border:1px solid rgba(251,146,60,0.4);">🚀 4并发流水线</span>';
+        } else if (r.model && r.model.includes('[')) {
+          const mTag = (r.model.match(/\\[(.*?)\\]/) || [])[1] || '在线';
+          modelBadge = `<span class="badge-text" style="background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.4);">${mTag}</span>`;
         }
-        const keyColor = r.key === 'admin' ? 'var(--accent)' : (r.key === 'llamacpp' ? 'var(--accent-purple)' : 'var(--accent-orange)');
+        const isLlama = (r.key && r.key.toLowerCase().includes('llama')) || (r.key_name && r.key_name.toLowerCase().includes('llama'));
+        const keyColor = r.key === 'admin' ? 'var(--accent)' : (isLlama ? 'var(--accent-purple)' : 'var(--accent-orange)');
+        const rawKey = r.key_name || r.key || '设备';
+        const dispKey = rawKey.toLowerCase() === 'llamacpp' ? 'Llamacpp' : rawKey;
         const imgDisplay = (r.image_count && r.image_count > 0) ? `<strong style="color:var(--accent-purple);">${r.image_count} 张图</strong>` : (isVision ? '<span style="color:var(--accent-purple);">1 张图</span>' : '<span style="color:var(--text-muted);">-</span>');
         
         // 判定当前行模型是否正在槽位中实时计算
@@ -3625,7 +3657,7 @@ async function updateStats() {
         return `
           <tr ${activeRowStyle}>
             <td style="color: var(--text-muted);">${timeDisplay}</td>
-            <td><strong style="color: ${keyColor};">${r.key_name || r.key}</strong></td>
+            <td><strong style="color: ${keyColor};">${dispKey}</strong></td>
             <td><strong style="color: #fff;">${r.model}</strong> ${modelBadge}</td>
             <td>${(r.prompt_tokens || 0).toLocaleString()} <span style="color: var(--accent-green); font-size: 11px;">(命中: ${(r.prompt_tokens_cached || 0).toLocaleString()})</span></td>
             <td>${outDisplay}</td>
@@ -4751,11 +4783,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
 
                 if prompt_tokens_recorded > 0 or completion_tokens_recorded > 0:
                     current_active_alias = getattr(concurrency_queue, "current_model_alias", "") or actual_model
-                    disp_name = locals().get("dispatch_state_name")
-                    recorded_model_name = disp_name if disp_name else current_active_alias
-                    if disp_name and ("27B" in current_active_alias or "Qwen" in current_active_alias):
-                        with concurrency_queue.lock:
-                            concurrency_queue.current_model_alias = disp_name
+                    # 动态真实记录当前运行的主模型，不使用单次派发状态覆盖整体模型身份
+                    recorded_model_name = current_active_alias
 
                     p_hashes = locals().get("pending_vision_hashes")
                     img_count = len(p_hashes) if p_hashes else (1 if has_image_req else 0)

@@ -527,6 +527,12 @@ def cleanup_all():
     kill_port(8083)
     kill_port(8085)
     kill_all_llama()
+    try:
+        active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
+        if os.path.exists(active_state_file):
+            os.remove(active_state_file)
+    except Exception:
+        pass
 
 
 def cleanup_and_exit(signum=None, frame=None):
@@ -623,7 +629,7 @@ def build_models_menu():
                 "--presence-penalty", "0.0",
                 "--jinja",
                 "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-A-Q6_K"
+                "--alias", "Qwen3.8-27B-A [全能底座],Qwen3.8-27B-A-Q6_K,default"
             ]
         },
         {
@@ -676,7 +682,7 @@ def build_models_menu():
                 "--presence-penalty", "0.0",
                 "--jinja",
                 "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-A-Q6_K"
+                "--alias", "Qwen3.8-27B-A [双槽MTP],Qwen3.8-27B-A-Q6_K,default"
             ]
         },
         {
@@ -725,7 +731,7 @@ def build_models_menu():
                 "--presence-penalty", "0.0",
                 "--jinja",
                 "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-A-Q6_K"
+                "--alias", "Qwen3.8-27B-A [4并发],Qwen3.8-27B-A-Q6_K,default"
             ]
         },
         {
@@ -773,7 +779,7 @@ def build_models_menu():
                 "--repeat-penalty", "1.05",
                 "--jinja",
                 "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-N-H"
+                "--alias", "Qwen3.8-27B [NVFP4极致],Qwen3.8-27B-N-H,default"
             ]
         },
         {
@@ -821,7 +827,7 @@ def build_models_menu():
                 "--repeat-penalty", "1.05",
                 "--jinja",
                 "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-MID-HIGH"
+                "--alias", "Qwen3.8-27B [NVFP4超长],Qwen3.8-27B-MID-HIGH,default"
             ]
         },
         {
@@ -863,7 +869,7 @@ def build_models_menu():
                 "--repeat-penalty", "1.05",
                 "--jinja",
                 "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Ornith-1.5-35B"
+                "--alias", "Ornith-1.5-35B [MoE大脑],Ornith-1.5-35B,default"
             ]
         },
         {
@@ -898,7 +904,7 @@ def build_models_menu():
                 "--min-p", "0.05",
                 "--repeat-penalty", "1.05",
                 "--jinja",
-                "--alias", "Qwen3-VL-8B"
+                "--alias", "Qwen3-VL-8B [视觉独立版],Qwen3-VL-8B,default"
             ]
         },
         {
@@ -931,7 +937,7 @@ def build_models_menu():
                 "--min-p", "0.05",
                 "--repeat-penalty", "1.0",
                 "--jinja",
-                "--alias", "Gemma-4-E4B"
+                "--alias", "Gemma-4-E4B [轻量多模],Gemma-4-E4B,default"
             ]
         },
         {
@@ -962,7 +968,7 @@ def build_models_menu():
                 "--min-p", "0.05",
                 "--repeat-penalty", "1.0",
                 "--jinja",
-                "--alias", "Qwen3.5-4B"
+                "--alias", "Qwen3.5-4B [纯文本极速],Qwen3.5-4B,default"
             ]
         }
     ]
@@ -1092,6 +1098,22 @@ def main():
     # 5. 启动 8083 主脑引擎
     today = get_today_str()
     main_log_file = os.path.join(LOGS_DIR, f"8083_llama_{today}.log")
+
+    # 🌟 动态持久化当前主脑模型状态，供智能协同网关毫秒级直接同步
+    try:
+        active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
+        with open(active_state_file, "w", encoding="utf-8") as asf:
+            json.dump({
+                "model_name": selected["name"],
+                "alias": selected.get("alias", ""),
+                "key": selected["key"],
+                "quant": selected.get("quant", ""),
+                "ctx": selected.get("ctx", ""),
+                "is_text": selected.get("is_text", False),
+                "updated_at": time.time()
+            }, asf, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
     
     server_cmd = [LLAMA_SERVER] + selected["args"] + [
         "--port", "8083",
