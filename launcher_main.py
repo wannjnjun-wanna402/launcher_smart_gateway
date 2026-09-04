@@ -1193,7 +1193,17 @@ def main():
     except Exception:
         pass
     
-    server_cmd = [LLAMA_SERVER] + selected["args"] + [
+    # 🌟 PR #19841 前沿适配：检测当前 llama-server 是否支持原生语义截断 (--chat-truncate)
+    extra_truncate_args = []
+    try:
+        help_probe = subprocess.run([LLAMA_SERVER, "--help"], capture_output=True, text=True, timeout=5).stdout
+        if "--chat-truncate" in help_probe:
+            extra_truncate_args = ["--chat-truncate", "--chat-truncate-max-keep", "0.6"]
+            sys.stdout.write(f"{C_CYAN}  ⚡ [PR #19841] 检测到 llama-server 原生支持 --chat-truncate，已激活底层硬件级语义截断防爆！{C_RESET}\n")
+    except Exception:
+        pass
+
+    server_cmd = [LLAMA_SERVER] + selected["args"] + extra_truncate_args + [
         "--port", "8083",
         "--api-key", "llamacpp",
         "--log-file", main_log_file
