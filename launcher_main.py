@@ -21,6 +21,7 @@ import atexit
 import ctypes
 import unicodedata
 import re
+import threading
 from ctypes import wintypes
 
 # 强制 UTF-8 标准输出
@@ -182,16 +183,20 @@ class MiracleTrayManager:
                 f"奇迹AI启动器: {self.model_name}",
                 menu=self._build_menu()
             )
-            def on_setup(i):
-                i.visible = True
+            def _on_tray_ready(icon):
+                icon.visible = True
                 try:
-                    i.notify("奇迹AI服务已常驻托盘，右键图标可呼出快捷控制菜单！\n(若任务栏未见，请查看右下角 ^ 折叠抽屉)", "🤖 奇迹AI高能底座")
+                    icon.notify("奇迹AI服务已常驻托盘，右键图标可呼出快捷控制菜单！\n(若任务栏未见，请查看右下角 ^ 折叠抽屉)", "🤖 奇迹AI高能底座")
                 except Exception:
                     pass
-            self.thread = threading.Thread(target=self.icon.run, args=(on_setup,), daemon=True)
-            self.thread.start()
-        except Exception:
-            pass
+
+            # pystray 原生 run_detached 派生 Windows 专用后台消息泵，通过 setup 回调确保 HWND 完全就绪后再显示
+            self.icon.run_detached(setup=_on_tray_ready)
+            sys.stdout.write(f"{C_GREEN}  🔔 任务栏通知区域状态托盘已激活 (位于右下角系统托盘，若未见请看右下角 ^ 抽屉){C_RESET}\n")
+            sys.stdout.flush()
+        except Exception as e:
+            sys.stdout.write(f"{C_YELLOW}  ⚠️ 任务栏托盘初始化跳过 ({e})，不影响主控制台运行{C_RESET}\n")
+            sys.stdout.flush()
 
     def update_status(self, model_name, status_text="运行中", is_running=True, log_file=None):
         self.model_name = model_name

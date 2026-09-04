@@ -104,15 +104,15 @@ sys.stdout = _proxy_daily_logger
 sys.stderr = _proxy_daily_logger
 
 # ============================================================
-#  DeepSeek-V4-Flash-0731 / Qwen3.8-27B-A 原生多模态 虚拟定价标准
+#  本地私有原生核算标准 (Tesla V100 32GB · 8081/8083 日志原生对账)
 # ============================================================
 PRICING = {
-    "standard": "DeepSeek-V4-Flash-0731 (纯文本) & Qwen3.8-27B-A [原生多模态] (空闲时段)",
-    "text_model": "DeepSeek-V4-Flash-0731",
+    "standard": "本地私有原生核算 (8081/8083 当日日志对账 · 140K防爆安全舱)",
+    "text_model": "Qwen3.8-27B-A [全能底座]",
     "vision_model": "Qwen3.8-27B-A [原生多模态]",
-    "input_cache_hit_per_m": 0.05,   # 0.05元 / 100万 tokens (¥0.00000005/token)
-    "input_cache_miss_per_m": 1.50,  # 1.50元 / 100万 tokens (¥0.0000015/token)
-    "output_per_m": 4.50,            # 4.50元 / 100万 tokens (¥0.0000045/token)
+    "input_cache_hit_per_m": 0.05,
+    "input_cache_miss_per_m": 1.50,
+    "output_per_m": 4.50,
 }
 
 STATS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "token_billing_stats.json")
@@ -987,15 +987,20 @@ class ConcurrencyQueue:
         # 3. 确实未启动或已关闭
         active_backend_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
         offline_model = ""
+        is_vm = False
         if os.path.exists(active_backend_file):
             try:
                 with open(active_backend_file, "r", encoding="utf-8") as abf:
-                    offline_model = json.load(abf).get("model_name", "")
+                    ab_data = json.load(abf)
+                    offline_model = ab_data.get("model_name", "")
+                    is_vm = not ab_data.get("is_text", True)
             except Exception:
                 pass
         if not offline_model:
             with self.lock:
                 offline_model = self.current_model_alias if self.current_model_alias and self.current_model_alias != "待探测" else "Llamacpp 推理引擎 (未启动)"
+                if "全能底座" in offline_model or "多模态" in offline_model or "VL" in offline_model:
+                    is_vm = True
 
         sidecar_online = False
         sidecar_model = ""
@@ -1037,6 +1042,29 @@ class ConcurrencyQueue:
 
 concurrency_queue = ConcurrencyQueue(max_slots=4)
 
+def audit_today_log_guard_saved(today_str=None):
+    """
+    网关当日服务日志原生核算：
+    从 8081_proxy_YYYYMMDD.log 中精准累加【CONTEXT-GUARD】防爆机制安全修剪保护的 Token 总量
+    """
+    if not today_str:
+        today_str = datetime.date.today().strftime("%Y%m%d")
+    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", f"8081_proxy_{today_str}.log")
+    total_saved = 0
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if "[CONTEXT-GUARD]" in line and "安全节省" in line:
+                        m = re.search(r"安全节省\s*([\d,]+)\s*Token", line)
+                        if m:
+                            val = int(m.group(1).replace(",", ""))
+                            total_saved += val
+        except Exception:
+            pass
+    return total_saved
+
+
 # ============================================================
 #  全局线程安全 Token 虚拟计费统计中心 (按 DeepSeek-V4 空闲费率 + 每日明细历史)
 # ============================================================
@@ -1065,6 +1093,7 @@ class BillingTracker:
                 "cost_cny": 0.0,
                 "vision_images": 0,
                 "vision_duration_s": 0.0,
+                "guard_saved_tokens": 0,
             },
             "today": {
                 "date": today_str,
@@ -1077,6 +1106,7 @@ class BillingTracker:
                 "cost_cny": 0.0,
                 "vision_images": 0,
                 "vision_duration_s": 0.0,
+                "guard_saved_tokens": 0,
                 "total_in_seconds": 0.0,
                 "total_out_seconds": 0.0,
                 "total_work_seconds": 0.0,
@@ -1128,6 +1158,7 @@ class BillingTracker:
                     loaded.setdefault("total", default_data["total"])
                     loaded["total"].setdefault("vision_images", 0)
                     loaded["total"].setdefault("vision_duration_s", 0.0)
+                    loaded["total"].setdefault("guard_saved_tokens", 0)
 
                     loaded.setdefault("hot_swaps", default_data["hot_swaps"])
                     loaded["hot_swaps"].setdefault("history", [])
@@ -1160,6 +1191,12 @@ class BillingTracker:
                     today_obj.setdefault("total_in_seconds", 0.0)
                     today_obj.setdefault("total_out_seconds", 0.0)
                     today_obj.setdefault("total_work_seconds", 0.0)
+                    today_obj.setdefault("guard_saved_tokens", 0)
+                    if today_obj.get("guard_saved_tokens", 0) == 0:
+                        audited = audit_today_log_guard_saved()
+                        if audited > 0:
+                            today_obj["guard_saved_tokens"] = audited
+                            loaded["total"]["guard_saved_tokens"] = loaded["total"].get("guard_saved_tokens", 0) + audited
                     today_dm = today_obj.setdefault("by_device_model", {})
                     if not today_dm:
                         today_str = today_obj.get("date", datetime.date.today().isoformat())
@@ -1245,6 +1282,7 @@ class BillingTracker:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "cost_cny": 0.0,
+                "guard_saved_tokens": 0,
                 "vision_images": 0,
                 "vision_duration_s": 0.0,
                 "total_in_seconds": 0.0,
@@ -1335,7 +1373,7 @@ class BillingTracker:
             except Exception:
                 pass
 
-    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0, reasoning_effort=None):
+    def record(self, model_name, prompt_tokens, cached_tokens, completion_tokens, duration_s=0.0, key_name="admin", is_vision=False, image_count=0, reasoning_effort=None, guard_saved_tokens=0):
         with self.lock:
             self._check_day_rollover()
             cached = max(0, min(cached_tokens, prompt_tokens))
@@ -1361,6 +1399,7 @@ class BillingTracker:
             t["completion_tokens"] += completion_tokens
             t["total_tokens"] += total_tokens
             t["cost_cny"] = round(t["cost_cny"] + cost, 6)
+            t["guard_saved_tokens"] = t.get("guard_saved_tokens", 0) + guard_saved_tokens
             if is_vision or img_delta > 0:
                 t["vision_images"] = t.get("vision_images", 0) + img_delta
                 t["vision_duration_s"] = round(t.get("vision_duration_s", 0.0) + duration_s, 2)
@@ -1374,6 +1413,7 @@ class BillingTracker:
             d["completion_tokens"] += completion_tokens
             d["total_tokens"] += total_tokens
             d["cost_cny"] = round(d["cost_cny"] + cost, 6)
+            d["guard_saved_tokens"] = d.get("guard_saved_tokens", 0) + guard_saved_tokens
             if is_vision or img_delta > 0:
                 d["vision_images"] = d.get("vision_images", 0) + img_delta
                 d["vision_duration_s"] = round(d.get("vision_duration_s", 0.0) + duration_s, 2)
@@ -1383,7 +1423,7 @@ class BillingTracker:
             m_stat = bm.setdefault(model_name, {
                 "requests": 0, "prompt_tokens": 0, "prompt_tokens_cached": 0,
                 "completion_tokens": 0, "total_tokens": 0, "cost_cny": 0.0,
-                "duration_s": 0.0, "image_count": 0
+                "duration_s": 0.0, "image_count": 0, "guard_saved_tokens": 0
             })
             m_stat["requests"] += 1
             m_stat["prompt_tokens"] += prompt_tokens
@@ -1392,6 +1432,7 @@ class BillingTracker:
             m_stat["total_tokens"] += total_tokens
             m_stat["cost_cny"] = round(m_stat["cost_cny"] + cost, 6)
             m_stat["duration_s"] = round(m_stat.get("duration_s", 0.0) + duration_s, 2)
+            m_stat["guard_saved_tokens"] = m_stat.get("guard_saved_tokens", 0) + guard_saved_tokens
             if is_vision or img_delta > 0:
                 m_stat["image_count"] = m_stat.get("image_count", 0) + img_delta
 
@@ -1399,11 +1440,12 @@ class BillingTracker:
             bk = self.data.setdefault("by_key", {})
             k_stat = bk.setdefault(key_name, {
                 "name": key_name,
-                "requests": 0, "total_tokens": 0, "cost_cny": 0.0
+                "requests": 0, "total_tokens": 0, "guard_saved_tokens": 0, "cost_cny": 0.0
             })
             k_stat["requests"] += 1
             k_stat["total_tokens"] += total_tokens
-            k_stat["cost_cny"] = round(k_stat["cost_cny"] + cost, 6)
+            k_stat["guard_saved_tokens"] = k_stat.get("guard_saved_tokens", 0) + guard_saved_tokens
+            k_stat["cost_cny"] = round(k_stat.get("cost_cny", 0.0) + cost, 6)
 
             # 5. 今日设备-模型分项累计 (by_device_model: 一直累加)
             today_dm = d.setdefault("by_device_model", {})
@@ -1424,6 +1466,7 @@ class BillingTracker:
                 "total_tokens": 0,
                 "duration_s": 0.0,
                 "image_count": 0,
+                "guard_saved_tokens": 0,
                 "cost_cny": 0.0
             })
             dm_stat["last_time"] = now_str
@@ -1434,6 +1477,7 @@ class BillingTracker:
             dm_stat["completion_tokens"] += completion_tokens
             dm_stat["total_tokens"] += total_tokens
             dm_stat["duration_s"] = round(dm_stat["duration_s"] + duration_s, 2)
+            dm_stat["guard_saved_tokens"] = dm_stat.get("guard_saved_tokens", 0) + guard_saved_tokens
             if is_vision or img_delta > 0:
                 dm_stat["image_count"] = dm_stat.get("image_count", 0) + img_delta
             dm_stat["cost_cny"] = round(dm_stat["cost_cny"] + cost, 6)
@@ -1444,7 +1488,7 @@ class BillingTracker:
             day_entry = dh.setdefault(today_str, {
                 "requests": 0, "prompt_tokens": 0, "prompt_tokens_cached": 0,
                 "prompt_tokens_miss": 0, "completion_tokens": 0, "total_tokens": 0,
-                "cost_cny": 0.0, "by_key": {}
+                "guard_saved_tokens": 0, "cost_cny": 0.0, "by_key": {}
             })
             day_entry["requests"] += 1
             day_entry["prompt_tokens"] += prompt_tokens
@@ -1452,6 +1496,7 @@ class BillingTracker:
             day_entry["prompt_tokens_miss"] += miss
             day_entry["completion_tokens"] += completion_tokens
             day_entry["total_tokens"] += total_tokens
+            day_entry["guard_saved_tokens"] = day_entry.get("guard_saved_tokens", 0) + guard_saved_tokens
             day_entry["cost_cny"] = round(day_entry["cost_cny"] + cost, 6)
 
             # 每日内设备分账
@@ -1460,7 +1505,7 @@ class BillingTracker:
                 "name": key_name,
                 "requests": 0, "prompt_tokens": 0, "prompt_tokens_cached": 0,
                 "prompt_tokens_miss": 0, "completion_tokens": 0, "total_tokens": 0,
-                "cost_cny": 0.0
+                "guard_saved_tokens": 0, "cost_cny": 0.0
             })
             day_k_stat["requests"] += 1
             day_k_stat["prompt_tokens"] += prompt_tokens
@@ -1468,6 +1513,7 @@ class BillingTracker:
             day_k_stat["prompt_tokens_miss"] += miss
             day_k_stat["completion_tokens"] += completion_tokens
             day_k_stat["total_tokens"] += total_tokens
+            day_k_stat["guard_saved_tokens"] = day_k_stat.get("guard_saved_tokens", 0) + guard_saved_tokens
             day_k_stat["cost_cny"] = round(day_k_stat["cost_cny"] + cost, 6)
 
             # 7. 最近 50 条流水
@@ -1479,6 +1525,7 @@ class BillingTracker:
                 "model": model_name,
                 "prompt_tokens": prompt_tokens,
                 "cached_tokens": cached,
+                "guard_saved_tokens": guard_saved_tokens,
                 "completion_tokens": completion_tokens,
                 "total_tokens": total_tokens,
                 "cost_cny": round(cost, 6),
@@ -2535,17 +2582,17 @@ def enforce_context_safety_guard(payload, max_safe_tokens=140000):
       2. 逐步修剪中间历史，直到总预估 Token 稳定收敛在 125,000 安全水位以内！
     """
     if not isinstance(payload, dict):
-        return payload, False
+        return payload, False, 0
     
     messages = payload.get("messages", [])
     if not isinstance(messages, list) or len(messages) <= 6:
-        return payload, False
+        return payload, False, 0
 
     total_str = json.dumps(messages, ensure_ascii=False)
     cur_tokens = estimate_tokens(total_str)
     
     if cur_tokens <= max_safe_tokens:
-        return payload, False
+        return payload, False, 0
 
     sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD] ⚠️ 检测到请求上下文高达 {cur_tokens:,} Token (接近/超出140K安全水位)，启动智能防爆平滑修剪...\n")
     sys.stdout.flush()
@@ -2595,10 +2642,10 @@ def enforce_context_safety_guard(payload, max_safe_tokens=140000):
 
     payload_copy = dict(payload)
     payload_copy["messages"] = assembled
-    saved_tokens = cur_tokens - new_tokens
+    saved_tokens = max(0, cur_tokens - new_tokens)
     sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD] ✅ 智能防爆修剪完成：由 {cur_tokens:,} 降至 {new_tokens:,} Token (安全节省 {saved_tokens:,} Token)，100% 免疫 160K 溢出！\n")
     sys.stdout.flush()
-    return payload_copy, True
+    return payload_copy, True, saved_tokens
 
 # ============================================================
 #  可视化 Web 看板 HTML 模板 3.0 (含实时 TPS、GPU 探针、槽位与月度热力图)
@@ -2819,20 +2866,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <div class="pricing-banner">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>🏷️ <strong>当前计价标准</strong>：纯文本 <code>DeepSeek-V4-Flash-0731</code> & 原生多模态 <code>Qwen3.8-27B-A [原生多模态]</code> | 空闲时段</div>
-      <div>Token计费率: 缓存命中 <strong style="color:var(--accent-green);">¥0.05/M</strong> | 未命中 <strong style="color:var(--accent-orange);">¥1.50/M</strong> | 输出生成 <strong style="color:var(--accent-purple);">¥4.50/M</strong></div>
+      <div>🏷️ <strong>本地智能网关算力核算</strong>：基于当日服务日志原生对账 (8081/8083) · <code>Tesla V100 32GB</code> 显存独占加速</div>
+      <div>🛡️ <strong>智能防爆上下文安全舱</strong>：阈值 <code>140K</code> · 历史超长大文件自动平滑折叠 · 100% 免疫 160K OOM 溢出</div>
     </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>👁️ <strong>Qwen3.8-27B-A [原生多模态] 专项核算</strong>：今日读图 <strong id="banner-vision-today-imgs" style="color:var(--accent-purple);font-size:14px;">0</strong> 张 (总耗时 <span id="banner-vision-today-time" style="color:#38bdf8;font-weight:600;">0.0s</span>) · 历史累计 <strong id="banner-vision-total-imgs" style="color:var(--accent);font-size:14px;">0</strong> 张图</div>
+      <div>👁️ <strong>Qwen3.8-27B-A [全能底座] 视觉直通</strong>：今日识图 <strong id="banner-vision-today-imgs" style="color:var(--accent-purple);font-size:14px;">0</strong> 张 (总耗时 <span id="banner-vision-today-time" style="color:#38bdf8;font-weight:600;">0.0s</span>) · 历史累计 <strong id="banner-vision-total-imgs" style="color:var(--accent);font-size:14px;">0</strong> 张图</div>
       <div>⚡ <strong>图像指纹高速缓存</strong>：已收录 <strong id="banner-vision-cache-count" style="color:var(--accent-green);font-size:14px;">0</strong> 个 (多轮追问 0.001s 瞬时复用)</div>
     </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>🖥️ <strong>引擎运行环境</strong>：Tesla V100 32GB 显卡 · 由 <code>launcher_main.ps1</code> 启动器锁定托管</div>
+      <div>🖥️ <strong>引擎运行环境</strong>：Tesla V100 32GB 显卡 · 由 <code>launcher_main.py</code> 启动器锁定托管</div>
       <div>🔒 <strong>进程与显存常驻</strong>：零自动重载 · 零中断 · 144K 前缀 KV Cache 100% 持续复用</div>
     </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>🎯 <strong>ccswitch 客户端实时对账</strong>：今日实际交付总吞吐 <strong id="banner-sync-tokens" style="color:#38bdf8;font-size:13.5px;">0</strong> (约 <span id="banner-sync-m" style="color:#38bdf8;font-weight:700;">0.0万</span>) · 真实调用 <strong id="banner-sync-reqs" style="color:var(--accent);font-size:13.5px;">0</strong></div>
-      <div>⚡ <strong>多维吞吐流速</strong>：新增输入 <strong id="banner-sync-in" style="color:var(--accent-green);font-size:13px;">0</strong> · Output 生成 <strong id="banner-sync-out" style="color:var(--accent-purple);font-size:13px;">0</strong> · 命中 <strong id="banner-sync-cached" style="color:var(--accent-orange);font-size:13px;">0</strong> (命中率 <span id="banner-sync-hitrate" style="color:var(--accent-green);font-weight:600;">0.0%</span>)</div>
+      <div>🎯 <strong>智能协同网关真实交付核算</strong>：今日实际交付总吞吐 <strong id="banner-sync-tokens" style="color:#38bdf8;font-size:13.5px;">0</strong> (约 <span id="banner-sync-m" style="color:#38bdf8;font-weight:700;">0.0万</span>) · 真实调用 <strong id="banner-sync-reqs" style="color:var(--accent);font-size:13.5px;">0</strong> · 🛡️ 防爆修剪守护 <strong id="banner-guard-saved" style="color:#f59e0b;font-size:13.5px;">0</strong> (<span id="banner-guard-saved-m" style="color:#f59e0b;font-weight:700;">0.0万</span>)</div>
+      <div>⚡ <strong>多维上下文流速</strong>：真实Prefill <strong id="banner-sync-in" style="color:var(--accent-green);font-size:13px;">0</strong> · Output 生成 <strong id="banner-sync-out" style="color:var(--accent-purple);font-size:13px;">0</strong> · KV缓存命中 <strong id="banner-sync-cached" style="color:var(--accent-orange);font-size:13px;">0</strong> (命中率 <span id="banner-sync-hitrate" style="color:var(--accent-green);font-weight:600;">0.0%</span>)</div>
     </div>
   </div>
 
@@ -2840,7 +2887,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="table-card" id="slots-monitor-card" style="display: none;">
     <div class="table-title">
       <div>
-        <span>⚡ 当前加载模型：<strong id="active-model-title" style="color: var(--accent);">Qwen3.8-27B-A-Q6_K</strong></span>
+        <span>⚡ 当前加载模型：<strong id="active-model-title" style="color: var(--accent);">Qwen3.8-27B-A [全能底座]</strong></span>
         <span style="font-size: 12px; color: var(--text-muted); margin-left: 10px;" id="active-ctx-desc">(4 并发 · 144K 共享统一 KV 资源池)</span>
       </div>
       <span style="font-size: 12px; color: var(--accent-green);" id="slots-occupancy-desc">0/4 槽位占用 · 全部待命中</span>
@@ -2851,15 +2898,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="grid">
-    <div class="card">
-      <div class="card-label">今日总算力价值 (DeepSeek-V4)</div>
-      <div class="card-value" id="today-cost" style="color: var(--accent-green);">¥0.0000</div>
-      <div class="card-sub" id="today-reqs">今日共 0 次调用</div>
+    <div class="card" style="border-color: rgba(245, 158, 11, 0.45); background: radial-gradient(circle at top right, rgba(245, 158, 11, 0.08), rgba(0,0,0,0.3));">
+      <div class="card-label" style="color: #f59e0b;">🛡️ 今日防爆上下文守护节省</div>
+      <div class="card-value" id="today-guard-saved-card" style="color: #f59e0b; font-size: 20px;">0 万</div>
+      <div class="card-sub" id="today-guard-sub">自动折叠超长大文件 · 100% 免疫 160K 溢出</div>
     </div>
     <div class="card">
-      <div class="card-label">历史累计算力总价值</div>
-      <div class="card-value" id="total-cost" style="color: var(--accent);">¥0.0000</div>
-      <div class="card-sub" id="total-reqs">累计 0 次对话</div>
+      <div class="card-label">🎯 本地算力总交付 (历史累计)</div>
+      <div class="card-value" id="total-tokens-display" style="color: var(--accent); font-size: 20px;">0 万</div>
+      <div class="card-sub" id="total-reqs">累计 0 次对话 · 本地私有自给自足</div>
     </div>
     <div class="card" style="border-color: rgba(192, 132, 252, 0.4); background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.08), rgba(0,0,0,0.3));">
       <div class="card-label" style="color: #c084fc;">👁️ 原生多模态读图与耗时统计</div>
@@ -2877,12 +2924,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-sub" id="peak-tps">今日纯工作耗时: 0.0s (剔除空闲)</div>
     </div>
     <div class="card">
-      <div class="card-label">今日 Token 总吞吐</div>
+      <div class="card-label">今日 Token 总吞吐 (真实交付)</div>
       <div class="card-value" id="today-tokens" style="color: var(--accent-purple);">0</div>
-      <div class="card-sub" id="today-token-detail">输入: 0 | 输出: 0</div>
+      <div class="card-sub" id="today-token-detail">实际输入: 0 | 输出: 0</div>
     </div>
     <div class="card">
-      <div class="card-label">Prompt 缓存命中率 (当日)</div>
+      <div class="card-label">KV Cache 缓存命中率 (当日)</div>
       <div class="card-value" id="cache-hit-rate" style="color: var(--accent-orange);">0.0%</div>
       <div class="card-sub" id="cache-hit-detail">今日命中: 0 tokens</div>
     </div>
@@ -2920,16 +2967,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <tr>
           <th>最后活跃时间</th>
           <th>调用设备 (Key)</th>
-          <th>请求模型 (文本 / 原生多模态)</th>
-          <th>Prompt (未命中 / 命中)</th>
-          <th>Output</th>
+          <th>请求模型 (全能底座 / 原生视觉)</th>
+          <th>上下文生命周期 (实际 Prefill / KV 命中)</th>
+          <th>🛡️ 防爆修剪守护</th>
+          <th>Output 生成</th>
           <th>累计耗时 (调用次数)</th>
           <th>🖼️ 识图统计</th>
-          <th>今日累计价值</th>
+          <th>交付总吞吐</th>
         </tr>
       </thead>
       <tbody id="recents-tbody">
-        <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>
+        <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">今日暂无调用记录</td></tr>
       </tbody>
     </table>
   </div>
@@ -2965,7 +3013,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; gap: 10px;">
-      <div id="month-summary-stat">本月总天数: 30天 | 活跃天数: 1天 | 本月总消耗: ¥0.0000</div>
+      <div id="month-summary-stat">本月总天数: 30天 | 活跃天数: 1天 | 真实交付: 0.0万 Token</div>
       <div style="display: flex; align-items: center; gap: 6px;">
         <span>活跃度：少</span>
         <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:#161b22; border:1px solid rgba(255,255,255,0.1);"></span>
@@ -2982,7 +3030,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="table-card">
     <div class="table-title">
       <span>🖥️ 3台电脑独立调用分账与用量排行</span>
-      <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">无上限限制 · 实时对比谁用的多</span>
+      <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">真实上下文吞吐 · 本地私有自给自足</span>
     </div>
     <table>
       <thead>
@@ -2990,9 +3038,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <th>调用 Key (设备)</th>
           <th>设备用途说明</th>
           <th>累计调用次数</th>
-          <th>Token 吞吐量</th>
-          <th>算力价值 (元)</th>
-          <th>用量占比</th>
+          <th>交付吞吐总量</th>
+          <th>🛡️ 防爆修剪守护</th>
+          <th>吞吐用量占比</th>
         </tr>
       </thead>
       <tbody id="keys-tbody">
@@ -3001,7 +3049,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <td>Admin 主控机</td>
           <td id="key-admin-reqs">0 次</td>
           <td id="key-admin-tokens">0</td>
-          <td id="key-admin-cost" style="color: var(--accent-green);">¥0.0000</td>
+          <td id="key-admin-guard" style="color: #f59e0b;">-</td>
           <td style="width: 200px;"><div class="progress-bar-bg"><div class="progress-bar-fill" id="key-admin-bar" style="width: 0%;"></div></div></td>
         </tr>
         <tr>
@@ -3009,7 +3057,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <td>Llamacpp</td>
           <td id="key-llama-reqs">0 次</td>
           <td id="key-llama-tokens">0</td>
-          <td id="key-llama-cost" style="color: var(--accent-green);">¥0.0000</td>
+          <td id="key-llama-guard" style="color: #f59e0b;">-</td>
           <td><div class="progress-bar-bg"><div class="progress-bar-fill" id="key-llama-bar" style="width: 0%; background: var(--accent-purple);"></div></div></td>
         </tr>
         <tr>
@@ -3017,7 +3065,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <td>v100-32G 工作机</td>
           <td id="key-v100-reqs">0 次</td>
           <td id="key-v100-tokens">0</td>
-          <td id="key-v100-cost" style="color: var(--accent-green);">¥0.0000</td>
+          <td id="key-v100-guard" style="color: #f59e0b;">-</td>
           <td><div class="progress-bar-bg"><div class="progress-bar-fill" id="key-v100-bar" style="width: 0%; background: var(--accent-orange);"></div></div></td>
         </tr>
       </tbody>
@@ -3123,34 +3171,34 @@ function renderCalendar() {
     const dateKey = `${currentYear}-${monthPadded}-${dayPadded}`;
     
     const dayData = dailyHistory[dateKey] || null;
-    let cost = 0, tokens = 0, reqs = 0, cached = 0, miss = 0, output = 0;
+    let tokens = 0, reqs = 0, cached = 0, miss = 0, output = 0, guardSaved = 0;
 
     if (dayData) {
       if (selectedKeyTab === 'all') {
-        cost = dayData.cost_cny || 0;
         tokens = dayData.total_tokens || 0;
         reqs = dayData.requests || 0;
         cached = dayData.prompt_tokens_cached || 0;
         miss = dayData.prompt_tokens_miss || (dayData.prompt_tokens - cached) || 0;
         output = dayData.completion_tokens || 0;
+        guardSaved = dayData.guard_saved_tokens || 0;
       } else {
         const kData = (dayData.by_key && dayData.by_key[selectedKeyTab]) ? dayData.by_key[selectedKeyTab] : null;
         if (kData) {
-          cost = kData.cost_cny || 0;
           tokens = kData.total_tokens || 0;
           reqs = kData.requests || 0;
           cached = kData.prompt_tokens_cached || 0;
           miss = kData.prompt_tokens_miss || (kData.prompt_tokens - cached) || 0;
           output = kData.completion_tokens || 0;
+          guardSaved = kData.guard_saved_tokens || 0;
         }
       }
     }
 
     if (reqs > 0) {
       activeDaysCount++;
-      monthTotalCost += cost;
       monthTotalTokens += tokens;
       monthTotalRequests += reqs;
+      monthTotalCost += guardSaved; // 借用变量累加防爆保护量
     }
 
     // 计算热力等级
@@ -3170,7 +3218,7 @@ function renderCalendar() {
     sq.innerHTML = `<div>${day}</div>` + (tokenStr ? `<div class="cal-square-tokens">${tokenStr}</div>` : '');
 
     // 鼠标悬停事件
-    sq.onmouseenter = (e) => showTooltip(e, dateKey, reqs, cached, miss, output, tokens, cost);
+    sq.onmouseenter = (e) => showTooltip(e, dateKey, reqs, cached, miss, output, tokens, guardSaved);
     sq.onmousemove = (e) => moveTooltip(e);
     sq.onmouseleave = hideTooltip;
 
@@ -3180,13 +3228,14 @@ function renderCalendar() {
   // 3. 更新月度统计汇总文字
   const activeRate = ((activeDaysCount / totalDays) * 100).toFixed(1);
   const keyLabel = selectedKeyTab === 'all' ? '全部设备汇总' : selectedKeyTab;
+  const monthGuardStr = monthTotalCost > 0 ? ` | 🛡️ 防爆守护: ${(monthTotalCost/1e4).toFixed(1)}万` : '';
   document.getElementById('month-summary-stat').innerText = 
-    `【${keyLabel}】本月活跃: ${activeDaysCount}/${totalDays}天 (${activeRate}%) | 调用: ${monthTotalRequests}次 | Token: ${monthTotalTokens.toLocaleString()} | 算力价值: ¥${monthTotalCost.toFixed(4)}`;
+    `【${keyLabel}】本月活跃: ${activeDaysCount}/${totalDays}天 (${activeRate}%) | 真实调用: ${monthTotalRequests}次 | 交付总吞吐: ${(monthTotalTokens/1e4).toFixed(1)}万 Token${monthGuardStr}`;
 }
 
 // 悬停 Tooltip 逻辑
 const tooltip = document.getElementById('custom-tooltip');
-function showTooltip(e, dateKey, reqs, cached, miss, output, tokens, cost) {
+function showTooltip(e, dateKey, reqs, cached, miss, output, tokens, guardSaved) {
   const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const d = new Date(dateKey);
   const weekday = weekdayNames[d.getDay()];
@@ -3194,13 +3243,13 @@ function showTooltip(e, dateKey, reqs, cached, miss, output, tokens, cost) {
 
   tooltip.innerHTML = `
     <div class="tt-title">📅 ${dateKey} (${weekday}) · ${keyTitle}</div>
-    <div class="tt-row"><span>🪙 当天算力价值：</span><span class="tt-val" style="color:var(--accent-green);">¥${cost.toFixed(5)}</span></div>
+    <div class="tt-row"><span>🛡️ 防爆修剪守护：</span><span class="tt-val" style="color:#f59e0b;font-weight:700;">${guardSaved > 0 ? (guardSaved/1e4).toFixed(1) + '万 (' + guardSaved.toLocaleString() + ')' : '-'}</span></div>
     <div class="tt-row"><span>🔢 调用请求次数：</span><span class="tt-val">${reqs} 次</span></div>
     <div class="tt-row"><span>⚡ Prompt 缓存命中：</span><span class="tt-val" style="color:var(--accent-green);">${cached.toLocaleString()}</span></div>
-    <div class="tt-row"><span>📥 Prompt 缓存未命：</span><span class="tt-val" style="color:var(--accent-orange);">${miss.toLocaleString()}</span></div>
+    <div class="tt-row"><span>📥 真实硬件新预填：</span><span class="tt-val" style="color:var(--accent-orange);">${miss.toLocaleString()}</span></div>
     <div class="tt-row"><span>📤 模型生成输出：</span><span class="tt-val" style="color:var(--accent-purple);">${output.toLocaleString()}</span></div>
     <div class="tt-row" style="border-top:1px solid rgba(255,255,255,0.1); margin-top:4px; padding-top:4px;">
-      <span>📊 当天吞吐总计：</span><span class="tt-val">${tokens.toLocaleString()} tokens</span>
+      <span>📊 当天吞吐总计：</span><span class="tt-val" style="color:#38bdf8;font-weight:700;">${tokens.toLocaleString()} tokens</span>
     </div>
   `;
   tooltip.style.display = 'block';
@@ -3425,11 +3474,17 @@ async function updateStats() {
     const data = await res.json();
     globalData = data;
     
-    document.getElementById('today-cost').innerText = '¥' + (data.today.cost_cny || 0).toFixed(4);
-    document.getElementById('today-reqs').innerText = '今日共 ' + data.today.requests + ' 次调用';
-    
-    document.getElementById('total-cost').innerText = '¥' + (data.total.cost_cny || 0).toFixed(4);
-    document.getElementById('total-reqs').innerText = '累计 ' + data.total.requests + ' 次对话';
+    const guardSavedToday = (data.today && data.today.guard_saved_tokens) || 0;
+    const cardGuard = document.getElementById('today-guard-saved-card');
+    if (cardGuard) cardGuard.innerText = (guardSavedToday / 1e4).toFixed(1) + ' 万';
+    const cardGuardSub = document.getElementById('today-guard-sub');
+    if (cardGuardSub) cardGuardSub.innerText = `已平滑修剪 ${guardSavedToday.toLocaleString()} Token · 守护显存`;
+
+    const totalToks = (data.total && data.total.total_tokens) || 0;
+    const cardTotalToks = document.getElementById('total-tokens-display');
+    if (cardTotalToks) cardTotalToks.innerText = (totalToks / 1e4).toFixed(1) + ' 万';
+    const totalReqs = document.getElementById('total-reqs');
+    if (totalReqs) totalReqs.innerText = `累计 ${(data.total.requests || 0)} 次对话 · 本地私有自给自足`;
     
     // 全天工作累计总均速 (In / Out)
     if (data.speed) {
@@ -3526,15 +3581,20 @@ async function updateStats() {
       if (bM) bM.innerText = (liveTotalTokens / 1e4).toFixed(1) + '万';
       const bReqs = document.getElementById('banner-sync-reqs');
       if (bReqs) bReqs.innerText = (data.today.requests || 0) + '次';
+      const bGuard = document.getElementById('banner-guard-saved');
+      if (bGuard) bGuard.innerText = guardSavedToday.toLocaleString();
+      const bGuardM = document.getElementById('banner-guard-saved-m');
+      if (bGuardM) bGuardM.innerText = (guardSavedToday / 1e4).toFixed(1) + '万';
       const bIn = document.getElementById('banner-sync-in');
-      if (bIn) bIn.innerText = ((data.today.prompt_tokens || 0) / 1e4).toFixed(1) + '万';
+      const realPrefill = Math.max(0, (data.today.prompt_tokens || 0) - (data.today.prompt_tokens_cached || 0));
+      if (bIn) bIn.innerText = (realPrefill / 1e4).toFixed(1) + '万';
       const bOut = document.getElementById('banner-sync-out');
       if (bOut) bOut.innerText = ((data.today.completion_tokens || 0) + inFlightTokens).toLocaleString();
       const bCached = document.getElementById('banner-sync-cached');
       if (bCached) bCached.innerText = ((data.today.prompt_tokens_cached || 0) / 1e4).toFixed(1) + '万';
       const bHitrate = document.getElementById('banner-sync-hitrate');
       if (bHitrate) {
-        const pTotal = (data.today.prompt_tokens || 0) + (data.today.prompt_tokens_cached || 0);
+        const pTotal = (data.today.prompt_tokens || 0);
         const hr = pTotal > 0 ? ((data.today.prompt_tokens_cached || 0) / pTotal * 100).toFixed(1) : '0.0';
         bHitrate.innerText = hr + '%';
       }
@@ -3602,26 +3662,26 @@ async function updateStats() {
     updateSlotsUI(data.concurrency, data.gpu, data.vision_summary);
 
     // 更新 3 台设备用量数据
-    const totalCost = Math.max(0.000001, data.total.cost_cny || 0);
+    const totalTokensAll = Math.max(1, (data.total && data.total.total_tokens) || 1);
     const bk = data.by_key || {};
     
-    const adminStat = bk['admin'] || { requests: 0, total_tokens: 0, cost_cny: 0 };
+    const adminStat = bk['admin'] || { requests: 0, total_tokens: 0, guard_saved_tokens: 0 };
     document.getElementById('key-admin-reqs').innerText = (adminStat.requests || 0) + ' 次';
     document.getElementById('key-admin-tokens').innerText = (adminStat.total_tokens || 0).toLocaleString();
-    document.getElementById('key-admin-cost').innerText = '¥' + (adminStat.cost_cny || 0).toFixed(4);
-    document.getElementById('key-admin-bar').style.width = Math.min(100, ((adminStat.cost_cny || 0) / totalCost * 100)).toFixed(1) + '%';
+    document.getElementById('key-admin-guard').innerText = ((adminStat.guard_saved_tokens || 0) > 0 ? (adminStat.guard_saved_tokens || 0).toLocaleString() + ' tok' : '-');
+    document.getElementById('key-admin-bar').style.width = Math.min(100, ((adminStat.total_tokens || 0) / totalTokensAll * 100)).toFixed(1) + '%';
 
-    const llamaStat = bk['llamacpp'] || { requests: 0, total_tokens: 0, cost_cny: 0 };
+    const llamaStat = bk['llamacpp'] || { requests: 0, total_tokens: 0, guard_saved_tokens: 0 };
     document.getElementById('key-llama-reqs').innerText = (llamaStat.requests || 0) + ' 次';
     document.getElementById('key-llama-tokens').innerText = (llamaStat.total_tokens || 0).toLocaleString();
-    document.getElementById('key-llama-cost').innerText = '¥' + (llamaStat.cost_cny || 0).toFixed(4);
-    document.getElementById('key-llama-bar').style.width = Math.min(100, ((llamaStat.cost_cny || 0) / totalCost * 100)).toFixed(1) + '%';
+    document.getElementById('key-llama-guard').innerText = ((llamaStat.guard_saved_tokens || 0) > 0 ? (llamaStat.guard_saved_tokens || 0).toLocaleString() + ' tok' : '-');
+    document.getElementById('key-llama-bar').style.width = Math.min(100, ((llamaStat.total_tokens || 0) / totalTokensAll * 100)).toFixed(1) + '%';
 
-    const v100Stat = bk['v100-32G'] || { requests: 0, total_tokens: 0, cost_cny: 0 };
+    const v100Stat = bk['v100-32G'] || { requests: 0, total_tokens: 0, guard_saved_tokens: 0 };
     document.getElementById('key-v100-reqs').innerText = (v100Stat.requests || 0) + ' 次';
     document.getElementById('key-v100-tokens').innerText = (v100Stat.total_tokens || 0).toLocaleString();
-    document.getElementById('key-v100-cost').innerText = '¥' + (v100Stat.cost_cny || 0).toFixed(4);
-    document.getElementById('key-v100-bar').style.width = Math.min(100, ((v100Stat.cost_cny || 0) / totalCost * 100)).toFixed(1) + '%';
+    document.getElementById('key-v100-guard').innerText = ((v100Stat.guard_saved_tokens || 0) > 0 ? (v100Stat.guard_saved_tokens || 0).toLocaleString() + ' tok' : '-');
+    document.getElementById('key-v100-bar').style.width = Math.min(100, ((v100Stat.total_tokens || 0) / totalTokensAll * 100)).toFixed(1) + '%';
 
     // 渲染热力图日历
     renderCalendar();
@@ -3673,11 +3733,12 @@ async function updateStats() {
             <td style="color: var(--text-muted);">${timeDisplay}</td>
             <td><strong style="color: ${keyColor};">${dispKey}</strong></td>
             <td><strong style="color: #fff;">${r.model}</strong> ${modelBadge}</td>
-            <td>${(r.prompt_tokens || 0).toLocaleString()} <span style="color: var(--accent-green); font-size: 11px;">(命中: ${(r.prompt_tokens_cached || 0).toLocaleString()})</span></td>
+            <td>${Math.max(0, (r.prompt_tokens || 0) - (r.prompt_tokens_cached || 0)).toLocaleString()} <span style="color: var(--accent-green); font-size: 11px;">(命中: ${(r.prompt_tokens_cached || 0).toLocaleString()})</span></td>
+            <td>${(r.guard_saved_tokens && r.guard_saved_tokens > 0) ? ('<strong style="color:#f59e0b;">' + (r.guard_saved_tokens / 1e4).toFixed(1) + '万</strong> <span style="font-size:10.5px;color:var(--text-muted);">(' + r.guard_saved_tokens.toLocaleString() + ')</span>') : '<span style="color:var(--text-muted);">-</span>'}</td>
             <td>${outDisplay}</td>
-            <td>${(r.duration_s || 0).toFixed(2)}s <span style="color: var(--text-muted); font-size: 11px;">(${(r.requests || 0)}次累计)</span>${activeTag}</td>
+            <td>${(r.duration_s || 0).toFixed(2)}s <span style="color: var(--text-muted); font-size: 11px;">(${(r.requests || 0)}次)</span>${activeTag}</td>
             <td>${imgDisplay}</td>
-            <td style="color: var(--accent-green); font-weight: 700;">¥${(r.cost_cny || 0).toFixed(5)}</td>
+            <td><strong style="color: #38bdf8;">${(r.total_tokens || 0).toLocaleString()}</strong> <span style="color: var(--text-muted); font-size: 11px;">(${((r.total_tokens || 0) / 1e4).toFixed(1)}万)</span></td>
           </tr>
         `;
       }).join('');
@@ -4522,7 +4583,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 tracker.record_reasoning_hit(reasoning_effort=effort, mode_key=eff_mode)
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
-                cleaned_json, _ = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
+                cleaned_json, guard_triggered, guard_saved_tokens = enforce_context_safety_guard(cleaned_json, max_safe_tokens=140000)
 
                 forward_body = json.dumps(cleaned_json, ensure_ascii=False).encode("utf-8")
                 # 🌟 精确计算经 OCR 提取与防爆修剪后的真实 Token 负载 (绝非原始 base64 虚高体积)
@@ -4802,6 +4863,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
 
                     p_hashes = locals().get("pending_vision_hashes")
                     img_count = len(p_hashes) if p_hashes else 0
+                    g_saved = locals().get("guard_saved_tokens", 0)
                     cost, today_cost, today_reqs = tracker.record(
                         model_name=recorded_model_name,
                         prompt_tokens=prompt_tokens_recorded,
@@ -4811,7 +4873,8 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         key_name=key_name,
                         is_vision=(is_vision or need_vision),
                         image_count=img_count,
-                        reasoning_effort=None
+                        reasoning_effort=None,
+                        guard_saved_tokens=g_saved
                     )
                     tps = round(completion_tokens_recorded / duration, 1) if duration > 0.05 else 0.0
                     prefill_tps = round(prompt_tokens_recorded / max(0.05, duration * 0.15), 1)
@@ -4828,11 +4891,13 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                         ctx_used=prompt_tokens_recorded + completion_tokens_recorded
                     )
                     hit_str = f" (命中: {cached_tokens_recorded})" if cached_tokens_recorded > 0 else ""
+                    guard_str = f" | 🛡️防爆保护节省: {g_saved:,} Token" if g_saved > 0 else ""
                     proto_tag = "[ANTHROPIC]" if is_anthropic_protocol else "[OPENAI]"
+                    today_total = tracker.data.get("today", {}).get("total_tokens", prompt_tokens_recorded + completion_tokens_recorded)
                     sys.stdout.write(
-                        f"[{time.strftime('%H:%M:%S')}] [BILLING] {proto_tag} 设备: {key_name} | 模型: {actual_model} | "
-                        f"Tokens: In={prompt_tokens_recorded:,}{hit_str}, Out={completion_tokens_recorded:,} ({tps} tok/s) | "
-                        f"本次: ¥{cost:.5f} | 今日累计: ¥{today_cost:.4f} ({today_reqs}次, 耗时{duration:.2f}s)\n"
+                        f"[{time.strftime('%H:%M:%S')}] [GATEWAY-AUDIT] {proto_tag} 设备: {key_name} | 模型: {recorded_model_name} | "
+                        f"真实上下文: In={prompt_tokens_recorded:,}{hit_str}, Out={completion_tokens_recorded:,} ({tps} tok/s){guard_str} | "
+                        f"今日累计吞吐: {today_total:,} Token ({today_reqs}次, 耗时{duration:.2f}s)\n"
                     )
                     sys.stdout.flush()
 
@@ -4896,8 +4961,7 @@ def run_proxy(listen_port=8081, target_port=8083, api_key="llamacpp", host="127.
     httpd.api_key = api_key
     print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 企业级智能协同网关已启动: http://{host}:{listen_port} -> 27B旗舰主脑 (:{target_port})", flush=True)
     print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 协议支持: OpenAI (/v1/chat/completions) & Anthropic 原生 (/v1/messages)", flush=True)
-    print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 视觉架构: Track 1 纯 27B 原生多模态直通 · 内置多轮对话图像指纹高速缓存 (免重复编码)", flush=True)
-    print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 计价标准: DeepSeek-V4-Flash-0731 (文本) & DeepSeek-V4-Flash-Vision-Exp (识图)", flush=True)
+    print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 核算体系: 本地原生服务日志对账 (8081/8083) · 🛡️ 智能防爆安全舱 (140K安全水位)", flush=True)
     print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 全模型视觉注入 & TPS算力监控看板: http://127.0.0.1:{listen_port}/dashboard", flush=True)
     try:
         httpd.serve_forever()
