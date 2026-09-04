@@ -777,7 +777,19 @@ def main():
 
     sys.stdout.write(f"  {C_BOLD}[0]{C_RESET} 退出启动器 (安全关闭全部服务)\n\n")
 
-    choice = input(f"{C_BOLD}请输入选项编号 [默认 1]: {C_RESET}").strip()
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].strip()
+        if arg in ("--help", "-h"):
+            sys.stdout.write("用法: python launcher_main.py [模型编号: 1-6 | 0(退出)]\n")
+            return
+        choice = arg
+    else:
+        try:
+            choice = input(f"{C_BOLD}请输入选项编号 [默认 1]: {C_RESET}").strip()
+        except (EOFError, KeyboardInterrupt):
+            sys.stdout.write("\n已取消输入，安全退出。\n")
+            choice = "0"
+
     if not choice:
         choice = "1"
     if choice == "0":
