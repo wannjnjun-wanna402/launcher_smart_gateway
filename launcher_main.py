@@ -19,6 +19,8 @@ import json
 import psutil
 import atexit
 import ctypes
+import unicodedata
+import re
 from ctypes import wintypes
 
 # 强制 UTF-8 标准输出
@@ -61,6 +63,7 @@ C_PURPLE = "\033[95m"
 C_BLUE = "\033[94m"
 C_RED = "\033[91m"
 C_GRAY = "\033[90m"
+C_WHITE = "\033[97m"
 
 # 全局进程句柄与生命周期互斥锁
 g_gateway_proc = None
@@ -396,7 +399,12 @@ def build_models_menu():
     return [
         {
             "key": "1",
-            "name": "Qwen3.8-27B-A [全模态全能底座] (4并发+MTP+CPU视觉合一)",
+            "name": "Qwen3.8-27B-A [全能底座]",
+            "quant": "27B·Q6_K",
+            "ctx": "160K (4槽)",
+            "speed_vram": "21G·MTP投机",
+            "vision": "CPU 0显存",
+            "best_for": "★ 终极主力(三态自适应)",
             "desc": "27B 旗舰 | 160K 统一池 | 原生 MTP 投机加速 | 0显存 CPU 视觉 | 4槽高吞吐流水线",
             "recommend": "【👑 终极全能主力 · 网关自适应三态裁决】",
             "alias": "Qwen3.8-27B-A-Q6_K",
@@ -444,7 +452,12 @@ def build_models_menu():
         },
         {
             "key": "2",
-            "name": "Qwen3.8-27B-A [双槽MTP全能版]",
+            "name": "Qwen3.8-27B-A [双槽MTP]",
+            "quant": "27B·Q6_K",
+            "ctx": "144K (2槽)",
+            "speed_vram": "21G·MTP极速",
+            "vision": "GPU 直通",
+            "best_for": "日常深度编程·极速单发",
             "desc": "27B 旗舰 | 144K 统一池 (单槽72K) | 原生 MTP 极速推导 (45+ tok/s) | 视觉直通",
             "recommend": "【日常深度编程 · 极速单任务】",
             "alias": "Qwen3.8-27B-A-Q6_K",
@@ -492,7 +505,12 @@ def build_models_menu():
         },
         {
             "key": "3",
-            "name": "Qwen3.8-27B-A [4并发高吞吐版]",
+            "name": "Qwen3.8-27B-A [4并发]",
+            "quant": "27B·Q6_K",
+            "ctx": "160K (4槽)",
+            "speed_vram": "21G·4槽并行",
+            "vision": "GPU 直通",
+            "best_for": "多Agent高并发高吞吐",
             "desc": "27B 旗舰 | 160K 统一池 | 4 槽并行高并发高吞吐 | 视觉直通",
             "recommend": "【多 Agent 高并发竞争】",
             "alias": "Qwen3.8-27B-A-Q6_K",
@@ -536,7 +554,12 @@ def build_models_menu():
         },
         {
             "key": "4",
-            "name": "Qwen3.8-27B-NVFP4-MTP-HIGHEST",
+            "name": "Qwen3.8-27B [NVFP4极致]",
+            "quant": "27B·NVFP4",
+            "ctx": "160K (2槽)",
+            "speed_vram": "16G·MTP极速",
+            "vision": "GPU 直通",
+            "best_for": "官方高精·极限推导探索",
             "desc": "27B NVFP4 极致量化 | 160K 统一池 | MTP 极速推导 (生成峰值突破 50+ tok/s) | 视觉直通",
             "recommend": "【官方高精 · 极限速度探索】",
             "alias": "Qwen3.8-27B-N-H",
@@ -579,7 +602,12 @@ def build_models_menu():
         },
         {
             "key": "5",
-            "name": "Qwen3.8-27B-NVFP4-MTP-MID-HIGH",
+            "name": "Qwen3.8-27B [NVFP4超长]",
+            "quant": "27B·NVFP4",
+            "ctx": "256K (2槽)",
+            "speed_vram": "16G·MTP加速",
+            "vision": "GPU 直通",
+            "best_for": "超长上下文·大代码推演",
             "desc": "27B NVFP4 极致量化 | 256K 超大统一KV池 | MTP加速 | 视觉直通",
             "recommend": "【超长上下文 · 巨型代码库推演】",
             "alias": "Qwen3.8-27B-MID-HIGH",
@@ -622,7 +650,12 @@ def build_models_menu():
         },
         {
             "key": "6",
-            "name": "Ornith-1.5-35B-Q4_K_M (MoE超强大脑)",
+            "name": "Ornith-1.5-35B [MoE大脑]",
+            "quant": "35B·Q4_K",
+            "ctx": "128K (单槽)",
+            "speed_vram": "23G·MoE并行",
+            "vision": "CPU 0显存",
+            "best_for": "深度复杂逻辑·数理证明",
             "desc": "35B 稀疏混合专家 | 128K 超长上下文 | 原生挂载 mmproj-35B (CPU 0显存)",
             "recommend": "【深度复杂逻辑与数理推理】",
             "alias": "Ornith-1.5-35B",
@@ -659,7 +692,12 @@ def build_models_menu():
         },
         {
             "key": "7",
-            "name": "Qwen3-VL-8B (8B 视觉先锋独立版)",
+            "name": "Qwen3-VL-8B [视觉独立版]",
+            "quant": "8B·UD-Q4",
+            "ctx": "32K  (单槽)",
+            "speed_vram": "8G ·GPU直通",
+            "vision": "端到端视觉",
+            "best_for": "高精图文OCR·图纸评审",
             "desc": "8B 旗舰视觉 | UD-Q4_K_XL 极致量化 | GPU 直通高精图文推理 (32K)",
             "recommend": "【端到端高精 OCR 与图纸评审】",
             "alias": "Qwen3-VL-8B",
@@ -689,7 +727,12 @@ def build_models_menu():
         },
         {
             "key": "8",
-            "name": "Gemma-4-E4B (4B MoE 多模态)",
+            "name": "Gemma-4-E4B [轻量多模]",
+            "quant": "4B·Q6_K",
+            "ctx": "128K (单槽)",
+            "speed_vram": "5G ·原生轻量",
+            "vision": "CPU 0显存",
+            "best_for": "轻量极速多模态对话",
             "desc": "4B MoE 架构 | Q6_K_P 高精量化 | 128K 上下文 | 原生挂载 mmproj",
             "recommend": "【轻量极速多模态对话】",
             "alias": "Gemma-4-E4B",
@@ -717,7 +760,12 @@ def build_models_menu():
         },
         {
             "key": "9",
-            "name": "Qwen3.5-4B (4B 极速纯文本)",
+            "name": "Qwen3.5-4B [纯文本极速]",
+            "quant": "4B·Q6_K",
+            "ctx": "256K (单槽)",
+            "speed_vram": "4G ·低功耗",
+            "vision": "8085侧挂",
+            "best_for": "低功耗代码辅助·轻量问答",
             "desc": "4B 轻量级对话与代码辅助 | 256K 超大上下文 | 8085 视觉眼睛侧挂",
             "recommend": "【低功耗快速轻量辅助】",
             "alias": "Qwen3.5-4B",
@@ -744,6 +792,51 @@ def build_models_menu():
     ]
 
 
+def str_display_width(s):
+    """精确计算包含 ANSI 颜色代码与中日韩 CJK 全角字符的终端可见宽度"""
+    clean = re.sub(r"\033\[[0-9;]*m", "", s)
+    return sum(2 if unicodedata.east_asian_width(c) in ("F", "W") else 1 for c in clean)
+
+
+def pad_display(s, target_width, align="left"):
+    """按字符终端可见显示宽度进行精准中英文空格填充对齐"""
+    cur = str_display_width(s)
+    pad = max(0, target_width - cur)
+    if align == "right":
+        return " " * pad + s
+    elif align == "center":
+        left = pad // 2
+        right = pad - left
+        return " " * left + s + " " * right
+    return s + " " * pad
+
+
+def render_models_grid(menu):
+    """一横排整齐渲染模型列表，上下严格对齐，清晰展示功能参数与推荐场景"""
+    headers = ["序号", "启动形态与模型名称", "规格量化", "上下文/槽位", "显存/推导加速", "视觉方案", "核心定位与推荐场景"]
+    widths  = [5,    26,                  11,       12,          15,            10,       28]
+
+    header_line = " ".join(pad_display(f"{C_BOLD}{C_CYAN}{h}{C_RESET}", w) for h, w in zip(headers, widths))
+    sep_line = f"{C_GRAY}" + " ".join("─" * w for w in widths) + f"{C_RESET}"
+
+    sys.stdout.write(f"\n{header_line}\n")
+    sys.stdout.write(f"{sep_line}\n")
+
+    for item in menu:
+        col_key = pad_display(f"{C_BOLD}{C_CYAN}[{item['key']}]{C_RESET}", widths[0])
+        col_name = pad_display(f"{C_GREEN}{item['name']}{C_RESET}", widths[1])
+        col_quant = pad_display(f"{C_YELLOW}{item.get('quant', '-')}{C_RESET}", widths[2])
+        col_ctx = pad_display(f"{C_CYAN}{item.get('ctx', '-')}{C_RESET}", widths[3])
+        col_speed = pad_display(f"{C_PURPLE}{item.get('speed_vram', '-')}{C_RESET}", widths[4])
+        col_vision = pad_display(f"{C_BLUE}{item.get('vision', '-')}{C_RESET}", widths[5])
+        col_best = pad_display(f"{C_WHITE}{item.get('best_for', '-')}{C_RESET}", widths[6])
+
+        sys.stdout.write(f"{col_key} {col_name} {col_quant} {col_ctx} {col_speed} {col_vision} {col_best}\n")
+
+    sys.stdout.write(f"{sep_line}\n")
+    exit_key = pad_display(f"{C_BOLD}{C_RED}[0]{C_RESET}", widths[0])
+    sys.stdout.write(f"{exit_key} {C_GRAY}退出启动器 (安全关闭并清理全部后台服务与显存){C_RESET}\n\n")
+
 def main():
     global g_main_proc
 
@@ -766,21 +859,15 @@ def main():
         sys.stdout.write(f"{C_GREEN}  ├─ ✅ 8081 智能协同网关已就绪 (http://127.0.0.1:8081/dashboard){C_RESET}\n")
     ensure_sidecar_8085(wait=False)
 
-    # 2. 呈现模型菜单
+    # 2. 呈现模型菜单 (整齐排列一横排网格 UI)
     menu = build_models_menu()
-    sys.stdout.write(f"{C_BOLD}{C_CYAN}请选择要固定启动的主模型：{C_RESET}\n\n")
-
-    for item in menu:
-        sys.stdout.write(f"  {C_BOLD}[{item['key']}]{C_RESET} {C_GREEN}{item['name']}{C_RESET}\n")
-        sys.stdout.write(f"      {C_GRAY}说明: {item['desc']}{C_RESET}\n")
-        sys.stdout.write(f"      {C_YELLOW}{item['recommend']}{C_RESET}\n\n")
-
-    sys.stdout.write(f"  {C_BOLD}[0]{C_RESET} 退出启动器 (安全关闭全部服务)\n\n")
+    sys.stdout.write(f"{C_BOLD}{C_CYAN}请选择要固定启动的主模型：{C_RESET}")
+    render_models_grid(menu)
 
     if len(sys.argv) > 1:
         arg = sys.argv[1].strip()
         if arg in ("--help", "-h"):
-            sys.stdout.write("用法: python launcher_main.py [模型编号: 1-6 | 0(退出)]\n")
+            sys.stdout.write("用法: python launcher_main.py [模型编号: 1-9 | 0(退出)]\n")
             return
         choice = arg
     else:
