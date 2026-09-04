@@ -1104,16 +1104,12 @@ def main():
     main_env = os.environ.copy()
     main_env["CUDA_CACHE_MAXSIZE"] = "2147483648"
     main_env["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
 
-    # 以子进程前台常驻运行，注入专用 CUDA JIT 2GB 编译流
+    # 以子进程前台常驻运行，实时将主脑推理日志输出到控制台，同时底层 --log-file 自动落盘
     g_main_proc = subprocess.Popen(
         server_cmd,
         cwd=BASE_DIR,
-        env=main_env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=creationflags
+        env=main_env
     )
 
     # 毫秒级极速高频轮询检测端口
