@@ -3864,10 +3864,11 @@ class Qwen27BBackendManager:
     STATE_VISION_27B = "VISION_27B"
     STATE_PIPELINE_4SLOT = "PIPELINE_4SLOT"
 
-    def __init__(self, root_dir=r'E:\llama-win-cuda-12.4-x64', models_dir=r'E:\models', port=8083):
+    def __init__(self, root_dir=r'E:\llama-win-cuda-12.4-x64', models_dir=r'E:\models', port=8083, api_key="llamacpp"):
         self.root_dir = root_dir
         self.models_dir = models_dir
         self.port = port
+        self.api_key = api_key
         self.current_state = self.STATE_MTP_2SLOT
         self.lock = threading.Lock()
         self.last_activity_time = time.time()
@@ -3963,7 +3964,9 @@ class Qwen27BBackendManager:
 
     def is_server_healthy(self):
         try:
-            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/props", method="GET")
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/health", method="GET")
+            if getattr(self, "api_key", None):
+                req.add_header("Authorization", f"Bearer {self.api_key}")
             with urllib.request.urlopen(req, timeout=1.0) as resp:
                 return resp.status == 200
         except Exception:
@@ -3973,7 +3976,9 @@ class Qwen27BBackendManager:
         """真实查询 8083 底层 /props 与 /slots 获取正在运行的真实形态"""
         try:
             req = urllib.request.Request(f"http://127.0.0.1:{self.port}/props", method="GET")
-            with urllib.request.urlopen(req, timeout=0.5) as resp:
+            if getattr(self, "api_key", None):
+                req.add_header("Authorization", f"Bearer {self.api_key}")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))
                     gen_settings = data.get("default_generation_settings", {})
@@ -3988,7 +3993,9 @@ class Qwen27BBackendManager:
                     
                     try:
                         req_slots = urllib.request.Request(f"http://127.0.0.1:{self.port}/slots", method="GET")
-                        with urllib.request.urlopen(req_slots, timeout=0.5) as sresp:
+                        if getattr(self, "api_key", None):
+                            req_slots.add_header("Authorization", f"Bearer {self.api_key}")
+                        with urllib.request.urlopen(req_slots, timeout=1.0) as sresp:
                             sdata = json.loads(sresp.read().decode("utf-8"))
                             if len(sdata) == 4:
                                 return self.STATE_PIPELINE_4SLOT
@@ -4959,6 +4966,8 @@ def run_proxy(listen_port=8081, target_port=8083, api_key="llamacpp", host="127.
     httpd.target_host = host
     httpd.target_port = target_port
     httpd.api_key = api_key
+    backend_manager.port = target_port
+    backend_manager.api_key = api_key
     print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 企业级智能协同网关已启动: http://{host}:{listen_port} -> 27B旗舰主脑 (:{target_port})", flush=True)
     print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 协议支持: OpenAI (/v1/chat/completions) & Anthropic 原生 (/v1/messages)", flush=True)
     print(f"[{time.strftime('%H:%M:%S')}] [TOOL-PROXY-3.0] 核算体系: 本地原生服务日志对账 (8081/8083) · 🛡️ 智能防爆安全舱 (140K安全水位)", flush=True)
