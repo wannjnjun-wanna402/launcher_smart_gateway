@@ -148,7 +148,7 @@ class MiracleTrayManager:
                     pass
 
         def action_exit(icon, item):
-            cleanup_all()
+            cleanup_all(kill_everything=True)
             self.stop()
             os._exit(0)
 
@@ -505,14 +505,14 @@ def enable_kill_child_processes_on_exit():
             ctypes.byref(info),
             ctypes.sizeof(info)
         )
-        AssignProcessToJobObject(h_job, GetCurrentProcess())
+        g_job_handle = h_job
         return True
     except Exception:
         return False
 
 
-def cleanup_all():
-    """清理所有绑定的网关与大模型进程，确保无任何孤儿进程独活"""
+def cleanup_all(kill_everything=False):
+    """清理本启动器实例所拉起的子进程，绝不误杀其他独立常驻实例"""
     global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc, g_tray_manager
     if g_is_cleaning:
         return
@@ -522,30 +522,35 @@ def cleanup_all():
             g_tray_manager.stop()
         except Exception:
             pass
-    for proc in [g_main_proc, g_sidecar_proc, g_gateway_proc]:
+    # 仅安全关闭本实例实际拉起的子进程，杜绝波及其他外部实例
+    for proc in [g_main_proc, g_sidecar_proc]:
         if proc and proc.poll() is None:
             try:
-                proc.kill()
+                proc.terminate()
+                proc.wait(timeout=2)
             except Exception:
-                pass
-    kill_port(8081)
-    kill_port(8083)
-    kill_port(8085)
-    kill_all_llama()
-    try:
-        active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
-        if os.path.exists(active_state_file):
-            os.remove(active_state_file)
-    except Exception:
-        pass
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+    if kill_everything:
+        kill_port(8083)
+        kill_port(8085)
+        kill_all_llama()
+        try:
+            active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
+            if os.path.exists(active_state_file):
+                os.remove(active_state_file)
+        except Exception:
+            pass
 
 
 def cleanup_and_exit(signum=None, frame=None):
     """用户按 Ctrl+C 或正常退出时触发"""
-    sys.stdout.write(f"\n{C_YELLOW}正在安全终结全部 AI 进程 (8081/8083/8085)...{C_RESET}\n")
+    sys.stdout.write(f"\n{C_YELLOW}正在安全关闭当前启动器托管服务...{C_RESET}\n")
     sys.stdout.flush()
-    cleanup_all()
-    sys.stdout.write(f"{C_GREEN}✅ 全部服务已彻底关闭，无任何后台进程独活。{C_RESET}\n")
+    cleanup_all(kill_everything=False)
+    sys.stdout.write(f"{C_GREEN}✅ 已安全退出。{C_RESET}\n")
     sys.exit(0)
 
 
@@ -555,14 +560,13 @@ if sys.platform == "win32":
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
         def win_ctrl_handler(dwCtrlType):
-            cleanup_all()
+            cleanup_all(kill_everything=False)
             return True
         g_ctrl_handler = HandlerRoutine(win_ctrl_handler)
         kernel32.SetConsoleCtrlHandler(g_ctrl_handler, True)
     except Exception:
         pass
 
-atexit.register(cleanup_all)
 signal.signal(signal.SIGINT, cleanup_and_exit)
 signal.signal(signal.SIGTERM, cleanup_and_exit)
 
@@ -1027,7 +1031,10 @@ def render_models_grid(menu):
 def main():
     global g_main_proc
 
-    # 处理 CLI 选项 (例如 --list / --list-models)
+    # 处理 CLI 选项 (例如 --list / --list-models / --help)
+    if any(arg.lower() in ("--help", "-h", "/?") for arg in sys.argv[1:]):
+        sys.stdout.write("用法: python launcher_main.py [模型编号: 1-9 | 0(退出)]\n")
+        return
     if any(arg.lower() in ("-listmodels", "--list-models", "list", "--list", "-l") for arg in sys.argv[1:]):
         menu = build_models_menu()
         out = [{"index": idx + 1, "name": m["alias"], "tag": m["desc"], "category": "vision" if not m["is_text"] else "text"} for idx, m in enumerate(menu)]
@@ -1048,7 +1055,73 @@ def main():
     if ensure_gateway_8081():
         sys.stdout.write(f"{C_GREEN}  ├─ ✅ 8081 智能协同网关已就绪 (http://127.0.0.1:8081/dashboard){C_RESET}\n\n")
 
-    # 2. 呈现模型菜单 (整齐排列一横排网格 UI)
+    # 2. 检查 8083 主脑是否已在位常驻运行 (杜绝重复启动互杀)
+    if is_port_open(8083):
+        current_running_name = ""
+        try:
+            import urllib.request
+            req_p = urllib.request.Request("http://127.0.0.1:8083/props", headers={"Authorization": "Bearer llamacpp"})
+            with urllib.request.urlopen(req_p, timeout=0.6) as rp:
+                if rp.status == 200:
+                    p_data = json.loads(rp.read().decode("utf-8"))
+                    current_running_name = p_data.get("model_alias") or os.path.basename(p_data.get("model_path", ""))
+        except Exception:
+            pass
+        if not current_running_name:
+            active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
+            if os.path.exists(active_state_file):
+                try:
+                    with open(active_state_file, "r", encoding="utf-8") as asf:
+                        current_running_name = json.load(asf).get("model_name", "")
+                except Exception:
+                    pass
+        if not current_running_name:
+            current_running_name = "Qwen3.8-27B-A [全能底座]"
+
+        sys.stdout.write(f"\n{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
+        sys.stdout.write(f"  🟢 检测到 8083 主脑引擎已在位运行：{C_CYAN}{C_BOLD}{current_running_name}{C_RESET}\n")
+        sys.stdout.write(f"  ├─ 📡 8081 网关控制台: http://127.0.0.1:8081/dashboard\n")
+        sys.stdout.write(f"  ├─ 💡 显存中已常驻权重与 KV 缓存，无需重复等待加载！\n")
+        sys.stdout.write(f"{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
+        sys.stdout.write(f"{C_BOLD}请选择操作：{C_RESET}\n")
+        sys.stdout.write(f"  {C_GREEN}[Enter / 1]{C_RESET} 保持当前主脑继续运行 (进入常驻托盘守护)\n")
+        sys.stdout.write(f"  {C_YELLOW}[2]{C_RESET} 停止当前主脑，重新选择并置换其他模型\n")
+        sys.stdout.write(f"  {C_RED}[0]{C_RESET} 退出当前窗口 (不影响后台主脑继续运行)\n\n")
+
+        try:
+            attach_choice = input(f"{C_BOLD}请输入操作编号 [默认 1]: {C_RESET}").strip()
+        except (EOFError, KeyboardInterrupt):
+            attach_choice = "0"
+
+        if attach_choice in ("", "1"):
+            today = get_today_str()
+            main_log_file = os.path.join(LOGS_DIR, f"8083_llama_{today}.log")
+            update_system_tray(model_name=current_running_name, status_text="运行中 (8081网关/8083主脑)", is_running=True, log_file=main_log_file)
+            sys.stdout.write(f"\n{C_GREEN}✅ 已成功接管当前主脑状态守护与任务栏托盘！{C_RESET}\n")
+            sys.stdout.write(f"  📡 网关双通接口: http://127.0.0.1:8081/v1\n")
+            sys.stdout.write(f"  📊 算力监控大屏: http://127.0.0.1:8081/dashboard\n")
+            sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
+            try:
+                while True:
+                    time.sleep(2)
+                    if not is_port_open(8083):
+                        sys.stdout.write(f"\n{C_YELLOW}检测到 8083 主脑端口已关闭。{C_RESET}\n")
+                        break
+            except KeyboardInterrupt:
+                pass
+            finally:
+                cleanup_all(kill_everything=False)
+            return
+        elif attach_choice == "0":
+            sys.stdout.write("安全退出当前窗口，后台模型继续保持运行。\n")
+            cleanup_all(kill_everything=False)
+            return
+        else:
+            sys.stdout.write(f"\n{C_YELLOW}正在停止当前 8083 主脑并释放显存...{C_RESET}\n")
+            kill_port(8083)
+            check_gpu_memory()
+
+    # 3. 呈现模型菜单 (整齐排列一横排网格 UI)
     menu = build_models_menu()
     sys.stdout.write(f"{C_BOLD}{C_CYAN}请选择要固定启动的主模型：{C_RESET}")
     render_models_grid(menu)
@@ -1173,7 +1246,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        cleanup_all()
+        cleanup_all(kill_everything=False)
 
 
 if __name__ == "__main__":
