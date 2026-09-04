@@ -853,11 +853,10 @@ def main():
     hw = get_hardware_info()
     print_banner(hw)
 
-    # 1. 基础组件初始化：双击启动器即刻在后台预热 8081 网关与 8085 CPU 视觉眼睛 (错峰载入，完全杜绝磁盘争抢)
-    sys.stdout.write(f"{C_BOLD}[1/2] 正在联动拉起基础协同组件...{C_RESET}\n")
+    # 1. 基础组件初始化：拉起 8081 智能协同网关
+    sys.stdout.write(f"{C_BOLD}正在联动拉起 8081 智能协同网关...{C_RESET}\n")
     if ensure_gateway_8081():
-        sys.stdout.write(f"{C_GREEN}  ├─ ✅ 8081 智能协同网关已就绪 (http://127.0.0.1:8081/dashboard){C_RESET}\n")
-    ensure_sidecar_8085(wait=False)
+        sys.stdout.write(f"{C_GREEN}  ├─ ✅ 8081 智能协同网关已就绪 (http://127.0.0.1:8081/dashboard){C_RESET}\n\n")
 
     # 2. 呈现模型菜单 (整齐排列一横排网格 UI)
     menu = build_models_menu()
@@ -894,15 +893,18 @@ def main():
     sys.stdout.write(f"  🚀 正在启动: {C_BOLD}{selected['name']}{C_RESET}\n")
     sys.stdout.write(f"{C_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
 
-    # 3. 校验 8085 视觉侧挂状态
-    if selected.get("is_text"):
+    # 3. 视觉与多模态组件适配 (仅纯文本侧挂模型按需拉起 8085，原生多模态直接释放 8085)
+    if selected.get("is_text") and selected.get("vision") == "8085侧挂":
         if is_port_open(8085):
-            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在 CPU 内存就绪 (Qwen3-VL-8B · 0显存 · 错峰预热完成)！{C_RESET}\n\n")
+            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在位 (Qwen3-VL-8B · 0显存)！{C_RESET}\n\n")
         else:
-            sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉眼睛后台极速装载中 (Qwen3-VL-8B · CPU纯内存 · 0显存)...{C_RESET}\n\n")
+            sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 检测到当前模型为纯文本，正在按需启动 8085 视觉侧挂眼睛...{C_RESET}\n\n")
             ensure_sidecar_8085(wait=False)
     else:
-        sys.stdout.write(f"{C_BOLD}  ├─ 🖼️ 原生多模态全模态底座：GPU/CPU 视觉直通，网关智能自适应调度！{C_RESET}\n\n")
+        if is_port_open(8085):
+            sys.stdout.write(f"{C_YELLOW}  ├─ 🧹 当前模型自带原生多模态，正在关闭 8085 侧挂以释放 CPU 与内存...{C_RESET}\n")
+            kill_port(8085)
+        sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生多模态全模态底座：GPU/CPU 视觉直通，网关自适应调度 (无需 8085 侧挂，0 内存浪费)！{C_RESET}\n\n")
 
     # 4. 清理 8083 旧进程并校验显存安全
     kill_port(8083)
