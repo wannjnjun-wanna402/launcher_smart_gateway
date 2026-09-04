@@ -872,14 +872,21 @@ class ConcurrencyQueue:
                             total_ctx = p_data.get("default_generation_settings", {}).get("n_ctx", total_ctx)
                             
                             # 真实感知是否挂载了原生多模态视觉 (mmproj)
+                            top_mods = p_data.get("modalities")
+                            if isinstance(top_mods, dict) and (top_mods.get("vision") or top_mods.get("image")):
+                                is_multimodal = True
+                            elif isinstance(top_mods, list) and ("vision" in top_mods or "image" in top_mods):
+                                is_multimodal = True
                             modalities = p_data.get("default_generation_settings", {}).get("modalities", [])
-                            if "vision" in modalities or "image" in modalities:
+                            if isinstance(modalities, dict) and (modalities.get("vision") or modalities.get("image")):
+                                is_multimodal = True
+                            elif isinstance(modalities, list) and ("vision" in modalities or "image" in modalities):
                                 is_multimodal = True
                             params = p_data.get("default_generation_settings", {}).get("params", {})
-                            if params.get("mmproj"):
+                            if params.get("mmproj") or p_data.get("mmproj"):
                                 is_multimodal = True
-                                mmproj_file = os.path.basename(params.get("mmproj", ""))
-                            elif "vl" in model_alias.lower() or "vision" in model_alias.lower():
+                                mmproj_file = os.path.basename(params.get("mmproj") or p_data.get("mmproj", ""))
+                            elif "vl" in model_alias.lower() or "vision" in model_alias.lower() or "全能底座" in model_alias.lower() or "多模态" in model_alias.lower():
                                 is_multimodal = True
                     except Exception:
                         pass
@@ -2262,11 +2269,18 @@ def check_backend_is_multimodal(backend_port=8083):
         with urllib.request.urlopen(req, timeout=0.5) as resp:
             if resp.status == 200:
                 p_data = json.loads(resp.read().decode("utf-8"))
+                top_mods = p_data.get("modalities")
+                if isinstance(top_mods, dict) and (top_mods.get("vision") or top_mods.get("image")):
+                    return True
+                if isinstance(top_mods, list) and ("vision" in top_mods or "image" in top_mods):
+                    return True
                 modalities = p_data.get("default_generation_settings", {}).get("modalities", []) or []
-                if "vision" in modalities or "image" in modalities:
+                if isinstance(modalities, dict) and (modalities.get("vision") or modalities.get("image")):
+                    return True
+                if isinstance(modalities, list) and ("vision" in modalities or "image" in modalities):
                     return True
                 params = p_data.get("default_generation_settings", {}).get("params", {}) or {}
-                if params.get("mmproj") or "vl" in str(params.get("model", "")).lower() or "vision" in str(params.get("model", "")).lower():
+                if params.get("mmproj") or p_data.get("mmproj") or "vl" in str(params.get("model", "")).lower() or "vision" in str(params.get("model", "")).lower() or "全能底座" in str(p_data.get("model_alias", "")).lower() or "多模态" in str(p_data.get("model_alias", "")).lower():
                     return True
     except Exception:
         pass
@@ -2484,7 +2498,7 @@ def process_native_vision_pipeline(cleaned_json, target_port=8083):
             new_messages.append(msg)
 
     cleaned_json["messages"] = new_messages
-    has_active_images = bool(pending_to_cache or has_img)
+    has_active_images = bool(pending_to_cache)
     return cleaned_json, has_active_images, pending_to_cache
 
 def register_image_fingerprints(hash_list):
@@ -4787,7 +4801,7 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                     recorded_model_name = current_active_alias
 
                     p_hashes = locals().get("pending_vision_hashes")
-                    img_count = len(p_hashes) if p_hashes else (1 if has_image_req else 0)
+                    img_count = len(p_hashes) if p_hashes else 0
                     cost, today_cost, today_reqs = tracker.record(
                         model_name=recorded_model_name,
                         prompt_tokens=prompt_tokens_recorded,
