@@ -1321,7 +1321,13 @@ class BillingTracker:
                 "total_in_seconds": 0.0,
                 "total_out_seconds": 0.0,
                 "total_work_seconds": 0.0,
-                "by_device_model": {}
+                "by_device_model": {},
+                "agent_tools": {
+                    "total_calls": 0, "bash_calls": 0, "file_calls": 0, "search_calls": 0, "gbnf_sanitized": 0, "success_rate": 100.0
+                },
+                "peak_records": {
+                    "max_context_tokens": 0, "max_completion_tokens": 0, "max_duration_s": 0.0, "peak_instant_tps": 0.0, "record_holder_key": "-"
+                }
             }
             if "hot_swaps" in self.data:
                 self.data["hot_swaps"]["today_count"] = 0
@@ -2339,7 +2345,9 @@ def translate_anthropic_to_openai(anthropic_body):
                     else:
                         res_str = str(res_content)
                     tid = block.get("tool_use_id", "")
-                    tool_results.append(f"[工具返回结果 (ID={tid})]:\n{res_str}")
+                    is_err = bool(block.get("is_error", False))
+                    prefix = f"[工具执行失败报错 (ID={tid})]" if is_err else f"[工具返回结果 (ID={tid})]"
+                    tool_results.append(f"{prefix}:\n{res_str}")
 
             if role == "user":
                 parts = []
@@ -2824,8 +2832,32 @@ def enforce_context_safety_guard(payload, max_safe_tokens=140000):
     new_str = json.dumps(assembled, ensure_ascii=False)
     new_tokens = estimate_tokens(new_str)
 
-    while new_tokens > 130000 and len(trimmed_middle) > 2:
-        trimmed_middle.pop(0)
+    # 🌟 关键加固：按完整对话轮次 (Turn-based) 原子裁剪，彻底杜绝拆散 tool_calls 与 tool response
+    while new_tokens > 130000 and len(trimmed_middle) > 1:
+        # 寻找下一个 user 消息作为安全切分边界
+        cut_idx = 1
+        while cut_idx < len(trimmed_middle) and trimmed_middle[cut_idx].get("role") != "user":
+            cut_idx += 1
+        trimmed_middle = trimmed_middle[cut_idx:]
+        
+        # 孤儿工具响应与悬空 tool_calls 双向自愈校验
+        valid_call_ids = set()
+        for m in system_msgs + trimmed_middle + tail_msgs:
+            if m.get("role") == "assistant" and "tool_calls" in m:
+                for tc in m.get("tool_calls", []):
+                    if isinstance(tc, dict) and "id" in tc:
+                        valid_call_ids.add(tc["id"])
+        
+        # 清除所有没有前置 assistant.tool_calls 的孤儿 tool 消息
+        sanitized_middle = []
+        for m in trimmed_middle:
+            if m.get("role") in ("tool", "function"):
+                tid = m.get("tool_call_id")
+                if tid and tid not in valid_call_ids:
+                    continue  # 丢弃孤儿工具返回
+            sanitized_middle.append(m)
+        trimmed_middle = sanitized_middle
+
         assembled = system_msgs + trimmed_middle + tail_msgs
         new_str = json.dumps(assembled, ensure_ascii=False)
         new_tokens = estimate_tokens(new_str)
