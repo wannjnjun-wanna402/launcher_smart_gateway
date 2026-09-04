@@ -70,6 +70,175 @@ g_gateway_proc = None
 g_sidecar_proc = None
 g_main_proc = None
 g_is_cleaning = False
+g_tray_manager = None
+
+
+class MiracleTrayManager:
+    """Windows 任务栏右下角通知区域状态托盘与右键快捷控制中心"""
+    def __init__(self, on_exit_callback=None):
+        self.on_exit_callback = on_exit_callback
+        self.model_name = "待命选择中"
+        self.status_text = "等待选择模型"
+        self.is_running = False
+        self.icon = None
+        self.thread = None
+        self.console_visible = True
+        self.active_log_file = None
+
+    def _create_icon_image(self, active=False):
+        try:
+            from PIL import Image, ImageDraw
+            size = 64
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            # 背景色：深色科技底座，运行态为科技黑绿，待机态为沉稳黑灰
+            bg = (15, 23, 42, 245) if active else (30, 41, 59, 230)
+            border = (0, 229, 153, 255) if active else (148, 163, 184, 255)
+            draw.rounded_rectangle([(4, 4), (size - 5, size - 5)], radius=16, fill=bg, outline=border, width=3)
+            cx, cy = size // 2, size // 2
+            if active:
+                # 绿色高亮能量核心 + 科技菱形
+                draw.ellipse([(cx - 7, cy - 7), (cx + 7, cy + 7)], fill=(0, 229, 153, 255))
+                draw.polygon([(cx, cy - 18), (cx + 14, cy), (cx, cy + 18), (cx - 14, cy)], outline=(56, 189, 248, 255), width=2)
+            else:
+                # 待机银灰菱形
+                draw.polygon([(cx, cy - 14), (cx + 12, cy), (cx, cy + 14), (cx - 12, cy)], fill=(148, 163, 184, 255))
+            return img
+        except Exception:
+            return None
+
+    def _build_menu(self):
+        import pystray
+        from pystray import MenuItem, Menu
+        import webbrowser
+
+        def action_open_dashboard(icon, item):
+            webbrowser.open("http://127.0.0.1:8081/dashboard")
+
+        def action_open_web(icon, item):
+            webbrowser.open("http://127.0.0.1:8081")
+
+        def action_open_main_log(icon, item):
+            today = time.strftime("%Y%m%d")
+            log_path = self.active_log_file or os.path.join(LOGS_DIR, f"8083_llama_{today}.log")
+            if os.path.exists(log_path):
+                os.startfile(log_path)
+
+        def action_open_proxy_log(icon, item):
+            today = time.strftime("%Y%m%d")
+            log_path = os.path.join(LOGS_DIR, f"8081_proxy_{today}.log")
+            if os.path.exists(log_path):
+                os.startfile(log_path)
+
+        def action_open_models_dir(icon, item):
+            if os.path.exists(MODELS_DIR):
+                os.startfile(MODELS_DIR)
+
+        def action_toggle_console(icon, item):
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow() if hasattr(ctypes.windll, "kernel32") else 0
+            if hwnd:
+                try:
+                    import win32gui, win32con
+                    if win32gui.IsWindowVisible(hwnd):
+                        win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
+                        self.console_visible = False
+                    else:
+                        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+                        win32gui.SetForegroundWindow(hwnd)
+                        self.console_visible = True
+                    self.update_menu()
+                except Exception:
+                    pass
+
+        def action_exit(icon, item):
+            cleanup_all()
+            self.stop()
+            os._exit(0)
+
+        status_display = f"🤖 状态: {self.status_text}"
+        model_display = f"📌 模型: {self.model_name}"
+        toggle_text = "🪟 隐藏控制台窗口 (静默后台)" if self.console_visible else "🪟 显示控制台窗口 (呼出黑框)"
+
+        return Menu(
+            MenuItem(status_display, None, enabled=False),
+            MenuItem(model_display, None, enabled=False),
+            Menu.SEPARATOR,
+            MenuItem("🌐 打开智能网关控制台 (8081)", action_open_dashboard, default=True),
+            MenuItem("💬 打开 Web 对话体验界面", action_open_web),
+            Menu.SEPARATOR,
+            MenuItem("📜 查看主脑模型实时日志 (8083)", action_open_main_log),
+            MenuItem("👁️ 查看网关协同流水日志 (8081)", action_open_proxy_log),
+            MenuItem("📁 打开模型权重存放目录", action_open_models_dir),
+            MenuItem(toggle_text, action_toggle_console),
+            Menu.SEPARATOR,
+            MenuItem("⏹️ 完全安全退出 (终结服务释放资源)", action_exit)
+        )
+
+    def start(self):
+        try:
+            import pystray
+            img = self._create_icon_image(self.is_running)
+            if not img:
+                return
+            self.icon = pystray.Icon(
+                "MiracleAILauncher",
+                img,
+                f"奇迹AI启动器: {self.model_name}",
+                menu=self._build_menu()
+            )
+            self.thread = threading.Thread(target=self.icon.run, daemon=True)
+            self.thread.start()
+        except Exception:
+            pass
+
+    def update_status(self, model_name, status_text="运行中", is_running=True, log_file=None):
+        self.model_name = model_name
+        self.status_text = status_text
+        self.is_running = is_running
+        if log_file:
+            self.active_log_file = log_file
+        if self.icon:
+            try:
+                new_img = self._create_icon_image(is_running)
+                if new_img:
+                    self.icon.icon = new_img
+                self.icon.title = f"奇迹AI: {model_name} ({status_text})"
+                self.icon.menu = self._build_menu()
+                self.icon.update_menu()
+            except Exception:
+                pass
+
+    def update_menu(self):
+        if self.icon:
+            try:
+                self.icon.menu = self._build_menu()
+                self.icon.update_menu()
+            except Exception:
+                pass
+
+    def stop(self):
+        if self.icon:
+            try:
+                self.icon.stop()
+            except Exception:
+                pass
+            self.icon = None
+
+
+def init_system_tray():
+    """初始化 Windows 任务栏状态托盘图标"""
+    global g_tray_manager
+    if g_tray_manager is None:
+        g_tray_manager = MiracleTrayManager(on_exit_callback=cleanup_and_exit)
+        g_tray_manager.start()
+
+
+def update_system_tray(model_name, status_text="运行中", is_running=True, log_file=None):
+    """更新任务栏托盘图标状态与提示"""
+    global g_tray_manager
+    if g_tray_manager:
+        g_tray_manager.update_status(model_name, status_text, is_running, log_file)
+
 
 
 def get_today_str():
@@ -337,10 +506,15 @@ def enable_kill_child_processes_on_exit():
 
 def cleanup_all():
     """清理所有绑定的网关与大模型进程，确保无任何孤儿进程独活"""
-    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc
+    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc, g_tray_manager
     if g_is_cleaning:
         return
     g_is_cleaning = True
+    if g_tray_manager:
+        try:
+            g_tray_manager.stop()
+        except Exception:
+            pass
     for proc in [g_main_proc, g_sidecar_proc, g_gateway_proc]:
         if proc and proc.poll() is None:
             try:
@@ -840,8 +1014,8 @@ def render_models_grid(menu):
 def main():
     global g_main_proc
 
-    # 处理 CLI 选项 (例如 --list-models)
-    if any(arg.lower() in ("-listmodels", "--list-models", "list") for arg in sys.argv[1:]):
+    # 处理 CLI 选项 (例如 --list / --list-models)
+    if any(arg.lower() in ("-listmodels", "--list-models", "list", "--list", "-l") for arg in sys.argv[1:]):
         menu = build_models_menu()
         out = [{"index": idx + 1, "name": m["alias"], "tag": m["desc"], "category": "vision" if not m["is_text"] else "text"} for idx, m in enumerate(menu)]
         print(json.dumps(out, ensure_ascii=False))
@@ -852,6 +1026,9 @@ def main():
 
     hw = get_hardware_info()
     print_banner(hw)
+
+    # 启动 Windows 任务栏通知区域状态托盘 (右键随时快捷操作与退出)
+    init_system_tray()
 
     # 1. 基础组件初始化：拉起 8081 智能协同网关
     sys.stdout.write(f"{C_BOLD}正在联动拉起 8081 智能协同网关...{C_RESET}\n")
@@ -921,6 +1098,7 @@ def main():
     ]
 
     sys.stdout.write(f"{C_GREEN}  🔥 正在极速加载主脑至 V100 32GB 显存 (日志落盘: {os.path.basename(main_log_file)})...{C_RESET}\n")
+    update_system_tray(model_name=selected["name"], status_text="模型加载中 (V100 32GB)...", is_running=False, log_file=main_log_file)
     sys.stdout.flush()
 
     main_env = os.environ.copy()
@@ -950,10 +1128,12 @@ def main():
             sys.stdout.flush()
 
     if ready:
+        update_system_tray(model_name=selected["name"], status_text="运行中 (8081网关/8083主脑)", is_running=True, log_file=main_log_file)
         sys.stdout.write(f"\n\n{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
         sys.stdout.write(f"  🎉 主脑引擎已成功常驻！端口: http://127.0.0.1:8083/v1\n")
         sys.stdout.write(f"  📡 网关双通接口: http://127.0.0.1:8081/v1 (Claude Code / ccswitch)\n")
         sys.stdout.write(f"  📊 算力监控大屏: http://127.0.0.1:8081/dashboard\n")
+        sys.stdout.write(f"  🔔 任务栏托盘状态已激活：右下角图标可双击打开大屏，右键随时完全退出/隐藏黑框\n")
         sys.stdout.write(f"{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
         sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
     else:
