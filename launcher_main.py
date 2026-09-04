@@ -1,0 +1,874 @@
+# -*- coding: utf-8 -*-
+"""
+========================================================================================
+  🚀 AI 大模型统一启动器 (Python 原生高能版) · Model Launcher v4.0
+  • 彻底告别 PowerShell 脚本与编码兼容陷阱，纯 Python 原生多进程治理
+  • 8081 智能协同网关常驻 · 8083 主脑全能底座 · 8085 视觉侧挂眼睛 (CPU 0显存)
+  • Windows 内核级 Job Object 绑定，同生共死，100% 杜绝孤儿进程与显存残留
+  • 严格遵循单日单一日志规范 (8083_llama_YYYYMMDD.log / 8085_sidecar_YYYYMMDD.log)
+========================================================================================
+"""
+
+import os
+import sys
+import time
+import socket
+import subprocess
+import signal
+import json
+import psutil
+import atexit
+import ctypes
+from ctypes import wintypes
+
+# 强制 UTF-8 标准输出
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# 智能解析 llama.cpp 核心运行与模型目录
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def resolve_llama_server_dir():
+    if os.path.exists(os.path.join(SCRIPT_DIR, "llama-server.exe")):
+        return SCRIPT_DIR
+    env_dir = os.environ.get("LLAMA_SERVER_DIR")
+    if env_dir and os.path.exists(os.path.join(env_dir, "llama-server.exe")):
+        return env_dir
+    default_dir = r"E:\llama-win-cuda-12.4-x64"
+    if os.path.exists(os.path.join(default_dir, "llama-server.exe")):
+        return default_dir
+    return SCRIPT_DIR
+
+BASE_DIR = resolve_llama_server_dir()
+MODELS_DIR = r"E:\models" if os.path.exists(r"E:\models") else os.path.join(BASE_DIR, "models")
+PYTHON_EXE = sys.executable
+LLAMA_SERVER = os.path.join(BASE_DIR, "llama-server.exe")
+TEMPLATE_FILE = os.path.join(SCRIPT_DIR, "chat_template_qwen_fixed.jinja")
+if not os.path.exists(TEMPLATE_FILE):
+    TEMPLATE_FILE = os.path.join(BASE_DIR, "chat_template_qwen_fixed.jinja")
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+# ANSI 终端色彩
+C_RESET = "\033[0m"
+C_BOLD = "\033[1m"
+C_CYAN = "\033[96m"
+C_GREEN = "\033[92m"
+C_YELLOW = "\033[93m"
+C_PURPLE = "\033[95m"
+C_BLUE = "\033[94m"
+C_RED = "\033[91m"
+C_GRAY = "\033[90m"
+
+# 全局进程句柄与生命周期互斥锁
+g_gateway_proc = None
+g_sidecar_proc = None
+g_main_proc = None
+g_is_cleaning = False
+
+
+def get_today_str():
+    return time.strftime("%Y%m%d")
+
+
+def is_port_open(port, host="127.0.0.1"):
+    """检测指定 TCP 端口是否处于监听状态"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
+
+
+def kill_port(port):
+    """清理占用指定端口的进程 (纯 Python psutil 毫秒级极速关闭)"""
+    try:
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr and conn.laddr.port == port and conn.pid:
+                try:
+                    p = psutil.Process(conn.pid)
+                    p.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+    except Exception:
+        pass
+
+
+def kill_all_llama():
+    """安全清空所有残留 llama 进程 (纯 Python 毫秒级)"""
+    try:
+        for proc in psutil.process_iter(["name"]):
+            try:
+                name = proc.info["name"] or ""
+                if "llama" in name.lower():
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception:
+        pass
+
+
+def check_gpu_memory():
+    """等待 GPU 显存完全释放至安全水位 (< 600MB)"""
+    for _ in range(12):
+        try:
+            smi = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, errors="ignore"
+            )
+            if smi.returncode == 0:
+                used = int(smi.stdout.strip() or "0")
+                if used < 600:
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.3)
+    return True
+
+
+def get_hardware_info():
+    """获取 GPU、CPU 与系统内存状态"""
+    gpu_desc = "NVIDIA Tesla V100 32GB"
+    gpu_mem = "32.0 GB"
+    try:
+        smi = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, errors="ignore"
+        )
+        if smi.returncode == 0 and smi.stdout.strip():
+            parts = [p.strip() for p in smi.stdout.strip().split(",")]
+            if len(parts) >= 2:
+                gpu_desc = parts[0]
+                gpu_mem = parts[1]
+    except Exception:
+        pass
+
+    cpu_count = os.cpu_count() or 8
+    return {
+        "gpu": gpu_desc,
+        "vram": gpu_mem,
+        "cpu": f"{cpu_count} 核心线程",
+        "os": "Windows 64-bit"
+    }
+
+
+def ensure_gateway_8081():
+    """保证 8081 智能协同网关后台常驻运行"""
+    if is_port_open(8081):
+        return True
+
+    today = get_today_str()
+    log_file = os.path.join(LOGS_DIR, f"8081_proxy_{today}.log")
+    proxy_script = os.path.join(BASE_DIR, "qwen_tool_proxy.py")
+
+    if not os.path.exists(proxy_script):
+        return False
+
+    log_fp = open(log_file, "a", encoding="utf-8")
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
+
+    global g_gateway_proc
+    p = subprocess.Popen(
+        [PYTHON_EXE, proxy_script, "--listen", "8081", "--target", "8083", "--vision-main", "8085", "--api-key", "llamacpp"],
+        cwd=BASE_DIR,
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        creationflags=creationflags
+    )
+    g_gateway_proc = p
+
+    for _ in range(25):
+        if is_port_open(8081):
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def ensure_sidecar_8085(wait=False):
+    """
+    启动并守护 8085 视觉侧挂眼睛 (Qwen3-VL-8B)
+    纯 CPU / 系统内存常驻运行，强制隔离 CUDA，绝对 0 显存占用！
+    支持异步后台预热，主脑直接并行加载，绝不阻塞用户等待！
+    """
+    global g_sidecar_proc
+    if is_port_open(8085):
+        sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已常驻在位 (Qwen3-VL-8B · 0显存 · 瞬时复用)！{C_RESET}\n\n")
+        sys.stdout.flush()
+        return True
+
+    model_path = os.path.join(MODELS_DIR, "Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf")
+    mmproj_path = os.path.join(MODELS_DIR, "mmproj-Qwen3VL-8B-Instruct-F16.gguf")
+
+    if not (os.path.exists(model_path) and os.path.exists(mmproj_path)):
+        return False
+
+    today = get_today_str()
+    log_file = os.path.join(LOGS_DIR, f"8085_sidecar_{today}.log")
+    log_fp = open(log_file, "a", encoding="utf-8")
+
+    sidecar_args = [
+        LLAMA_SERVER,
+        "-m", model_path,
+        "--mmproj", mmproj_path,
+        "-ngl", "0",
+        "-c", "8192",
+        "-b", "1024",
+        "--ubatch-size", "1024",
+        "-t", "6",
+        "--parallel", "1",
+        "--image-min-tokens", "1024",
+        "--alias", "Qwen3-VL-8B",
+        "--port", "8085",
+        "--api-key", "llamacpp",
+        "--log-file", log_file
+    ]
+
+    # 关键：隔离 CUDA 环境变量，使 8085 纯 CPU 运行，绝不触碰 V100 显存
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = "-1"
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
+
+    g_sidecar_proc = subprocess.Popen(
+        sidecar_args,
+        cwd=BASE_DIR,
+        env=env,
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        creationflags=creationflags
+    )
+
+    sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉眼睛正在后台并行预热 (Qwen3-VL-8B · CPU纯内存 · 0显存)...{C_RESET}\n\n")
+    sys.stdout.flush()
+
+    if wait:
+        for _ in range(35):
+            if is_port_open(8085):
+                return True
+            time.sleep(0.3)
+
+    return True
+
+
+def enable_kill_child_processes_on_exit():
+    """
+    通过 Windows 内核 Job Object 机制，将启动器进程及所有派生的子进程绑定为不可分割的作业。
+    一旦控制台窗口被关闭（无论是点右上角红叉 X、任务管理器结束、还是退出），
+    Windows 内核级别保证 100% 强制同步终结全部子进程 (8081网关/8083主脑/8085视觉)，绝无任何独活！
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        CreateJobObjectW = kernel32.CreateJobObjectW
+        CreateJobObjectW.restype = wintypes.HANDLE
+        CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+
+        SetInformationJobObject = kernel32.SetInformationJobObject
+        SetInformationJobObject.restype = wintypes.BOOL
+        SetInformationJobObject.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD]
+
+        AssignProcessToJobObject = kernel32.AssignProcessToJobObject
+        AssignProcessToJobObject.restype = wintypes.BOOL
+        AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+
+        GetCurrentProcess = kernel32.GetCurrentProcess
+        GetCurrentProcess.restype = wintypes.HANDLE
+
+        h_job = CreateJobObjectW(None, None)
+        if not h_job:
+            return False
+
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_void_p),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ctypes.c_uint64),
+                ("WriteOperationCount", ctypes.c_uint64),
+                ("OtherOperationCount", ctypes.c_uint64),
+                ("ReadTransferCount", ctypes.c_uint64),
+                ("WriteTransferCount", ctypes.c_uint64),
+                ("OtherTransferCount", ctypes.c_uint64),
+            ]
+
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryLimit", ctypes.c_size_t),
+                ("PeakJobMemoryLimit", ctypes.c_size_t),
+            ]
+
+        JobObjectExtendedLimitInformation = 9
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+
+        SetInformationJobObject(
+            h_job,
+            JobObjectExtendedLimitInformation,
+            ctypes.byref(info),
+            ctypes.sizeof(info)
+        )
+        AssignProcessToJobObject(h_job, GetCurrentProcess())
+        return True
+    except Exception:
+        return False
+
+
+def cleanup_all():
+    """清理所有绑定的网关与大模型进程，确保无任何孤儿进程独活"""
+    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc
+    if g_is_cleaning:
+        return
+    g_is_cleaning = True
+    for proc in [g_main_proc, g_sidecar_proc, g_gateway_proc]:
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    kill_port(8081)
+    kill_port(8083)
+    kill_port(8085)
+    kill_all_llama()
+
+
+def cleanup_and_exit(signum=None, frame=None):
+    """用户按 Ctrl+C 或正常退出时触发"""
+    sys.stdout.write(f"\n{C_YELLOW}正在安全终结全部 AI 进程 (8081/8083/8085)...{C_RESET}\n")
+    sys.stdout.flush()
+    cleanup_all()
+    sys.stdout.write(f"{C_GREEN}✅ 全部服务已彻底关闭，无任何后台进程独活。{C_RESET}\n")
+    sys.exit(0)
+
+
+# 注册控制台关闭事件处理 (拦截窗口 X 按钮点击)
+if sys.platform == "win32":
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+        def win_ctrl_handler(dwCtrlType):
+            cleanup_all()
+            return True
+        g_ctrl_handler = HandlerRoutine(win_ctrl_handler)
+        kernel32.SetConsoleCtrlHandler(g_ctrl_handler, True)
+    except Exception:
+        pass
+
+atexit.register(cleanup_all)
+signal.signal(signal.SIGINT, cleanup_and_exit)
+signal.signal(signal.SIGTERM, cleanup_and_exit)
+
+
+def print_banner(hw):
+    os.system("cls" if sys.platform == "win32" else "clear")
+    w = 88
+    line_eq = "=" * w
+    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
+    sys.stdout.write(f"{C_BOLD}{C_GREEN}      🚀 AI 大模型统一启动器 v4.0 (Python 原生高能版) · 智能协同网关矩阵{C_RESET}\n")
+    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
+    sys.stdout.write(f"{C_GRAY}  硬件环境：{hw['gpu']} (显存: {hw['vram']}) | {hw['cpu']} | {hw['os']}{C_RESET}\n")
+    sys.stdout.write(f"{C_GRAY}  核心准则：纯 Python 原生驱动 · Windows 内核 Job 绑定 · 网关毫秒级三态裁决{C_RESET}\n")
+    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n\n")
+
+
+def build_models_menu():
+    """定义可用模型矩阵 (全部 27B 统一搭载 mmproj + --no-mmproj-offload + draft-mtp + -kvu + 4并发)"""
+    mmproj_27b = os.path.join(MODELS_DIR, "mmproj-Qwen3.8-27B-F16.gguf")
+
+    return [
+        {
+            "key": "1",
+            "name": "Qwen3.8-27B-A [全模态全能底座] (4并发+MTP+CPU视觉合一)",
+            "desc": "27B 旗舰 | 160K 统一池 | 原生 MTP 投机加速 | 0显存 CPU 视觉 | 4槽高吞吐流水线",
+            "recommend": "【👑 终极全能主力 · 网关自适应三态裁决】",
+            "alias": "Qwen3.8-27B-A-Q6_K",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
+                "--mmproj", mmproj_27b,
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "163840",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "4",
+                "--kv-unified",
+                "--cache-reuse", "512",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-mmproj-offload",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Qwen3.8-27B-A-Q6_K"
+            ]
+        },
+        {
+            "key": "2",
+            "name": "Qwen3.8-27B-A [双槽MTP全能版]",
+            "desc": "27B 旗舰 | 144K 统一池 (单槽72K) | 原生 MTP 极速推导 (45+ tok/s) | 视觉直通",
+            "recommend": "【日常深度编程 · 极速单任务】",
+            "alias": "Qwen3.8-27B-A-Q6_K",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
+                "--mmproj", mmproj_27b,
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "147456",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "2",
+                "--kv-unified",
+                "--cache-reuse", "512",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-mmproj-offload",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Qwen3.8-27B-A-Q6_K"
+            ]
+        },
+        {
+            "key": "3",
+            "name": "Qwen3.8-27B-A [4并发高吞吐版]",
+            "desc": "27B 旗舰 | 160K 统一池 | 4 槽并行高并发高吞吐 | 视觉直通",
+            "recommend": "【多 Agent 高并发竞争】",
+            "alias": "Qwen3.8-27B-A-Q6_K",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
+                "--mmproj", mmproj_27b,
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "163840",
+                "-b", "2048",
+                "--ubatch-size", "512",
+                "-t", "6",
+                "--parallel", "4",
+                "--kv-unified",
+                "--cache-reuse", "512",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-mmproj-offload",
+                "--ctx-checkpoints", "2",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Qwen3.8-27B-A-Q6_K"
+            ]
+        },
+        {
+            "key": "4",
+            "name": "Qwen3.8-27B-NVFP4-MTP-HIGHEST",
+            "desc": "27B NVFP4 极致量化 | 160K 统一池 | MTP 极速推导 (生成峰值突破 50+ tok/s) | 视觉直通",
+            "recommend": "【官方高精 · 极限速度探索】",
+            "alias": "Qwen3.8-27B-N-H",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-HIGHEST.gguf"),
+                "--mmproj", mmproj_27b,
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "163840",
+                "-b", "2048",
+                "--ubatch-size", "512",
+                "-t", "6",
+                "--parallel", "4",
+                "--kv-unified",
+                "--cache-reuse", "512",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-mmproj-offload",
+                "--ctx-checkpoints", "2",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Qwen3.8-27B-N-H"
+            ]
+        },
+        {
+            "key": "5",
+            "name": "Qwen3.8-27B-NVFP4-MTP-MID-HIGH",
+            "desc": "27B NVFP4 极致量化 | 256K 超大统一KV池 | MTP加速 | 视觉直通",
+            "recommend": "【超长上下文 · 巨型代码库推演】",
+            "alias": "Qwen3.8-27B-MID-HIGH",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-MID-HIGH.gguf"),
+                "--mmproj", mmproj_27b,
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "262144",
+                "-b", "2048",
+                "--ubatch-size", "512",
+                "-t", "6",
+                "--parallel", "4",
+                "--kv-unified",
+                "--cache-reuse", "512",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-mmproj-offload",
+                "--ctx-checkpoints", "2",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Qwen3.8-27B-MID-HIGH"
+            ]
+        },
+        {
+            "key": "6",
+            "name": "Ornith-1.5-35B-Q4_K_M (MoE超强大脑)",
+            "desc": "35B 稀疏混合专家 | 128K 超长上下文 | 原生挂载 mmproj-35B (CPU 0显存)",
+            "recommend": "【深度复杂逻辑与数理推理】",
+            "alias": "Ornith-1.5-35B",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Ornith-1.5-35B-Q4_K_M.gguf"),
+                "--mmproj", os.path.join(MODELS_DIR, "mmproj-Ornith-1.5-35B-A3B-f16.gguf"),
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "131072",
+                "-b", "4096",
+                "--ubatch-size", "4096",
+                "-t", "6",
+                "--parallel", "1",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-mmproj-offload",
+                "--ctx-checkpoints", "4",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Ornith-1.5-35B"
+            ]
+        },
+        {
+            "key": "7",
+            "name": "Qwen3-VL-8B (8B 视觉先锋独立版)",
+            "desc": "8B 旗舰视觉 | UD-Q4_K_XL 极致量化 | GPU 直通高精图文推理 (32K)",
+            "recommend": "【端到端高精 OCR 与图纸评审】",
+            "alias": "Qwen3-VL-8B",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf"),
+                "--mmproj", os.path.join(MODELS_DIR, "mmproj-Qwen3VL-8B-Instruct-F16.gguf"),
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "32768",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "1",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--jinja",
+                "--alias", "Qwen3-VL-8B"
+            ]
+        },
+        {
+            "key": "8",
+            "name": "Gemma-4-E4B (4B MoE 多模态)",
+            "desc": "4B MoE 架构 | Q6_K_P 高精量化 | 128K 上下文 | 原生挂载 mmproj",
+            "recommend": "【轻量极速多模态对话】",
+            "alias": "Gemma-4-E4B",
+            "is_text": False,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf"),
+                "--mmproj", os.path.join(MODELS_DIR, "mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"),
+                "-ngl", "99",
+                "--cache-type-k", "f16",
+                "--cache-type-v", "f16",
+                "-c", "131072",
+                "-b", "2048",
+                "-t", "6",
+                "--parallel", "1",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.0",
+                "--jinja",
+                "--alias", "Gemma-4-E4B"
+            ]
+        },
+        {
+            "key": "9",
+            "name": "Qwen3.5-4B (4B 极速纯文本)",
+            "desc": "4B 轻量级对话与代码辅助 | 256K 超大上下文 | 8085 视觉眼睛侧挂",
+            "recommend": "【低功耗快速轻量辅助】",
+            "alias": "Qwen3.5-4B",
+            "is_text": True,
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.5-4B.gguf") if os.path.exists(os.path.join(MODELS_DIR, "Qwen3.5-4B.gguf")) else os.path.join(MODELS_DIR, "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf"),
+                "-ngl", "99",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "262144",
+                "-b", "2048",
+                "-t", "6",
+                "--parallel", "1",
+                "--flash-attn", "on",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.0",
+                "--jinja",
+                "--alias", "Qwen3.5-4B"
+            ]
+        }
+    ]
+
+
+def main():
+    global g_main_proc
+
+    # 处理 CLI 选项 (例如 --list-models)
+    if any(arg.lower() in ("-listmodels", "--list-models", "list") for arg in sys.argv[1:]):
+        menu = build_models_menu()
+        out = [{"index": idx + 1, "name": m["alias"], "tag": m["desc"], "category": "vision" if not m["is_text"] else "text"} for idx, m in enumerate(menu)]
+        print(json.dumps(out, ensure_ascii=False))
+        return
+
+    # 启用 Windows 内核级进程同生共死 Job 绑定 (控制台红叉一关，内核强制一并终结全部子进程)
+    enable_kill_child_processes_on_exit()
+
+    hw = get_hardware_info()
+    print_banner(hw)
+
+    # 1. 基础组件初始化：双击启动器即刻在后台预热 8081 网关与 8085 CPU 视觉眼睛 (错峰载入，完全杜绝磁盘争抢)
+    sys.stdout.write(f"{C_BOLD}[1/2] 正在联动拉起基础协同组件...{C_RESET}\n")
+    if ensure_gateway_8081():
+        sys.stdout.write(f"{C_GREEN}  ├─ ✅ 8081 智能协同网关已就绪 (http://127.0.0.1:8081/dashboard){C_RESET}\n")
+    ensure_sidecar_8085(wait=False)
+
+    # 2. 呈现模型菜单
+    menu = build_models_menu()
+    sys.stdout.write(f"{C_BOLD}{C_CYAN}请选择要固定启动的主模型：{C_RESET}\n\n")
+
+    for item in menu:
+        sys.stdout.write(f"  {C_BOLD}[{item['key']}]{C_RESET} {C_GREEN}{item['name']}{C_RESET}\n")
+        sys.stdout.write(f"      {C_GRAY}说明: {item['desc']}{C_RESET}\n")
+        sys.stdout.write(f"      {C_YELLOW}{item['recommend']}{C_RESET}\n\n")
+
+    sys.stdout.write(f"  {C_BOLD}[0]{C_RESET} 退出启动器 (安全关闭全部服务)\n\n")
+
+    choice = input(f"{C_BOLD}请输入选项编号 [默认 1]: {C_RESET}").strip()
+    if not choice:
+        choice = "1"
+    if choice == "0":
+        cleanup_and_exit()
+
+    selected = None
+    for item in menu:
+        if item["key"] == choice:
+            selected = item
+            break
+    if not selected:
+        selected = menu[0]
+
+    sys.stdout.write(f"\n{C_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
+    sys.stdout.write(f"  🚀 正在启动: {C_BOLD}{selected['name']}{C_RESET}\n")
+    sys.stdout.write(f"{C_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
+
+    # 3. 校验 8085 视觉侧挂状态
+    if selected.get("is_text"):
+        if is_port_open(8085):
+            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在 CPU 内存就绪 (Qwen3-VL-8B · 0显存 · 错峰预热完成)！{C_RESET}\n\n")
+        else:
+            sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉眼睛后台极速装载中 (Qwen3-VL-8B · CPU纯内存 · 0显存)...{C_RESET}\n\n")
+            ensure_sidecar_8085(wait=False)
+    else:
+        sys.stdout.write(f"{C_BOLD}  ├─ 🖼️ 原生多模态全模态底座：GPU/CPU 视觉直通，网关智能自适应调度！{C_RESET}\n\n")
+
+    # 4. 清理 8083 旧进程并校验显存安全
+    kill_port(8083)
+    check_gpu_memory()
+
+    # 5. 启动 8083 主脑引擎
+    today = get_today_str()
+    main_log_file = os.path.join(LOGS_DIR, f"8083_llama_{today}.log")
+    
+    server_cmd = [LLAMA_SERVER] + selected["args"] + [
+        "--port", "8083",
+        "--api-key", "llamacpp",
+        "--log-file", main_log_file
+    ]
+
+    sys.stdout.write(f"{C_GREEN}  🔥 正在极速加载主脑至 V100 32GB 显存 (日志落盘: {os.path.basename(main_log_file)})...{C_RESET}\n")
+    sys.stdout.flush()
+
+    main_env = os.environ.copy()
+    main_env["CUDA_CACHE_MAXSIZE"] = "2147483648"
+    main_env["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
+
+    # 以子进程前台常驻运行，注入专用 CUDA JIT 2GB 编译流
+    g_main_proc = subprocess.Popen(
+        server_cmd,
+        cwd=BASE_DIR,
+        env=main_env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags
+    )
+
+    # 毫秒级极速高频轮询检测端口
+    ready = False
+    for i in range(160):
+        if is_port_open(8083):
+            ready = True
+            break
+        time.sleep(0.25)
+        if i % 4 == 0:
+            sys.stdout.write(".")
+            sys.stdout.flush()
+
+    if ready:
+        sys.stdout.write(f"\n\n{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
+        sys.stdout.write(f"  🎉 主脑引擎已成功常驻！端口: http://127.0.0.1:8083/v1\n")
+        sys.stdout.write(f"  📡 网关双通接口: http://127.0.0.1:8081/v1 (Claude Code / ccswitch)\n")
+        sys.stdout.write(f"  📊 算力监控大屏: http://127.0.0.1:8081/dashboard\n")
+        sys.stdout.write(f"{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
+        sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
+    else:
+        sys.stdout.write(f"\n{C_RED}⚠️ 8083 端口未能在 45 秒内就绪，请检查 {main_log_file}{C_RESET}\n")
+
+    try:
+        while True:
+            time.sleep(1)
+            if g_main_proc.poll() is not None:
+                sys.stdout.write(f"\n{C_YELLOW}主脑进程已退出 (code={g_main_proc.returncode})。{C_RESET}\n")
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cleanup_all()
+
+
+if __name__ == "__main__":
+    main()

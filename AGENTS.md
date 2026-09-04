@@ -1,4 +1,11 @@
-# 项目编码规则
+# 项目编码规则与开发准则
+
+## ⚡ 核心准则：全面废弃 PowerShell，Python (.py) 绝对第一优先
+- ❌ **完全抛弃 PowerShell (.ps1)**：严禁编写新 `.ps1` 脚本，历史 `.ps1` 全部废弃，彻底杜绝 PowerShell 编码（BOM/GBK）、语法截断与进程树残留等深坑。
+- ✅ **全面采用 Python (.py) 脚本**：本项目以 Python 为绝对第一公民，所有核心启动器、服务网关、调度监控、测评流水线一律使用纯 Python 编写；只有 Python 完全搞不定的极端底层场景才考虑其他技术。
+- ✅ **.bat 仅作极简双击引导**：`.bat` 脚本只保留 2~5 行，仅负责设置 `chcp 65001` 与直接调用 `python.exe xxx.py`，严禁在 batch 中编写复杂的流程控制。
+
+---
 
 ## 中文编码格式标准
 
@@ -6,24 +13,24 @@
 
 | 文件类型 | 编码格式 | 说明 |
 |:---------|:---------|:------|
+| `.py` | **UTF-8 without BOM** | Python 标准，PEP 8 规范，本项目核心格式 |
 | `.bat` / `.cmd` | **UTF-8 without BOM** + `chcp 65001` | cmd.exe 用 65001 代码页正确显示中文 |
-| `.ps1` | **UTF-8 with BOM** | Windows PowerShell 5.1 需要 BOM 识别中文 |
-| `.py` | **UTF-8 without BOM** | Python 标准，PEP 8 规范 |
 | `.md` / `.json` / `.yaml` / `.toml` | **UTF-8 without BOM** | 通用标准 |
+| `.ps1` | *已废弃* | 不再维护使用 |
 
 ### 实际文件对照
 
-| 文件 | 当前编码 | 状态 |
-|:-----|:---------|:-----|
-| `启动奇迹API网关.bat` | UTF-8 + chcp 65001 | ✅ |
-| `launcher_main.ps1` | UTF-8 with BOM | ✅ |
-| `miracle_api.py` | UTF-8 | ✅ |
-| `hermes_llama_proxy.py` | UTF-8 | ✅ |
+| 文件 | 当前编码 | 状态 | 说明 |
+|:-----|:---------|:-----|:-----|
+| `启动AI大模型.bat` | UTF-8 + chcp 65001 | ✅ | 桌面双击引导器（直接调 launcher_main.py） |
+| `launcher_main.py` | UTF-8 | ✅ | **核心模型启动器 (Python 原生高能版)** |
+| `qwen_tool_proxy.py` | UTF-8 | ✅ | **核心智能协同网关** |
+| `启动奇迹API网关.bat` | UTF-8 + chcp 65001 | ✅ | 网关桌面引导器 |
+| `launcher_main.ps1` | - | 🚫 | **已废弃，由 launcher_main.py 取代** |
 
 ### 注意事项
 
-- 创建或修改含中文的文件时，写入前显式指定编码
-- 读取含中文文件时优先用 utf-8-sig 以兼容有无 BOM
+- 创建或修改含中文的文件时，写入前显式指定编码为 UTF-8
 - 禁止使用 GBK/GB2312/CP936 编码写入新文件
 - 遇到 GBK 旧文件时转换为 UTF-8（.bat 转 UTF-8 + chcp 65001）
 
@@ -69,26 +76,20 @@
 - ❌ 错误：`should_call_tool=False` 的题不给 `tools` → 模型当然不调，但这测不出决策能力
 - ✅ 正确：所有题目都给 `tools=[SEARCH_TOOL]`，让模型自己决定调不调
 
-### 6. Windows 特定陷阱
+### 6. Windows 特定陷阱与最佳实践
 
-| 陷阱 | 正确做法 |
-|:-----|:---------|
-| 正则里的 `\"` 在 PowerShell 中截断 | 正则中避免使用 `\"`，改用 `[^\"]` 或其他写法 |
-| 直接用 `python` 命令 | 用完整路径 `C:\...\Python313\python.exe` |
-| BAT 脚本中文 | UTF-8 + `chcp 65001`，或者纯英文输出 |
-| 启动器调用 | 用 `powershell -NoProfile -ExecutionPolicy Bypass -File launcher_main.ps1` |
+| 陷阱 / 规范 | 正确做法 |
+|:------------|:---------|
+| PowerShell 脚本与编码 | ❌ 彻底废除 `.ps1`，一律使用 `.py` 编写脚本 |
+| 直接用 `python` 命令 | 用完整路径 `C:\...\Python313\python.exe` 或当前虚拟环境 python |
+| BAT 脚本中文 | UTF-8 + `chcp 65001`，仅用于拉起 Python 脚本 |
+| 启动器调用 | 直接运行 `python launcher_main.py` 或双击 `启动AI大模型.bat` |
 
-### 7. 全模型测评前必做检查
+### 7. 全模型测评前必做检查 (纯 Python 原生检查)
 
-```powershell
-# 确认无残留进程
-Get-Process -Name llama* | Format-Table Id, ProcessName, Handles
-
-# 确认显存正常
-nvidia-smi --query-gpu=name,memory.used,utilization.gpu --format=csv
-
-# 如果有残留，清理
-Get-Process -Name llama* | Stop-Process -Force
+```bash
+# 确认无残留 llama 进程与显存
+python -c "import psutil, subprocess; [p.kill() for p in psutil.process_iter() if 'llama' in p.name().lower()]; subprocess.run(['nvidia-smi'])"
 ```
 
 ---

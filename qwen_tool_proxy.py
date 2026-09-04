@@ -884,19 +884,47 @@ class ConcurrencyQueue:
                     except Exception:
                         pass
                     
-                    b_state = getattr(backend_manager, "current_state", "")
-                    if b_state == backend_manager.STATE_VISION_27B or is_multimodal:
-                        is_multimodal = True
-                        if not mmproj_file:
-                            mmproj_file = "mmproj-Qwen3.8-27B-F16.gguf"
-                        display_model_name = "Qwen3.8-27B-A [原生多模态]"
-                    elif b_state == backend_manager.STATE_PIPELINE_4SLOT or len(slots_data) == 4:
-                        display_model_name = "Qwen3.8-27B-A [4并发流水线]"
-                    else:
-                        display_model_name = "Qwen3.8-27B-A [双槽MTP]"
+                    tag = ""
+                    if is_multimodal:
+                        tag = " [原生多模态]"
+                    elif len(slots_data) >= 4:
+                        tag = " [4并发流水线]"
+                    elif len(slots_data) == 2:
+                        tag = " [双槽MTP]"
+                    display_model_name = f"{model_alias}{tag}" if tag else model_alias
 
                     with self.lock:
                         self.current_model_alias = display_model_name
+
+                    # 真实探测 8085 视觉侧挂眼睛 (动态感知：检测到谁就显示谁，不设任何写死假数据)
+                    sidecar_online = False
+                    sidecar_model = ""
+                    try:
+                        req_8085 = urllib.request.Request("http://127.0.0.1:8085/props", headers={"Authorization": "Bearer llamacpp"}, method="GET")
+                        with urllib.request.urlopen(req_8085, timeout=0.25) as r8:
+                            if r8.status == 200:
+                                sidecar_online = True
+                                p8 = json.loads(r8.read().decode("utf-8"))
+                                alias = p8.get("model_alias")
+                                mpath = p8.get("model_path", "")
+                                if alias:
+                                    sidecar_model = os.path.splitext(os.path.basename(alias))[0]
+                                elif mpath:
+                                    sidecar_model = os.path.splitext(os.path.basename(mpath))[0]
+                                else:
+                                    sidecar_model = "在线视觉侧挂"
+                    except Exception:
+                        pass
+
+                    if is_multimodal:
+                        v_mode = "native"
+                        v_name = f"{model_alias} (GPU原生视觉)"
+                    elif sidecar_online:
+                        v_mode = "sidecar"
+                        v_name = f"{sidecar_model} (CPU纯内存 · 0显存)"
+                    else:
+                        v_mode = "offline"
+                        v_name = "8085 视觉侧挂未在线"
 
                     st = {
                         "backend_online": True,
@@ -908,7 +936,13 @@ class ConcurrencyQueue:
                         "is_multimodal": is_multimodal,
                         "mmproj_file": mmproj_file,
                         "vision_cache_count": len(VISION_IMAGE_OCR_CACHE),
-                        "active_vision": self.active_vision
+                        "active_vision": self.active_vision,
+                        "vision_card": {
+                            "mode": v_mode,
+                            "model_name": v_name,
+                            "online": bool(is_multimodal or sidecar_online),
+                            "is_active": bool(self.active_vision > 0)
+                        }
                     }
                     with self.lock:
                         self.cached_status = st
@@ -932,6 +966,25 @@ class ConcurrencyQueue:
         else:
             offline_model = "Qwen3.8-27B-A [双槽MTP]"
 
+        sidecar_online = False
+        sidecar_model = ""
+        try:
+            req_8085 = urllib.request.Request("http://127.0.0.1:8085/props", headers={"Authorization": "Bearer llamacpp"}, method="GET")
+            with urllib.request.urlopen(req_8085, timeout=0.25) as r8:
+                if r8.status == 200:
+                    sidecar_online = True
+                    p8 = json.loads(r8.read().decode("utf-8"))
+                    alias = p8.get("model_alias")
+                    mpath = p8.get("model_path", "")
+                    if alias:
+                        sidecar_model = os.path.splitext(os.path.basename(alias))[0]
+                    elif mpath:
+                        sidecar_model = os.path.splitext(os.path.basename(mpath))[0]
+                    else:
+                        sidecar_model = "在线视觉侧挂"
+        except Exception:
+            pass
+
         return {
             "backend_online": False,
             "model_name": offline_model,
@@ -942,7 +995,13 @@ class ConcurrencyQueue:
             "is_multimodal": is_vm,
             "mmproj_file": ("mmproj-Qwen3.8-27B-F16.gguf" if is_vm else ""),
             "vision_cache_count": len(VISION_IMAGE_OCR_CACHE),
-            "active_vision": self.active_vision
+            "active_vision": self.active_vision,
+            "vision_card": {
+                "mode": "sidecar" if sidecar_online else "offline",
+                "model_name": f"{sidecar_model} (CPU纯内存 · 0显存)" if sidecar_online else "8085 侧挂未在线",
+                "online": sidecar_online,
+                "is_active": False
+            }
         }
 
 concurrency_queue = ConcurrencyQueue(max_slots=4)
@@ -993,19 +1052,19 @@ class BillingTracker:
             },
             "reasoning_levels": {
                 "today": {
-                    "simple": 0, "medium": 0, "hard": 0,
+                    "simple": 0, "medium": 0, "hard": 0, "none": 0,
                     "by_mode": {
-                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0, "none": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0, "none": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0, "none": 0}
                     }
                 },
                 "total": {
-                    "simple": 0, "medium": 0, "hard": 0,
+                    "simple": 0, "medium": 0, "hard": 0, "none": 0,
                     "by_mode": {
-                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0, "none": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0, "none": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0, "none": 0}
                     }
                 }
             },
@@ -1166,11 +1225,11 @@ class BillingTracker:
                 self.data["hot_swaps"]["today_count"] = 0
             if "reasoning_levels" in self.data:
                 self.data["reasoning_levels"]["today"] = {
-                    "simple": 0, "medium": 0, "hard": 0,
+                    "simple": 0, "medium": 0, "hard": 0, "none": 0,
                     "by_mode": {
-                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0},
-                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0}
+                        "MTP_2SLOT": {"simple": 0, "medium": 0, "hard": 0, "none": 0},
+                        "PIPELINE_4SLOT": {"simple": 0, "medium": 0, "hard": 0, "none": 0},
+                        "VISION_27B": {"simple": 0, "medium": 0, "hard": 0, "none": 0}
                     }
                 }
             with speed_engine.lock:
@@ -1185,9 +1244,11 @@ class BillingTracker:
         with self.lock:
             self._check_day_rollover()
             eff_norm = "medium"
-            if reasoning_effort in ("low", "minimal"):
+            if reasoning_effort in ("none", "off"):
+                eff_norm = "none"
+            elif reasoning_effort in ("low", "minimal"):
                 eff_norm = "simple"
-            elif reasoning_effort in ("high", "xhigh", "max"):
+            elif reasoning_effort in ("high", "xhigh", "max", "ultracode", "extreme"):
                 eff_norm = "hard"
             else:
                 eff_norm = "medium"
@@ -1478,6 +1539,27 @@ class BillingTracker:
             speed_engine.record_detailed(prompt_tokens, p_time, completion_tokens, g_time, duration_s)
 
             return cost, d["cost_cny"], d["requests"]
+
+    def record_vision_image(self, duration_s=0.0):
+        """记录视觉眼睛/多模态图片推导张数与耗时"""
+        with self.lock:
+            self._check_day_rollover()
+            t = self.data["total"]
+            t["vision_images"] = t.get("vision_images", 0) + 1
+            t["vision_duration_s"] = round(t.get("vision_duration_s", 0.0) + duration_s, 2)
+            d = self.data["today"]
+            d["vision_images"] = d.get("vision_images", 0) + 1
+            d["vision_duration_s"] = round(d.get("vision_duration_s", 0.0) + duration_s, 2)
+            try:
+                tmp_file = self.filepath + ".tmp"
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+                if os.path.exists(self.filepath):
+                    os.replace(tmp_file, self.filepath)
+                else:
+                    os.rename(tmp_file, self.filepath)
+            except Exception:
+                pass
 
     def record_hot_swap(self, from_state, to_state, duration_s):
         """记录模型热切换等待耗时与次数，原子写落盘"""
@@ -1900,6 +1982,26 @@ def translate_anthropic_to_openai(anthropic_body):
     temperature = anthropic_body.get("temperature", 0.7)
     top_p = anthropic_body.get("top_p", 0.9)
 
+    # 🌟 v22.5 规范：Anthropic Thinking 原生参数解析与映射
+    anthropic_thinking = anthropic_body.get("thinking")
+    thinking_extra = {}
+    if isinstance(anthropic_thinking, dict):
+        th_type = anthropic_thinking.get("type")
+        if th_type == "disabled":
+            thinking_extra["enable_thinking"] = False
+            thinking_extra["reasoning_effort"] = "none"
+            thinking_extra["reasoning_budget"] = 0
+        elif th_type == "enabled":
+            thinking_extra["enable_thinking"] = True
+            b_tok = anthropic_thinking.get("budget_tokens", 2048)
+            thinking_extra["reasoning_budget"] = b_tok
+            if b_tok <= 1024:
+                thinking_extra["reasoning_effort"] = "low"
+            elif b_tok >= 4000:
+                thinking_extra["reasoning_effort"] = "xhigh"
+            else:
+                thinking_extra["reasoning_effort"] = "medium"
+
     openai_messages = []
 
     # 1. 提取 system 消息
@@ -1938,15 +2040,23 @@ def translate_anthropic_to_openai(anthropic_body):
                 b_type = block.get("type")
                 if b_type == "text":
                     text_chunks.append(block.get("text", ""))
-                elif b_type == "image":
+                elif b_type == "thinking":
+                    # 🌟 v22.5 规范：Anthropic 历史思维块无感提取，避免在历史中产生空 think 污染
+                    th_str = block.get("thinking", "")
+                    if th_str:
+                        text_chunks.append(f"<think>\n{th_str}\n</think>")
+                elif b_type in ("image", "video"):
                     source = block.get("source", {})
                     if source.get("type") == "base64":
-                        m_type = source.get("media_type", "image/jpeg")
+                        m_type = source.get("media_type", "image/jpeg" if b_type == "image" else "video/mp4")
                         b64_data = source.get("data", "")
+                        b_field = "image_url" if b_type == "image" else "video_url"
                         image_blocks.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{m_type};base64,{b64_data}"}
+                            "type": b_field,
+                            b_field: {"url": f"data:{m_type};base64,{b64_data}"}
                         })
+                elif b_type in ("image_url", "video_url"):
+                    image_blocks.append(block)
                 elif b_type == "tool_use":
                     tool_calls.append({
                         "id": block.get("id", f"call_{int(time.time()*1000)}"),
@@ -2019,6 +2129,7 @@ def translate_anthropic_to_openai(anthropic_body):
     }
     if openai_tools:
         openai_payload["tools"] = openai_tools
+    openai_payload.update(thinking_extra)
 
     return openai_payload
 
@@ -2167,13 +2278,13 @@ def scan_images_in_payload(payload):
                 if isinstance(item, dict):
                     itype = item.get("type", "")
                     img_url = ""
-                    if itype in ("image_url", "image", "input_image"):
-                        img_info = item.get("image_url") or item.get("url") or item.get("image")
-                        if isinstance(img_info, dict):
-                            img_url = img_info.get("url", "")
-                        elif isinstance(img_info, str):
-                            img_url = img_info
-                    elif itype == "text" and "data:image/" in str(item.get("text", "")):
+                    if itype in ("image_url", "image", "input_image", "video_url", "video", "input_video") or "video_url" in item or "video" in item:
+                        media_info = item.get("image_url") or item.get("video_url") or item.get("url") or item.get("image") or item.get("video")
+                        if isinstance(media_info, dict):
+                            img_url = media_info.get("url", "")
+                        elif isinstance(media_info, str):
+                            img_url = media_info
+                    elif itype == "text" and ("data:image/" in str(item.get("text", "")) or "data:video/" in str(item.get("text", ""))):
                         img_url = str(item.get("text", ""))
 
                     if img_url:
@@ -2198,15 +2309,63 @@ def scan_images_in_payload(payload):
 
     return bool(all_images), new_images, cached_images, last_img_msg_idx
 
-def process_native_vision_pipeline(cleaned_json):
+def call_sidecar_vision_8085(image_item, user_prompt=""):
     """
-    轨道一专属：27B 原生多模态视觉处理与多轮指纹缓存置换
-    1. 识别并提取所有图片，计算指纹哈希；
-    2. 【多轮对话免重复编码】：如果某张图片属于历史轮次（非最后一条提问）且其指纹已在 VISION_IMAGE_OCR_CACHE 中，
-       将其庞大的 Base64 块置换为轻量指纹占位符（上下文已在 27B 记忆中，杜绝重复向 8083 发送数兆 Base64），
-       不仅首字延迟（TTFT）从数秒降至 0.05 秒，还能在多轮后平滑兼容纯文本形态！
-    3. 【最新轮次新图】：保持原生完整 image_url 结构直通 8083（由 27B + mmproj 原生像素理解），
-       并在完成推理后自动录入指纹缓存！
+    通过 8085 端口调用 Qwen3-VL-8B 视觉侧挂眼睛 (CPU 纯内存运行 · 0 显存占用)
+    进行高保真视觉推导，返回结构化图文解析结果
+    """
+    try:
+        url = "http://127.0.0.1:8085/v1/chat/completions"
+        concurrency_queue.active_vision = 1
+        prompt_text = "请详尽识别并描述图像中的所有内容（包括代码、报错信息、UI界面布局、按钮颜色、图表数据、文字排版等），给出高精度的结构化图文解析："
+        if user_prompt:
+            prompt_text += f"\n用户提问重点：{user_prompt}"
+
+        payload = {
+            "model": "Qwen3-VL-8B",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        image_item
+                    ]
+                }
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.2
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer llamacpp"},
+            method="POST"
+        )
+        t0 = time.time()
+        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SIDECAR-8085] 👁️ 正在交由 8085 视觉侧挂眼睛 (Qwen3-VL-8B · CPU) 深度解析图像...\n")
+        sys.stdout.flush()
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            parsed_text = data["choices"][0]["message"]["content"]
+            dt = round(time.time() - t0, 2)
+            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SIDECAR-8085] ✅ 视觉解析完成 (耗时 {dt}s)！\n")
+            sys.stdout.flush()
+            tracker.record_vision_image(dt)
+            return parsed_text
+    except Exception as e:
+        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SIDECAR-WARN] 8085 视觉调用异常: {e}\n")
+        sys.stdout.flush()
+        return None
+    finally:
+        concurrency_queue.active_vision = max(0, concurrency_queue.active_vision - 1)
+
+def process_native_vision_pipeline(cleaned_json, target_port=8083):
+    """
+    全能视觉协同流水线 (双轨支持)：
+    1. 若 8083 主脑原生挂载 mmproj (如 Qwen3.8-27B 原生多模态)：保持原生 image_url 直通 GPU 极速编码；
+    2. 若 8083 主脑为纯文本 (如 27B 双槽MTP)：自动通过 8085 端口 (Qwen3-VL-8B CPU 侧挂眼睛) 深度解析后注入提示词；
+    3. 全局图像指纹高速缓存 (0.001s 瞬时复用)，杜绝多轮重复推导。
     """
     has_img, new_imgs, cached_imgs, last_img_msg_idx = scan_images_in_payload(cleaned_json)
     if not has_img:
@@ -2215,12 +2374,20 @@ def process_native_vision_pipeline(cleaned_json):
     messages = cleaned_json.get("messages", [])
     new_messages = []
     pending_to_cache = []
+    is_main_multimodal = check_backend_is_multimodal(target_port)
 
-    # 确定最后一条用户提问的索引，精准判定哪些是历史对话轮次
+    # 确定最后一条用户提问的文本与索引
     latest_user_idx = -1
+    latest_user_text = ""
     for idx in range(len(messages) - 1, -1, -1):
         if isinstance(messages[idx], dict) and messages[idx].get("role") == "user":
             latest_user_idx = idx
+            cnt = messages[idx].get("content")
+            if isinstance(cnt, str):
+                latest_user_text = cnt
+            elif isinstance(cnt, list):
+                txt_parts = [t.get("text", "") for t in cnt if isinstance(t, dict) and t.get("type") == "text"]
+                latest_user_text = " ".join(txt_parts)
             break
 
     for msg_idx, msg in enumerate(messages):
@@ -2237,27 +2404,37 @@ def process_native_vision_pipeline(cleaned_json):
                     new_content.append(item)
                     continue
                 itype = item.get("type", "")
-                if itype in ("image_url", "image", "input_image"):
-                    img_info = item.get("image_url") or item.get("url") or item.get("image")
-                    url_str = img_info.get("url", "") if isinstance(img_info, dict) else (img_info if isinstance(img_info, str) else "")
+                if itype in ("image_url", "image", "input_image", "video_url", "video", "input_video") or "video_url" in item or "video" in item:
+                    media_info = item.get("image_url") or item.get("video_url") or item.get("url") or item.get("image") or item.get("video")
+                    url_str = media_info.get("url", "") if isinstance(media_info, dict) else (media_info if isinstance(media_info, str) else "")
                     h = compute_image_hash(url_str)
 
                     # 判断是否命中历史指纹缓存
                     with VISION_IMAGE_CACHE_LOCK:
-                        is_cached = (h in VISION_IMAGE_OCR_CACHE)
+                        cached_entry = VISION_IMAGE_OCR_CACHE.get(h)
+                        is_cached = (cached_entry is not None)
 
-                    if is_cached and (is_historical or msg_idx != last_img_msg_idx):
-                        # 命中指纹缓存且为历史对话轮次：置换为轻量级指纹标识，免除重复传递数兆 Base64
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 历史图像指纹命中缓存 (hash={h[:8]})，多轮对话免重复编码，0.001s 瞬时复用！\n")
+                    if is_cached and (is_historical or msg_idx != last_img_msg_idx or not is_main_multimodal):
+                        # 命中指纹缓存：置换为轻量级指纹标识或解析文本，免除重复传递数兆 Base64
+                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 历史图像指纹命中缓存 (hash={h[:8]})，0.001s 瞬时复用！\n")
                         sys.stdout.flush()
-                        new_content.append({
-                            "type": "text",
-                            "text": f"【🖼️ 图像指纹: {h[:8]} (已于前序轮次由 27B 原生多模态视觉引擎深度理解并建立视觉记忆，无需重复编码)】"
-                        })
+                        desc = f"【🖼️ 图像指纹: {h[:8]} 视觉结构化解析】:\n{cached_entry}" if isinstance(cached_entry, str) else f"【🖼️ 图像指纹: {h[:8]} (已建立视觉记忆，无需重复编码)】"
+                        new_content.append({"type": "text", "text": desc})
                     else:
-                        # 最新提问或首次见到的图片：保留原生 image_url 原汁原味直通 8083 原生多模态
-                        new_content.append(item)
-                        pending_to_cache.append(h)
+                        if is_main_multimodal:
+                            # 主脑具备原生多模态：原生 image_url 原汁原味直通 8083 GPU
+                            new_content.append(item)
+                            pending_to_cache.append(h)
+                        else:
+                            # 主脑为纯文本：自动通过 8085 CPU 侧挂眼睛 (Qwen3-VL-8B) 解析
+                            parsed = call_sidecar_vision_8085(item, latest_user_text)
+                            if parsed:
+                                with VISION_IMAGE_CACHE_LOCK:
+                                    VISION_IMAGE_OCR_CACHE[h] = parsed
+                                new_content.append({"type": "text", "text": f"【🖼️ 8085 视觉侧挂眼睛 (Qwen3-VL-8B) 深度解析结果】:\n{parsed}"})
+                                pending_to_cache.append(h)
+                            else:
+                                new_content.append(item)
                 else:
                     new_content.append(item)
             msg_copy = dict(msg)
@@ -2266,12 +2443,14 @@ def process_native_vision_pipeline(cleaned_json):
         elif isinstance(content, str):
             h = compute_image_hash(content)
             with VISION_IMAGE_CACHE_LOCK:
-                is_cached = (h in VISION_IMAGE_OCR_CACHE)
-            if is_cached and (is_historical or msg_idx != last_img_msg_idx):
-                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 历史图像指纹命中缓存 (hash={h[:8]})，多轮对话免重复编码，0.001s 瞬时复用！\n")
+                cached_entry = VISION_IMAGE_OCR_CACHE.get(h)
+                is_cached = (cached_entry is not None)
+            if is_cached and (is_historical or msg_idx != last_img_msg_idx or not is_main_multimodal):
+                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 历史图像指纹命中缓存 (hash={h[:8]})，0.001s 瞬时复用！\n")
                 sys.stdout.flush()
+                desc = f"【🖼️ 图像指纹: {h[:8]} 视觉结构化解析】:\n{cached_entry}" if isinstance(cached_entry, str) else f"【🖼️ 图像指纹: {h[:8]} (已建立视觉记忆，无需重复编码)】"
                 msg_copy = dict(msg)
-                msg_copy["content"] = f"【🖼️ 图像指纹: {h[:8]} (已于前序轮次由 27B 原生多模态视觉引擎深度理解并建立视觉记忆，无需重复编码)】"
+                msg_copy["content"] = desc
                 new_messages.append(msg_copy)
             else:
                 new_messages.append(msg)
@@ -2281,7 +2460,7 @@ def process_native_vision_pipeline(cleaned_json):
             new_messages.append(msg)
 
     cleaned_json["messages"] = new_messages
-    has_active_images = bool(pending_to_cache)
+    has_active_images = bool(pending_to_cache or has_img)
     return cleaned_json, has_active_images, pending_to_cache
 
 def register_image_fingerprints(hash_list):
@@ -2467,19 +2646,34 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   }
   .slot-card.active { border-color: rgba(192, 132, 252, 0.6); background: rgba(192, 132, 252, 0.06); box-shadow: 0 0 16px rgba(192, 132, 252, 0.15); }
   .slot-card.active-prefill { border-color: rgba(56, 189, 248, 0.7); background: rgba(56, 189, 248, 0.08); box-shadow: 0 0 16px rgba(56, 189, 248, 0.2); }
+  /* 🌟 视觉侧挂/原生视觉卡片：永久不隐身，空闲时淡雅低调，工作时超鲜明霓虹高亮呼吸 */
   .slot-card-vision {
-    border-color: rgba(192, 132, 252, 0.45);
-    background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.12), rgba(0,0,0,0.45));
-    box-shadow: 0 0 16px rgba(192, 132, 252, 0.12);
+    border: 1px solid rgba(192, 132, 252, 0.28) !important;
+    background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.08), rgba(15, 23, 42, 0.65)) !important;
+    opacity: 0.65;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .slot-card-vision:hover {
-    border-color: rgba(192, 132, 252, 0.8);
-    box-shadow: 0 0 22px rgba(192, 132, 252, 0.25);
+    opacity: 0.88;
+    border-color: rgba(192, 132, 252, 0.55) !important;
   }
-  .slot-card.active-vision {
-    border-color: rgba(192, 132, 252, 0.9);
-    background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.2), rgba(0,0,0,0.5));
-    box-shadow: 0 0 24px rgba(192, 132, 252, 0.35);
+  /* 🌟 工作状态：超鲜明高亮 + 双色霓虹脉冲呼吸动画 (简单却极具视觉冲击力) */
+  .slot-card-vision.active-vision {
+    opacity: 1.0 !important;
+    border-color: #c084fc !important;
+    background: radial-gradient(circle at top right, rgba(192, 132, 252, 0.28), rgba(15, 23, 42, 0.9)) !important;
+    box-shadow: 0 0 24px rgba(192, 132, 252, 0.75), 0 0 10px rgba(56, 189, 248, 0.5), inset 0 0 16px rgba(192, 132, 252, 0.3) !important;
+    animation: neon-vision-breathe 1.4s infinite ease-in-out !important;
+  }
+  @keyframes neon-vision-breathe {
+    0%, 100% {
+      border-color: #c084fc;
+      box-shadow: 0 0 16px rgba(192, 132, 252, 0.55), inset 0 0 10px rgba(192, 132, 252, 0.2);
+    }
+    50% {
+      border-color: #38bdf8;
+      box-shadow: 0 0 32px rgba(192, 132, 252, 0.9), 0 0 14px #38bdf8, inset 0 0 20px rgba(56, 189, 248, 0.4);
+    }
   }
   
   .slot-card-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; }
@@ -2559,73 +2753,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .config-title { font-weight: 600; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
   .code-snippet { background: rgba(0,0,0,0.5); padding: 8px 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; color: #e2e8f0; margin-top: 6px; word-break: break-all; }
 
-  /* 现代高端分段控制器 (Segmented Mode Controller) */
-  .mode-segmented-control {
-    display: flex;
-    align-items: center;
-    background: rgba(15, 23, 42, 0.75);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 3px;
-    gap: 4px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  }
-  .mode-seg-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-muted);
-    padding: 5px 12px;
-    border-radius: 8px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-  }
-  .mode-seg-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.06);
-  }
-  .mode-seg-btn.active-mtp {
-    background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(56, 189, 248, 0.1));
-    border-color: rgba(56, 189, 248, 0.55);
-    color: #38bdf8;
-    box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
-  }
-  .mode-seg-btn.active-pipe {
-    background: linear-gradient(135deg, rgba(251, 146, 60, 0.25), rgba(251, 146, 60, 0.1));
-    border-color: rgba(251, 146, 60, 0.55);
-    color: #fb923c;
-    box-shadow: 0 0 12px rgba(251, 146, 60, 0.3);
-  }
-  .mode-seg-btn.active-vision {
-    background: linear-gradient(135deg, rgba(192, 132, 252, 0.25), rgba(192, 132, 252, 0.1));
-    border-color: rgba(192, 132, 252, 0.55);
-    color: #c084fc;
-    box-shadow: 0 0 12px rgba(192, 132, 252, 0.3);
-  }
-  .seg-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    box-shadow: 0 0 6px currentColor;
-    display: none;
-  }
-  .mode-seg-btn.active-mtp .seg-dot,
-  .mode-seg-btn.active-pipe .seg-dot,
-  .mode-seg-btn.active-vision .seg-dot {
-    display: inline-block;
-    animation: pulse-dot 1.8s infinite;
-  }
-  @keyframes pulse-dot {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.4); opacity: 0.6; }
-  }
   @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 </head>
@@ -2639,19 +2766,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="header">
     <div class="title">🚀 奇迹算力网关 3.0 <span class="badge">Claude Code & OpenAI 原生双协议</span></div>
     <div class="header-actions">
-      <div class="mode-segmented-control" id="mode-seg-group">
-        <button class="mode-seg-btn" id="btn-mode-mtp" onclick="quickSwitch('MTP_2SLOT')">
-          <span class="seg-dot"></span>👑 双槽MTP
-        </button>
-        <button class="mode-seg-btn" id="btn-mode-pipe" onclick="quickSwitch('PIPELINE_4SLOT')">
-          <span class="seg-dot"></span>🚀 4并发流水线
-        </button>
-        <button class="mode-seg-btn" id="btn-mode-vision" onclick="quickSwitch('VISION_27B')">
-          <span class="seg-dot"></span>👁️ 原生多模态
-        </button>
+      <div style="display:flex;align-items:center;background:rgba(15,23,42,0.85);border:1px solid rgba(56,189,248,0.35);border-radius:10px;padding:6px 14px;gap:8px;">
+        <span class="dot-green"></span>
+        <span style="font-size:12px;color:var(--text-muted);">启动器托管模型:</span>
+        <strong id="header-active-model" style="color:#fff;font-size:13px;">检测中...</strong>
+        <span id="header-active-tag" class="badge-text" style="font-size:11px;padding:2px 6px;">显存常驻</span>
       </div>
       <span class="slot-pill" id="header-gpu-pill"><span class="dot-green" id="gpu-dot"></span> <span id="gpu-status">GPU: 检测中...</span></span>
-      <span class="slot-pill" id="header-slot-pill"><span class="dot-orange" id="slot-dot"></span> <span id="slot-status">⏳ 等待加载模型</span></span>
+      <span class="slot-pill" id="header-slot-pill"><span class="dot-orange" id="slot-dot"></span> <span id="slot-status">⏳ 检测中</span></span>
       <button class="btn-action" onclick="updateStats()">🔄 刷新</button>
       <button class="btn-action" onclick="exportStatsJSON()">📥 导出 JSON</button>
     </div>
@@ -2667,8 +2789,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div>⚡ <strong>图像指纹高速缓存</strong>：已收录 <strong id="banner-vision-cache-count" style="color:var(--accent-green);font-size:14px;">0</strong> 个 (多轮追问 0.001s 瞬时复用)</div>
     </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div>🔄 <strong>模型自适应热切换统计</strong>：今日置换 <strong id="banner-hotswap-today" style="color:#38bdf8;font-size:14px;">0</strong> 次 · 上次等待耗时 <strong id="banner-hotswap-last" style="color:var(--accent-green);font-size:14px;">0.0s</strong> (全天均候 <span id="banner-hotswap-avg" style="color:var(--accent-orange);font-weight:600;">0.0s</span>)</div>
-      <div>⏳ <strong>历史累计切换</strong>：共 <strong id="banner-hotswap-total" style="color:#fff;font-size:14px;">0</strong> 次 · 4.5s 内存级自适应无感切形态</div>
+      <div>🖥️ <strong>引擎运行环境</strong>：Tesla V100 32GB 显卡 · 由 <code>launcher_main.ps1</code> 启动器锁定托管</div>
+      <div>🔒 <strong>进程与显存常驻</strong>：零自动重载 · 零中断 · 144K 前缀 KV Cache 100% 持续复用</div>
+    </div>
     <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
       <div>🎯 <strong>ccswitch 客户端实时对账</strong>：今日实际交付总吞吐 <strong id="banner-sync-tokens" style="color:#38bdf8;font-size:13.5px;">0</strong> (约 <span id="banner-sync-m" style="color:#38bdf8;font-weight:700;">0.0万</span>) · 真实调用 <strong id="banner-sync-reqs" style="color:var(--accent);font-size:13.5px;">0</strong></div>
       <div>⚡ <strong>多维吞吐流速</strong>：新增输入 <strong id="banner-sync-in" style="color:var(--accent-green);font-size:13px;">0</strong> · Output 生成 <strong id="banner-sync-out" style="color:var(--accent-purple);font-size:13px;">0</strong> · 命中 <strong id="banner-sync-cached" style="color:var(--accent-orange);font-size:13px;">0</strong> (命中率 <span id="banner-sync-hitrate" style="color:var(--accent-green);font-weight:600;">0.0%</span>)</div>
@@ -2706,9 +2829,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-sub" id="vision-kpi-sub">今日读图: 0 张 | 累计: 0 张图</div>
     </div>
     <div class="card" style="border-color: rgba(56, 189, 248, 0.45); background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), rgba(0,0,0,0.3));">
-      <div class="card-label" style="color: #38bdf8;">🔄 模型热切换与等待耗时统计</div>
-      <div class="card-value" id="hotswap-kpi-value" style="color: #38bdf8; font-size: 19px;">0 次 · 0.0s</div>
-      <div class="card-sub" id="hotswap-kpi-sub">今日切换: 0 次 | 均候: 0.0s</div>
+      <div class="card-label" style="color: #38bdf8;">⚡ 主脑运行状态 (启动器托管)</div>
+      <div class="card-value" id="backend-status-val" style="color: #38bdf8; font-size: 18px;">常驻运行中</div>
+      <div class="card-sub" id="backend-status-sub">2 槽并发 · 144K 统一上下文池</div>
     </div>
     <div class="card">
       <div class="card-label">全天工作累计总均速 (In / Out)</div>
@@ -2730,33 +2853,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <span>🧠 模型思维等级调控 (问答难度)</span>
         <span style="font-size: 11px; color: var(--text-muted);" id="reasoning-total-badge">今日 0次</span>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 5px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(56, 189, 248, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
-          <div style="font-size: 11px; font-weight: 600; color: #38bdf8;">👑 双槽MTP</div>
-          <div id="reasoning-mtp-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-            <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
-            <span style="color:#38bdf8;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
-            <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
-          </div>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(251, 146, 60, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(251, 146, 60, 0.2);">
-          <div style="font-size: 11px; font-weight: 600; color: #fb923c;">🚀 4并发流水线</div>
-          <div id="reasoning-pipe-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-            <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
-            <span style="color:#38bdf8;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
-            <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
-          </div>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(192, 132, 252, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(192, 132, 252, 0.2);">
-          <div style="font-size: 11px; font-weight: 600; color: #c084fc;">👁️ 原生多模态</div>
-          <div id="reasoning-vision-line" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-            <span style="color:#4ade80;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
-            <span style="color:#38bdf8;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
-            <span style="color:#c084fc;font-weight:700;">0</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
-          </div>
-        </div>
+      <div class="card-value" id="reasoning-active-summary" style="color: #a78bfa; font-size: 19px; margin: 6px 0;">
+        <span style="color:#4ade80;" id="reason-cnt-simple">0</span> <span style="font-size:12px;color:var(--text-muted);">简单</span> · 
+        <span style="color:#38bdf8;" id="reason-cnt-med">0</span> <span style="font-size:12px;color:var(--text-muted);">中等</span> · 
+        <span style="color:#c084fc;" id="reason-cnt-hard">0</span> <span style="font-size:12px;color:var(--text-muted);">复杂</span> · 
+        <span style="color:#f59e0b;" id="reason-cnt-none">0</span> <span style="font-size:12px;color:var(--text-muted);">极速</span>
       </div>
-      <div class="card-sub" id="reasoning-kpi-sub" style="margin-top: 4px; font-size: 11px;">今日总计: 0简 · 0中 · 0难</div>
+      <div class="card-sub" id="reasoning-kpi-sub">0秒动态注入 · 深度思考档位自动匹配</div>
     </div>
     <div class="card" style="border-color: rgba(56, 189, 248, 0.45); background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), rgba(0,0,0,0.3));">
       <div class="card-label" style="color: #38bdf8;">⏱️ 当日 In / Out 总耗时 (全槽位合计)</div>
@@ -3204,37 +3307,64 @@ function updateSlotsUI(c, gpu, v) {
     `;
   }
 
-  function renderVisionTowerCard(isMainModel) {
-    const badge = isMainModel 
-      ? (isVisionActive ? '<span class="slot-badge-vision-active">⚡ 视觉特征编码中...</span>' : '<span class="slot-badge-idle">🟣 原生视觉激活挂载 (Online)</span>')
-      : '<span class="slot-badge-vision-standby">🟢 待命随行 (Standby)</span>';
-    
-    const cardTitle = isMainModel ? '👁️ F16 视觉特征投影塔 (Vision Tower)' : '👁️ 27B 原生多模态视觉塔 (守护随行)';
-    const statusNote = isMainModel ? 'mmproj-Qwen3.8-27B-F16.gguf (F16高精)' : 'mmproj-Qwen3.8-27B-F16.gguf (随时热切)';
-    const featureNote = isMainModel ? '128K 超大上下文 · 原生像素直通' : '纯文本常驻 · 遇到识图 4.5s 内存级置换';
-    const fillBg = isMainModel ? 'linear-gradient(90deg, #c084fc, #ec4899)' : 'linear-gradient(90deg, #10b981, #38bdf8)';
+  function renderVisionCard(c) {
+    const vc = (c && c.vision_card) || {};
+    const mode = vc.mode || ((c && c.is_multimodal) ? 'native' : 'sidecar');
+    const modelName = vc.model_name || ((mode === 'native') ? 'Qwen3.8-27B-Vision' : 'Qwen3-VL-8B (CPU纯内存 · 0显存)');
+    const isWorking = Boolean(vc.is_active || isVisionActive);
+    const isOnline = Boolean(vc.online !== false);
+
+    let cardTitle = '';
+    let statusNote = '';
+    let featureNote = '';
+    let badge = '';
+
+    if (mode === 'native') {
+      cardTitle = `🖼️ 原生多模态视觉 · ${modelName}`;
+      statusNote = 'GPU 硬件原生加速 (mmproj-27B-F16 挂载)';
+      featureNote = '128K 超大显存上下文 · 原生像素直通';
+      badge = isWorking 
+        ? '<span class="slot-badge-vision-active">🟣 原生特征编码中...</span>' 
+        : '<span class="slot-badge-idle">🟣 原生视觉就绪</span>';
+    } else if (mode === 'sidecar') {
+      cardTitle = `👁️ 视觉侧挂眼睛 · ${modelName}`;
+      statusNote = '8085 端口常驻 (CPU纯内存 · 0 显存占用)';
+      featureNote = '两阶段级联解析 · 自动图文结构化注入 27B 主脑';
+      badge = isWorking 
+        ? '<span class="slot-badge-vision-active">⚡ 正在图文深度推导中...</span>' 
+        : '<span class="slot-badge-idle">🟢 CPU待命协同中</span>';
+    } else {
+      cardTitle = '⚪ 视觉眼睛未在线';
+      statusNote = '8085 端口离线未激活';
+      featureNote = '如需图文解析请启动 Qwen3-VL-8B 侧挂服务';
+      badge = '<span class="slot-badge-vision-off">⚪ 离线</span>';
+    }
+
+    const fillBg = isWorking 
+      ? 'linear-gradient(90deg, #c084fc, #38bdf8, #ec4899)' 
+      : 'linear-gradient(90deg, #10b981, #38bdf8)';
 
     return `
-      <div class="slot-card slot-card-vision ${isVisionActive ? 'active-vision' : ''}">
+      <div class="slot-card slot-card-vision ${isWorking ? 'active-vision' : ''}" id="permanent-vision-card">
         <div class="slot-card-header">
-          <span style="color: #c084fc;">${cardTitle}</span>
+          <span style="color: #c084fc; font-weight: 700;">${cardTitle}</span>
           ${badge}
         </div>
         <div class="slot-card-body">
           <div class="slot-stat-row">
-            <span>🧬 视觉投影挂载:</span>
-            <span class="slot-stat-val" style="color: #c084fc; font-size: 11.5px;">${statusNote}</span>
+            <span>🧬 视觉运行载体:</span>
+            <span class="slot-stat-val" style="color: #38bdf8; font-size: 11.5px;">${statusNote}</span>
           </div>
           <div class="slot-stat-row">
             <span>🖼️ 图像指纹高速缓存:</span>
-            <span class="slot-stat-val" style="color: var(--accent-green); font-size: 11.5px;">已收录 ${vCacheCount} 张 (0.001s 复用)</span>
+            <span class="slot-stat-val" style="color: var(--accent-green); font-size: 11.5px;">已收录 ${vCacheCount} 个 (0.001s 瞬时复用)</span>
           </div>
           <div class="slot-stat-row">
             <span>📈 识图统计 (今日/累计):</span>
-            <span class="slot-stat-val" style="color: #38bdf8; font-size: 11.5px;">今日 ${vTodayImgs} 张 (${vTodayTime}s) · 累计 ${vTotalImgs} 张</span>
+            <span class="slot-stat-val" style="color: #fff; font-size: 11.5px;">今日 ${vTodayImgs} 张 (${vTodayTime}s) · 累计 ${vTotalImgs} 张</span>
           </div>
           <div class="slot-stat-row" style="margin-top: 4px;">
-            <span>🛡️ 调度特性:</span>
+            <span>🛡️ 协同模式:</span>
             <span class="slot-stat-val" style="color: var(--text-muted); font-size: 11px;">${featureNote}</span>
           </div>
           <div class="slot-progress-bg">
@@ -3245,19 +3375,7 @@ function updateSlotsUI(c, gpu, v) {
     `;
   }
 
-  let html = '';
-  if (isMulti) {
-    // 🌟 用户需求1：当主模型为 Qwen3.8-27B-A [原生多模态] 时：
-    // 槽位区域展示 1 个主脑推理槽位信息 + 1 个多模态视觉塔信息！
-    const mainSlot = details[0] || { slot_num: 1, raw_id: 0, is_active: false, stage: 'idle', n_ctx: 131072 };
-    html += renderSlotCard(mainSlot, '👑 27B 主脑推理槽位 (Slot #1)');
-    html += renderVisionTowerCard(true);
-  } else {
-    // 🌟 用户需求2：当切换到其他工作型纯文本模型时：
-    // 视觉多模态组件不隐身！渲染所有纯文本推理槽位 + 常驻视觉多模态守护卡片！
-    html += details.map(s => renderSlotCard(s, `槽位 #${s.slot_num}`)).join('');
-    html += renderVisionTowerCard(false);
-  }
+  let html = details.map(s => renderSlotCard(s, `槽位 #${s.slot_num}`)).join('') + renderVisionCard(c);
 
   container.innerHTML = html;
 }
@@ -3365,9 +3483,9 @@ async function updateStats() {
 
     const bannerSyncTokens = document.getElementById('banner-sync-tokens');
     if (bannerSyncTokens) {
-      bannerSyncTokens.innerText = liveTotal.toLocaleString();
+      bannerSyncTokens.innerText = liveTotalTokens.toLocaleString();
       const bM = document.getElementById('banner-sync-m');
-      if (bM) bM.innerText = (liveTotal / 1e4).toFixed(1) + '万';
+      if (bM) bM.innerText = (liveTotalTokens / 1e4).toFixed(1) + '万';
       const bReqs = document.getElementById('banner-sync-reqs');
       if (bReqs) bReqs.innerText = (data.today.requests || 0) + '次';
       const bIn = document.getElementById('banner-sync-in');
@@ -3384,63 +3502,41 @@ async function updateStats() {
       }
     }
 
-    const hsKpiVal = document.getElementById('hotswap-kpi-value');
-    if (hsKpiVal) hsKpiVal.innerText = `${hsToday} 次 · 等待 ${hsLast}s`;
-    const hsKpiSub = document.getElementById('hotswap-kpi-sub');
-    if (hsKpiSub) {
-      if (hs.last_to) {
-        hsKpiSub.innerText = `最近: ${formatStateName(hs.last_from)} ➔ ${formatStateName(hs.last_to)} (${hsLast}s) · 均候 ${hsAvg}s`;
-      } else {
-        hsKpiSub.innerText = `今日切换: ${hsToday} 次 | 均候: ${hsAvg}s | 累计: ${hsTotal}次`;
+    const bStatVal = document.getElementById('backend-status-val');
+    const bStatSub = document.getElementById('backend-status-sub');
+    if (bStatVal && data.concurrency) {
+      const isOnline = data.concurrency.backend_online;
+      bStatVal.innerText = isOnline ? '常驻运行中' : '等待启动器加载';
+      bStatVal.style.color = isOnline ? '#4ade80' : 'var(--accent-orange)';
+      if (bStatSub) {
+        bStatSub.innerText = isOnline ? `${data.concurrency.text_max || 2} 槽并发 · ${Math.round((data.concurrency.total_ctx || 147456) / 1024)}K 统一上下文池` : '请通过 launcher_main.py 启动模型';
       }
     }
 
-    // 🌟 模型思维等级调控 KPI 更新 (分双槽MTP与4并发流水线独立统计)
+    // 🌟 模型思维等级调控 KPI 更新
     const rl = data.reasoning_levels || {};
-    const rlToday = rl.today || { simple: 0, medium: 0, hard: 0, by_mode: {} };
+    const rlToday = rl.today || { simple: 0, medium: 0, hard: 0, none: 0 };
     const rSim = rlToday.simple || 0;
     const rMed = rlToday.medium || 0;
     const rHar = rlToday.hard || 0;
-    const rTot = rSim + rMed + rHar;
-
-    const bm = rlToday.by_mode || {};
-    const mtpStats = bm['MTP_2SLOT'] || { simple: 0, medium: 0, hard: 0 };
-    const pipeStats = bm['PIPELINE_4SLOT'] || { simple: 0, medium: 0, hard: 0 };
-    const visStats = bm['VISION_27B'] || { simple: 0, medium: 0, hard: 0 };
+    const rNon = rlToday.none || 0;
+    const rTot = rSim + rMed + rHar + rNon;
 
     const badgeEl = document.getElementById('reasoning-total-badge');
     if (badgeEl) badgeEl.innerText = `今日 ${rTot}次`;
 
-    const mtpLine = document.getElementById('reasoning-mtp-line');
-    if (mtpLine) {
-      mtpLine.innerHTML = `
-        <span style="color:#4ade80;font-weight:700;">${mtpStats.simple || 0}</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
-        <span style="color:#38bdf8;font-weight:700;">${mtpStats.medium || 0}</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
-        <span style="color:#c084fc;font-weight:700;">${mtpStats.hard || 0}</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
-      `;
-    }
-
-    const pipeLine = document.getElementById('reasoning-pipe-line');
-    if (pipeLine) {
-      pipeLine.innerHTML = `
-        <span style="color:#4ade80;font-weight:700;">${pipeStats.simple || 0}</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
-        <span style="color:#38bdf8;font-weight:700;">${pipeStats.medium || 0}</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
-        <span style="color:#c084fc;font-weight:700;">${pipeStats.hard || 0}</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
-      `;
-    }
-
-    const visLine = document.getElementById('reasoning-vision-line');
-    if (visLine) {
-      visLine.innerHTML = `
-        <span style="color:#4ade80;font-weight:700;">${visStats.simple || 0}</span> <span style="font-size:10px;color:var(--text-muted);">简</span> · 
-        <span style="color:#38bdf8;font-weight:700;">${visStats.medium || 0}</span> <span style="font-size:10px;color:var(--text-muted);">中</span> · 
-        <span style="color:#c084fc;font-weight:700;">${visStats.hard || 0}</span> <span style="font-size:10px;color:var(--text-muted);">难</span>
-      `;
-    }
+    const elSimple = document.getElementById('reason-cnt-simple');
+    if (elSimple) elSimple.innerText = rSim;
+    const elMed = document.getElementById('reason-cnt-med');
+    if (elMed) elMed.innerText = rMed;
+    const elHard = document.getElementById('reason-cnt-hard');
+    if (elHard) elHard.innerText = rHar;
+    const elNone = document.getElementById('reason-cnt-none');
+    if (elNone) elNone.innerText = rNon;
 
     const rKpiSub = document.getElementById('reasoning-kpi-sub');
     if (rKpiSub) {
-      rKpiSub.innerText = `今日总计: 简 ${rSim} · 中 ${rMed} · 难 ${rHar} (三大形态实时同频)`;
+      rKpiSub.innerText = `简单 ${rSim} · 中等 ${rMed} · 复杂 ${rHar} · 极速 ${rNon} (v22.5动态智控)`;
     }
 
     // 🌟 当日全槽位 In / Out 总耗时 KPI 更新
@@ -3540,15 +3636,16 @@ async function updateStats() {
         `;
       }).join('');
     }
-    // 更新形态分段控制器的激活高亮
-    const bState = data.backend_state || 'MTP_2SLOT';
-    const btnMtp = document.getElementById('btn-mode-mtp');
-    const btnPipe = document.getElementById('btn-mode-pipe');
-    const btnVision = document.getElementById('btn-mode-vision');
-    if (btnMtp && btnPipe && btnVision) {
-      btnMtp.className = 'mode-seg-btn' + (bState === 'MTP_2SLOT' ? ' active-mtp' : '');
-      btnPipe.className = 'mode-seg-btn' + (bState === 'PIPELINE_4SLOT' ? ' active-pipe' : '');
-      btnVision.className = 'mode-seg-btn' + (bState === 'VISION_27B' ? ' active-vision' : '');
+    if (data.concurrency) {
+      const hModel = document.getElementById('header-active-model');
+      if (hModel && data.concurrency.model_name) {
+        hModel.innerText = data.concurrency.model_name;
+      }
+      const hTag = document.getElementById('header-active-tag');
+      if (hTag) {
+        hTag.innerText = data.concurrency.backend_online ? '常驻在线' : '等待加载';
+        hTag.style.color = data.concurrency.backend_online ? '#4ade80' : 'var(--accent-orange)';
+      }
     }
   } catch (e) {
     console.error(e);
@@ -3681,33 +3778,80 @@ class Qwen27BBackendManager:
         today = time.strftime("%Y%m%d")
         return os.path.join(self.log_dir, f"8083_llama_{today}.log")
 
+    def detect_inline_think_control(self, messages):
+        """
+        🌟 v22.5 规范：扫描全会话消息中的内联思考控制标签。
+        采用“最后出现生效(sticky)”原则，覆盖 string 与 multi-part 结构。
+        支持标签：
+          - <|think_off|> -> "none" (无思维快速模式)
+          - <|think_on|> -> "medium" (标准思维模式)
+          - <|think_low|>, <|think_minimal|> -> "low" (极简思维模式, 预算 512)
+          - <|think_medium|> -> "medium" (标准思维模式, 预算 2048)
+          - <|think_xhigh|>, <|think_high|>, <|think_ultracode|>, <|think_extreme|>, <|think_max|> -> "xhigh" (极限思维模式, 预算 8192)
+        """
+        last_effort = None
+        if not isinstance(messages, list):
+            return None
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get("role")
+            if role not in ("system", "developer", "user"):
+                continue
+            content = msg.get("content")
+            texts_to_check = []
+            if isinstance(content, str):
+                texts_to_check.append(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, str):
+                        texts_to_check.append(item)
+                    elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                        texts_to_check.append(item["text"])
+            for txt in texts_to_check:
+                if "<|think_off|>" in txt:
+                    last_effort = "none"
+                elif "<|think_on|>" in txt:
+                    last_effort = "medium"
+                elif any(tag in txt for tag in ("<|think_xhigh|>", "<|think_high|>", "<|think_ultracode|>", "<|think_extreme|>", "<|think_max|>")):
+                    last_effort = "xhigh"
+                elif any(tag in txt for tag in ("<|think_low|>", "<|think_minimal|>")):
+                    last_effort = "low"
+                elif "<|think_medium|>" in txt:
+                    last_effort = "medium"
+        return last_effort
+
     def classify_complexity(self, text="", estimated_tokens=0):
         """
-        0秒动态思考等级分类器：
-        - low: 简单快问快答 / 纯翻译 / 简单正则 / 概念解释 (<1500 tokens) -> 预算 512
-        - xhigh: 高难算法 / Minecraft / 完整系统 / 架构设计 / 复杂逆向 / 多文件重构 (>4000 tokens) -> 预算 8192
-        - medium: 默认标准中等思考 -> 预算 2048
+        🌟 0秒动态思考等级分类器 (保持根据任务难度无感动态切换思考能力)：
+        - none: 显式关闭思考 -> 预算 0 (极速出字模式，适配 v22.5 非思维提示词对齐)
+        - low: 简单快问快答 / 纯翻译 / 简单正则 / 概念解释 / 文本提取 (<1500 tokens) -> 预算 512, 提示词低档思维
+        - xhigh: 高难算法 / Minecraft / 完整系统 / 架构设计 / 复杂逆向 / 多文件重构 / 数学证明 (>4000 tokens) -> 预算 8192, 提示词深思引导
+        - medium: 默认标准中等思考 -> 预算 2048 (0额外系统注入，保持 100% Prefix KV Cache 命中)
         """
         t_lower = text.lower() if text else ""
         
-        # 1. 困难/极限思考任务
+        # 1. 困难/极限深度思考任务 (xhigh)
         hard_keywords = [
             "minecraft", "完整系统", "项目架构", "大型重构", "深度证明", "复杂算法",
             "多文件工程", "并发控制", "零容错", "高并发爬虫", "状态机", "编译器",
-            "3d游戏", "webgl", "three.js", "分布式", "死锁分析", "内核", "深度思考", "从零开始开发"
+            "3d游戏", "webgl", "three.js", "分布式", "死锁分析", "内核", "深度思考", "从零开始开发",
+            "反编译", "逆向工程", "算法优化", "数学建模", "leetcode", "动态规划", "抽象语法树",
+            "llvm", "transformer架构", "cuda kernel", "memory leak", "race condition"
         ]
         if estimated_tokens >= 4000 or any(k in t_lower for k in hard_keywords):
             return "xhigh", 8192, "<|think_xhigh|>"
 
-        # 2. 简单轻量任务
+        # 2. 简单轻量任务 (low)
         simple_keywords = [
             "什么是", "解释一下", "翻译成", "查一下", "搜索", "润色", "帮我看看",
-            "写个简单", "单函数", "打个招呼", "你好", "格式转换", "json格式化", "正则"
+            "写个简单", "单函数", "打个招呼", "你好", "格式转换", "json格式化", "正则",
+            "总结", "概述", "简述", "列表", "列出", "提取", "查找", "yaml格式化", "改写"
         ]
         if estimated_tokens < 1500 and any(k in t_lower for k in simple_keywords):
             return "low", 512, "<|think_low|>"
 
-        # 3. 默认标准中等思考
+        # 3. 默认标准中等思考 (medium: v22.5 官方推荐安全基准)
         return "medium", 2048, "<|think_medium|>"
 
     def is_server_healthy(self):
@@ -3747,21 +3891,17 @@ class Qwen27BBackendManager:
             pass
         return None
 
-    def ensure_state(self, target_state, force=False, on_heartbeat=None):
-        """线程安全的状态切换器：精准比对真实底层形态，4.5秒内存级无感热切换"""
+    def ensure_state(self, target_state=None, force=False, on_heartbeat=None):
+        """【已彻底锁定由外部启动器托管】
+        网关完全服从并守护 launcher_main.ps1 启动的当前模型，绝不主动 kill 或重启 8083 后端引擎。
+        """
         self.last_activity_time = time.time()
         actual = self.get_actual_state()
-        if not force and actual == target_state and self.is_server_healthy():
-            self.current_state = target_state
-            return True
+        if actual:
+            self.current_state = actual
+        return True
 
-        with self.lock:
-            actual = self.get_actual_state()
-            if not force and actual == target_state and self.is_server_healthy():
-                self.current_state = target_state
-                return True
-
-            t_switch_start = time.time()
+    def _unused_ensure_state(self, target_state, force=False, on_heartbeat=None):
             old_state = self.current_state or actual or "待命"
 
             state_names = {
@@ -4222,20 +4362,82 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                                     user_msg_text += " " + item.get("text", "")
                         break
 
-                # 2. 0秒动态思考等级裁决 (low / medium / xhigh)
-                req_effort = cleaned_json.get("reasoning_effort")
-                if req_effort and isinstance(req_effort, str) and req_effort.lower() in ("low", "minimal", "medium", "standard", "high", "xhigh", "max"):
-                    eff_val = req_effort.lower()
-                    if eff_val in ("low", "minimal"):
-                        effort, budget, inline_tag = "low", 512, "<|think_low|>"
-                    elif eff_val in ("high", "xhigh", "max"):
-                        effort, budget, inline_tag = "xhigh", 8192, "<|think_xhigh|>"
+                # 2. 🌟 v22.5 规范全量思考等级与内联标签裁决机 (支持 Sticky 标签 / Kwargs / 客户端别名 / 动态自适应)
+                # A. 优先检测全会话上下文中的内联控制标签 (sticky 标签，最后出现的生效)
+                inline_ctrl_effort = backend_manager.detect_inline_think_control(cleaned_json.get("messages", []))
+                
+                # B. 检查顶层或 chat_template_kwargs 中的 reasoning_effort / enable_thinking
+                req_tk_kwargs = cleaned_json.get("chat_template_kwargs") if isinstance(cleaned_json.get("chat_template_kwargs"), dict) else {}
+                client_effort = cleaned_json.get("reasoning_effort") or req_tk_kwargs.get("reasoning_effort")
+                client_enable_think = cleaned_json.get("enable_thinking") if cleaned_json.get("enable_thinking") is not None else req_tk_kwargs.get("enable_thinking")
+
+                # C. 仲裁目标思考等级
+                if inline_ctrl_effort:
+                    target_effort = inline_ctrl_effort
+                elif client_enable_think is False:
+                    target_effort = "none"
+                elif client_effort and isinstance(client_effort, str):
+                    eff_raw = client_effort.lower().strip()
+                    if eff_raw in ("none", "off", "false", "0"):
+                        target_effort = "none"
+                    elif eff_raw in ("low", "minimal"):
+                        target_effort = "low"
+                    elif eff_raw in ("high", "xhigh", "max", "ultracode", "extreme"):
+                        target_effort = "xhigh"
+                    elif eff_raw in ("medium", "standard", "default"):
+                        target_effort = "medium"
                     else:
-                        effort, budget, inline_tag = "medium", 2048, "<|think_medium|>"
+                        target_effort = "medium"
                 else:
-                    effort, budget, inline_tag = backend_manager.classify_complexity(user_msg_text, estimated_tokens=estimated_prompt_tokens)
+                    # 🌟 客户端未强制指定时，根据任务难度全自动切换思考能力 (0秒动态分类)
+                    target_effort, _, _ = backend_manager.classify_complexity(user_msg_text, estimated_tokens=estimated_prompt_tokens)
+
+                # D. 规范化 effort, budget, enable_thinking 参数
+                if target_effort in ("none", "off"):
+                    effort = "none"
+                    budget = 0
+                    enable_thinking = False
+                    inline_tag = "<|think_off|>"
+                elif target_effort in ("low", "minimal"):
+                    effort = "low"
+                    budget = 512
+                    enable_thinking = True
+                    inline_tag = "<|think_low|>"
+                elif target_effort in ("high", "xhigh", "max", "ultracode", "extreme"):
+                    effort = "xhigh"
+                    budget = 8192
+                    enable_thinking = True
+                    inline_tag = "<|think_xhigh|>"
+                else:
+                    effort = "medium"
+                    budget = 2048
+                    enable_thinking = True
+                    inline_tag = "<|think_medium|>"
+
                 cleaned_json["reasoning_effort"] = effort
                 cleaned_json["reasoning_budget"] = budget
+                cleaned_json["enable_thinking"] = enable_thinking
+
+                # E. 注入 chat_template_kwargs，确保 Jinja 模板渲染与底层 C++ 推理引擎 100% 同步
+                tk_kwargs = cleaned_json.setdefault("chat_template_kwargs", {})
+                if not isinstance(tk_kwargs, dict):
+                    tk_kwargs = {}
+                    cleaned_json["chat_template_kwargs"] = tk_kwargs
+                tk_kwargs["reasoning_effort"] = effort
+                tk_kwargs["enable_thinking"] = enable_thinking
+                
+                # 默认开启 100% Prefix KV Cache 缓存保护
+                if "preserve_reasoning" not in tk_kwargs and "preserve_thinking" not in tk_kwargs:
+                    tk_kwargs["preserve_reasoning"] = True
+                    tk_kwargs["preserve_thinking"] = True
+
+                # 适配 v22.5 tool_call_format ("xml" / "json") 与超长数据裁剪截断
+                if "tool_call_format" in cleaned_json:
+                    tk_kwargs["tool_call_format"] = cleaned_json["tool_call_format"]
+                if "max_tool_arg_chars" in cleaned_json:
+                    tk_kwargs["max_tool_arg_chars"] = cleaned_json["max_tool_arg_chars"]
+                if "max_tool_response_chars" in cleaned_json:
+                    tk_kwargs["max_tool_response_chars"] = cleaned_json["max_tool_response_chars"]
                 
                 # 3. 动态思考等级注入与 27B 旗舰原生多模态视觉处理 (Track 1)
                 # 扫描图片并进行指纹去重置换：多轮对话中历史图片仅需解析一次，自动置换为轻量指纹标记 (0.001s瞬时复用)
@@ -4244,43 +4446,33 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 is_vision_model_req = actual_model in ("Qwen3.8-27B-Vision", "Qwen3.8-27B-A-Vision", "DeepSeek-V4-Flash-Vision-Exp") or "vision" in requested_model.lower() or "vl" in requested_model.lower()
                 need_vision = has_img or is_vision_model_req
 
+                is_vision = need_vision
+                
+                # 🌟 网关毫秒级动态三态分类裁决机 (Gateway Tri-State Dispatcher)
+                # 规则：
+                # 1. 传图任务 -> 激活多模态视觉，动态注入 speculative.n_max: 0 (避开 has_embd + spec 崩溃)
+                # 2. 纯文本多任务并发 -> 激活 4并发高吞吐流水线，动态注入 speculative.n_max: 0 (规避多槽投机冲突)
+                # 3. 纯文本单发独占任务 -> 全速开启 MTP 投机加速 (恢复底层 draft-mtp 2~3倍吞吐)
+                is_pipeline_explicit = "4并发" in actual_model or "pipeline" in requested_model.lower() or "4slot" in requested_model.lower()
+                is_concurrency_active = (concurrency_queue.active_text >= 1)
+
                 if need_vision:
-                    # 需求1：检测到图像理解需求 -> 自适应置换为【原生多模态视觉态】
-                    if not check_backend_is_multimodal(target_port):
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-VISION] 👁️ 检测到图像理解需求，正在自适应将 27B 主脑置换为【原生多模态视觉态】(挂载 mmproj-27B)...\n")
-                        sys.stdout.flush()
-                        ok = backend_manager.ensure_state(backend_manager.STATE_VISION_27B)
-                        if not ok:
-                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-VISION] ⚠️ 主脑置换视觉态失败，尝试继续转发...\n")
-                            sys.stdout.flush()
-                    is_vision = True
+                    eff_mode = "VISION_27B"
+                    dispatch_state_name = "Qwen3.8-27B-A [原生多模态·安全直通]"
+                    cleaned_json["speculative.n_max"] = 0
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [GATEWAY-TRI-STATE] 👁️ 判别为【多模态视觉任务】: 激活视觉通道，动态关闭 MTP (speculative.n_max=0)\n")
+                elif is_pipeline_explicit or is_concurrency_active:
+                    eff_mode = "PIPELINE_4SLOT"
+                    dispatch_state_name = "Qwen3.8-27B-A [4并发流水线]"
+                    cleaned_json["speculative.n_max"] = 0
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [GATEWAY-TRI-STATE] 🔄 判别为【多任务并发流水线 (活跃={concurrency_queue.active_text})】: 4槽并行高吞吐，动态关闭 MTP (speculative.n_max=0)\n")
                 else:
-                    is_vision = False
-                    # 需求2：纯文本提问 -> 智能自适应调度【4并发流水线】与【双槽MTP极速态】
-                    cur_state = getattr(backend_manager, "current_state", "")
-                    
-                    # 判定是否需要 4并发流水线 (多任务并发竞争 或 显式请求4并发/pipeline)
-                    is_pipeline_explicit = "4并发" in actual_model or "pipeline" in requested_model.lower() or "4slot" in requested_model.lower()
-                    has_concurrency = (concurrency_queue.active_text >= 1)
+                    eff_mode = "MTP_2SLOT"
+                    dispatch_state_name = "Qwen3.8-27B-A [双槽MTP极速态]"
+                    cleaned_json.pop("speculative.n_max", None)
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [GATEWAY-TRI-STATE] 🚀 判别为【纯文本单发独占任务】: 全速启用 MTP 投机解码加速！\n")
+                sys.stdout.flush()
 
-                    if is_pipeline_explicit or has_concurrency:
-                        target_text_state = backend_manager.STATE_PIPELINE_4SLOT
-                        target_desc = "4并发流水线 (4槽并行高吞吐)"
-                    else:
-                        target_text_state = backend_manager.STATE_MTP_2SLOT
-                        target_desc = "双槽MTP (极速投机加速)"
-
-                    # 若当前仍在多模态视觉态，或当前纯文本形态与目标形态不符，智能无感置换
-                    if cur_state == backend_manager.STATE_VISION_27B or (cur_state != target_text_state and is_pipeline_explicit):
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] 🚀 检测到纯文本任务，正在自适应置换主模型为【{target_desc}】...\n")
-                        sys.stdout.flush()
-                        ok = backend_manager.ensure_state(target_text_state)
-                        if not ok:
-                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [AUTO-DISPATCH] ⚠️ 置换至 {target_desc} 失败，保持当前状态运行...\n")
-                            sys.stdout.flush()
-
-                # 🌟 0秒即提即显：请求一到达立即记录思维等级，前端大屏即时跳变响应！
-                eff_mode = "VISION_27B" if need_vision else (target_text_state if 'target_text_state' in locals() else "MTP_2SLOT")
                 tracker.record_reasoning_hit(reasoning_effort=effort, mode_key=eff_mode)
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格锁定在 140K 安全水位，防止 160K 溢出 400 报错) ----
@@ -4553,20 +4745,17 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                     self.wfile.write(final_body)
                     self.wfile.flush()
 
-                # ---- 记录 DeepSeek-V4-Flash 虚拟计费 ----
                 duration = time.time() - start_time
                 b_state = getattr(backend_manager, "current_state", "")
                 has_image_req = bool(locals().get("has_img") or is_vision or need_vision)
 
                 if prompt_tokens_recorded > 0 or completion_tokens_recorded > 0:
-                    if has_image_req:
-                        recorded_model_name = "Qwen3.8-27B-A [原生多模态]"
-                    elif b_state == backend_manager.STATE_PIPELINE_4SLOT or "4并发" in actual_model:
-                        recorded_model_name = "Qwen3.8-27B-A [4并发流水线]"
-                    elif b_state == backend_manager.STATE_MTP_2SLOT or "MTP" in actual_model or "27B" in actual_model:
-                        recorded_model_name = "Qwen3.8-27B-A [双槽MTP]"
-                    else:
-                        recorded_model_name = actual_model
+                    current_active_alias = getattr(concurrency_queue, "current_model_alias", "") or actual_model
+                    disp_name = locals().get("dispatch_state_name")
+                    recorded_model_name = disp_name if disp_name else current_active_alias
+                    if disp_name and ("27B" in current_active_alias or "Qwen" in current_active_alias):
+                        with concurrency_queue.lock:
+                            concurrency_queue.current_model_alias = disp_name
 
                     p_hashes = locals().get("pending_vision_hashes")
                     img_count = len(p_hashes) if p_hashes else (1 if has_image_req else 0)
