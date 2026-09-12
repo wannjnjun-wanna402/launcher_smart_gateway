@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 ====================================================================================
- 🤖 AI 智能任务自适应网关启动器 v5.0 (方案B · 纯 Python 原生驱动引擎)
+ 🤖 AI 智能任务自适应网关启动器 v5.0 (纯 Python 原生高能引擎)
  专为 Tesla V100 32GB 打造：纯 Qwen3.8-27B 旗舰统一矩阵 · 4.5秒自适应热切换 · 原生输出
- 连续无缝投屏 llamacpp 服务日志，彻底解决热切换导致的脱钩闪退与退出提示问题
- Date: 2026-09-02
+ 连续无缝投屏 llamacpp 服务日志，彻底杜绝 PowerShell 依赖与残留进程
+ Date: 2026-09-05
 ====================================================================================
 """
 
@@ -19,6 +19,8 @@ import urllib.error
 import subprocess
 import signal
 import atexit
+import threading
+import psutil
 
 # ------------------------------------------------------------------------------------
 # 基础路径与环境常量
@@ -59,7 +61,6 @@ def init_terminal():
             kernel32.SetConsoleMode(handle_out, mode)
 
             # 禁用快速编辑模式：防止鼠标点击窗口内部触发"选择"状态导致 stdout 全部冻结
-            # ENABLE_QUICK_EDIT_MODE = 0x0040, ENABLE_EXTENDED_FLAGS = 0x0080
             handle_in = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
             in_mode = ctypes.c_ulong()
             kernel32.GetConsoleMode(handle_in, ctypes.byref(in_mode))
@@ -123,14 +124,14 @@ def ensure_gateway():
             log_f = open(proxy_log, "a", encoding="utf-8")
             creationflags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
             subprocess.Popen(
-                [python_exe, proxy_py, "--listen", "8081", "--target", "8083", "--api-key", "llamacpp"],
+                [python_exe, proxy_py, "--listen", "8081", "--target", "8083", "--vision-main", "8085", "--api-key", "llamacpp"],
                 cwd=ROOT_DIR,
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags
             )
             # 等待网关就绪
-            for _ in range(25):
+            for _ in range(30):
                 if is_port_listening(8081):
                     break
                 time.sleep(0.2)
@@ -138,7 +139,7 @@ def ensure_gateway():
             print_c(f"  ⚠️ 启动 8081 网关警告: {e}", "yellow")
 
 # ------------------------------------------------------------------------------------
-# 2. 显存与进程绝对安全清理（严格遵守 AGENTS.md 标准）
+# 2. 显存与进程绝对安全清理（纯 Python 原生执行，严格遵守 AGENTS.md 标准）
 # ------------------------------------------------------------------------------------
 _cleanup_done = False
 
@@ -148,22 +149,31 @@ def stop_llama_processes():
         return
     _cleanup_done = True
     print_c("  🧹 正在安全停止所有 AI 进程与显存回收...", "yellow")
+
+    # 1. 纯 Python psutil 杀进程，彻底抛弃 PowerShell
     try:
-        subprocess.run(
-            ['powershell', '-NoProfile', '-Command', 'Get-Process | Where-Object { $_.ProcessName -match "llama" } | Stop-Process -Force'],
-            capture_output=True
-        )
-    except Exception:
-        pass
-    
-    try:
-        subprocess.run(
-            ['powershell', '-NoProfile', '-Command', 'Get-NetTCPConnection -LocalPort 8083 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }'],
-            capture_output=True
-        )
+        for p in psutil.process_iter(['pid', 'name']):
+            try:
+                name = (p.info.get('name') or '').lower()
+                if 'llama' in name:
+                    p.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
     except Exception:
         pass
 
+    # 2. 释放 8083 端口占用
+    try:
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.laddr and conn.laddr.port == 8083 and conn.pid:
+                try:
+                    psutil.Process(conn.pid).kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+    except Exception:
+        pass
+
+    # 3. 循环检查 GPU 显存回收
     for _ in range(10):
         try:
             res = subprocess.run(
@@ -172,15 +182,12 @@ def stop_llama_processes():
             )
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l.strip() for l in res.stdout.strip().splitlines() if l.strip()]
-                if lines and int(lines[0]) < 600:
+                if lines and int(lines[0]) < 1000:
                     print_c("  ✅ GPU 显存已完全释放。", "green")
                     break
         except Exception:
             pass
         time.sleep(0.5)
-
-# 注册 atexit 钩子：覆盖所有退出路径（Ctrl+C、X 关闭按钮、崩溃退出）
-atexit.register(stop_llama_processes)
 
 # ------------------------------------------------------------------------------------
 # 3. 纯 Qwen3.8-27B 旗舰 3 大场景形态配置定义
@@ -218,8 +225,6 @@ MODEL_PROFILES = {
         "vram": "27.4 GB"
     }
 }
-
-import threading
 
 def _tail_log_worker(daily_log: str, stop_event: threading.Event):
     cur_pos = 0
@@ -263,7 +268,8 @@ def switch_backend_state(target_state: str) -> bool:
         with urllib.request.urlopen(req, timeout=80) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             return data.get("success", False)
-    except Exception:
+    except Exception as e:
+        print_c(f"  ⚠️ 请求置换形态异常: {e}", "yellow")
         return False
 
 def start_selected_profile(key: str):
@@ -304,6 +310,7 @@ def start_selected_profile(key: str):
     signal.signal(signal.SIGINT, handle_sigint)
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, handle_sigint)
+    atexit.register(stop_llama_processes)
 
     # 关键：在触发形态初始化之前，立刻拉起后台实时日志投屏线程，确保加载过程与推理日志 100% 实时可见
     tail_thread = threading.Thread(target=_tail_log_worker, args=(daily_log, stop_event), daemon=True)
@@ -324,14 +331,14 @@ def start_selected_profile(key: str):
         handle_sigint(None, None)
 
 # ------------------------------------------------------------------------------------
-# 5. 主菜单与自动热等待倒计时交互
+# 4. 主菜单与自动热等待倒计时交互
 # ------------------------------------------------------------------------------------
 def main():
     init_terminal()
     ensure_gateway()
 
     print_c("====================================================================================", "cyan")
-    print_c("   🤖 AI 智能任务自适应网关  ·  Unified 27B Flagship Gateway v5.0 (方案B · 纯Python引擎)", "green")
+    print_c("   🤖 AI 智能任务自适应网关  ·  Unified 27B Flagship Gateway v5.0 (纯Python高能版)", "green")
     print_c("====================================================================================", "cyan")
     print_c("   [网关统一入口] http://127.0.0.1:8081/v1 (全应用统一接入点)", "white")
     print_c("   [实时监控看板] http://127.0.0.1:8081/dashboard", "white")
@@ -339,9 +346,9 @@ def main():
     print_c("====================================================================================", "cyan")
     print_c("   请选择启动模式 (默认 5 秒后自动载入 【1】 Qwen3.8-27B-A [双槽MTP] 常驻基准态):", "yellow")
     print_c("", "white")
-    print_c("   [1] 👑 Qwen3.8-27B-A [双槽MTP]     │ 36.7 t/s │ AA:52分 │ 日常单兵极速 / 默认常驻 (默认首选)", "green")
-    print_c("   [2] 🚀 Qwen3.8-27B-A [4并发流水线] │ 45.0 t/s │ AA:52分 │ 4槽交替流水线 / 多Agent批量协同", "cyan")
-    print_c("   [3] 👁️ Qwen3.8-27B-A [原生多模态]  │ 31.5 t/s │ AA:52分 │ 挂载 mmproj-27B / 原生视觉深度推理", "yellow")
+    print_c("   [1] 👑 Qwen3.8-27B-A [双槽MTP]     │ 36.7 t/s │ 27.4 GB │ 日常单兵极速 / 默认常驻 (默认首选)", "green")
+    print_c("   [2] 🚀 Qwen3.8-27B-A [4并发流水线] │ 45.0 t/s │ 28.5 GB │ 4槽交替流水线 / 多Agent批量协同", "cyan")
+    print_c("   [3] 👁️ Qwen3.8-27B-A [原生多模态]  │ 31.5 t/s │ 27.4 GB │ 挂载 mmproj-27B / 原生视觉深度推理", "yellow")
     print_c("   [4] 🛠️ 纯后台网关守护模式 (仅常驻 8081 网关)", "gray")
     print_c("   [Q] 退出启动器", "red")
     print_c("------------------------------------------------------------------------------------", "cyan")

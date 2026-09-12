@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "bing-cn-mcp-server": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "bing-cn-mcp"
+      ],
+      "timeout_ms": 30000
+    }
+  }
+}

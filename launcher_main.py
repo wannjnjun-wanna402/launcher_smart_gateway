@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-========================================================================================
+===============================================================================
   🚀 AI 大模型统一启动器 (Python 原生高能版) · Model Launcher v4.0
   • 彻底告别 PowerShell 脚本与编码兼容陷阱，纯 Python 原生多进程治理
   • 8081 智能协同网关常驻 · 8083 主脑全能底座 · 8085 视觉侧挂眼睛 (CPU 0显存)
   • Windows 内核级 Job Object 绑定，同生共死，100% 杜绝孤儿进程与显存残留
   • 严格遵循单日单一日志规范 (8083_llama_YYYYMMDD.log / 8085_sidecar_YYYYMMDD.log)
-========================================================================================
+===============================================================================
 """
 
 import os
@@ -69,9 +69,11 @@ C_WHITE = "\033[97m"
 # 全局进程句柄与生命周期互斥锁
 g_gateway_proc = None
 g_sidecar_proc = None
+g_embedding_proc = None
 g_main_proc = None
 g_is_cleaning = False
 g_tray_manager = None
+g_forwarder_stop = None
 
 
 class MiracleTrayManager:
@@ -127,6 +129,12 @@ class MiracleTrayManager:
             if os.path.exists(log_path):
                 os.startfile(log_path)
 
+        def action_open_sidecar_log(icon, item):
+            today = time.strftime("%Y%m%d")
+            log_path = os.path.join(LOGS_DIR, f"8085_sidecar_{today}.log")
+            if os.path.exists(log_path):
+                os.startfile(log_path)
+
         def action_open_models_dir(icon, item):
             if os.path.exists(MODELS_DIR):
                 os.startfile(MODELS_DIR)
@@ -164,7 +172,8 @@ class MiracleTrayManager:
             MenuItem("💬 打开 Web 对话体验界面", action_open_web),
             Menu.SEPARATOR,
             MenuItem("📜 查看主脑模型实时日志 (8083)", action_open_main_log),
-            MenuItem("👁️ 查看网关协同流水日志 (8081)", action_open_proxy_log),
+            MenuItem("🖼️ 查看视觉侧挂实时日志 (8085)", action_open_sidecar_log),
+            MenuItem("📊 查看网关协同流水日志 (8081)", action_open_proxy_log),
             MenuItem("📁 打开模型权重存放目录", action_open_models_dir),
             MenuItem(toggle_text, action_toggle_console),
             Menu.SEPARATOR,
@@ -192,7 +201,7 @@ class MiracleTrayManager:
 
             # pystray 原生 run_detached 派生 Windows 专用后台消息泵，通过 setup 回调确保 HWND 完全就绪后再显示
             self.icon.run_detached(setup=_on_tray_ready)
-            sys.stdout.write(f"{C_GREEN}  🔔 任务栏通知区域状态托盘已激活 (位于右下角系统托盘，若未见请看右下角 ^ 抽屉){C_RESET}\n")
+            sys.stdout.write(f"{C_GREEN}  🔔 任务栏托盘已激活 (位于屏幕右下角通知区域，可展开 ^ 拖出){C_RESET}\n")
             sys.stdout.flush()
         except Exception as e:
             sys.stdout.write(f"{C_YELLOW}  ⚠️ 任务栏托盘初始化跳过 ({e})，不影响主控制台运行{C_RESET}\n")
@@ -276,6 +285,36 @@ def kill_port(port):
         pass
 
 
+def ensure_port_available(port, host="127.0.0.1"):
+    """清理端口占用并校验可绑定性；若遇到 WinError 10013 (Windows NAT 排除端口保留冲突) 自动自愈修复"""
+    kill_port(port)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+            return True
+    except OSError as e:
+        if getattr(e, "winerror", None) == 10013:
+            sys.stdout.write(f"\n{C_YELLOW}  ⚠️ 端口 {port} 被 Windows 动态段保留 (WinError 10013)，正在自动自愈...{C_RESET}\n")
+            sys.stdout.flush()
+            try:
+                subprocess.run("netsh int ipv4 set dynamicport tcp start=49152 num=16384", shell=True, capture_output=True)
+                subprocess.run("net stop winnat", shell=True, capture_output=True)
+                subprocess.run("net start winnat", shell=True, capture_output=True)
+                time.sleep(0.5)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                    s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    s2.bind((host, port))
+                    sys.stdout.write(f"{C_GREEN}  ✅ Windows NAT 端口保留冲突已自愈，端口 {port} 恢复可用！{C_RESET}\n")
+                    sys.stdout.flush()
+                    return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
 def kill_all_llama():
     """安全清空所有残留 llama 进程 (纯 Python 毫秒级)"""
     try:
@@ -288,6 +327,63 @@ def kill_all_llama():
                 pass
     except Exception:
         pass
+
+def start_session_log_forwarder(daily_log: str, session_prefix: str = "8083"):
+    """
+    🌟 单日日志累加保全转发器 (Zero-Loss Daily Log Preserver)
+    解决 llama-server.exe --log-file 每次启动以 'w' 模式截断日志的问题：
+    1. 引导 llama-server.exe 输出到专有 session 临时文件；
+    2. 后台守护线程毫秒级将 session 日志以 'a' 模式追加合并入 daily_log；
+    3. 保证无论重启多少次，当日日志 100% 持续累加，绝不丢失任何数据。
+    """
+    session_file = os.path.join(LOGS_DIR, f"_{session_prefix}_sess_{os.getpid()}_{int(time.time()*1000)}.log")
+    stop_event = threading.Event()
+
+    try:
+        with open(daily_log, "a", encoding="utf-8") as df:
+            df.write(f"\n--- [8083 Session at {time.strftime('%Y-%m-%d %H:%M:%S')}] ---\n")
+            df.flush()
+    except Exception:
+        pass
+
+    def _forwarder_worker():
+        cur_pos = 0
+        while not stop_event.is_set():
+            try:
+                if os.path.exists(session_file):
+                    sz = os.path.getsize(session_file)
+                    if sz > cur_pos:
+                        with open(session_file, "r", encoding="utf-8", errors="replace") as sf:
+                            sf.seek(cur_pos)
+                            chunk = sf.read()
+                            if chunk:
+                                with open(daily_log, "a", encoding="utf-8") as df:
+                                    df.write(chunk)
+                                    df.flush()
+                                cur_pos = sf.tell()
+                time.sleep(0.05)
+            except Exception:
+                time.sleep(0.1)
+
+        try:
+            if os.path.exists(session_file):
+                sz = os.path.getsize(session_file)
+                if sz > cur_pos:
+                    with open(session_file, "r", encoding="utf-8", errors="replace") as sf:
+                        sf.seek(cur_pos)
+                        chunk = sf.read()
+                        if chunk:
+                            with open(daily_log, "a", encoding="utf-8") as df:
+                                df.write(chunk)
+                                df.flush()
+            if os.path.exists(session_file):
+                os.remove(session_file)
+        except Exception:
+            pass
+
+    th = threading.Thread(target=_forwarder_worker, daemon=True, name="DailyLogForwarder")
+    th.start()
+    return session_file, stop_event
 
 
 def check_gpu_memory():
@@ -308,6 +404,25 @@ def check_gpu_memory():
     return True
 
 
+def get_llamacpp_version():
+    """获取当前 llama.cpp (llama-server.exe) 的精准版本号，例如 B10816"""
+    try:
+        res = subprocess.run([LLAMA_SERVER, "--version"], capture_output=True, text=True, errors="ignore", timeout=3)
+        output = (res.stderr or "") + (res.stdout or "")
+        m = re.search(r"build\s*(\d+)", output, re.IGNORECASE)
+        commit_m = re.search(r"commit\s*([0-9a-fA-F]+)", output)
+        if m:
+            commit_str = f" ({commit_m.group(1)[:7]})" if commit_m else ""
+            return f"B{m.group(1)}{commit_str}"
+        for line in output.splitlines():
+            line = line.strip()
+            if "version" in line.lower() or "build" in line.lower():
+                return line
+    except Exception:
+        pass
+    return "未知"
+
+
 def get_hardware_info():
     """获取 GPU、CPU 与系统内存状态"""
     gpu_desc = "NVIDIA Tesla V100 32GB"
@@ -326,10 +441,12 @@ def get_hardware_info():
         pass
 
     cpu_count = os.cpu_count() or 8
+    llama_ver = get_llamacpp_version()
     return {
         "gpu": gpu_desc,
         "vram": gpu_mem,
         "cpu": f"{cpu_count} 核心线程",
+        "llama_version": llama_ver,
         "os": "Windows 64-bit"
     }
 
@@ -339,6 +456,8 @@ def ensure_gateway_8081():
     if is_port_open(8081):
         return True
 
+    ensure_port_available(8081)
+
     today = get_today_str()
     log_file = os.path.join(LOGS_DIR, f"8081_proxy_{today}.log")
     proxy_script = os.path.join(BASE_DIR, "qwen_tool_proxy.py")
@@ -347,7 +466,7 @@ def ensure_gateway_8081():
         return False
 
     log_fp = open(log_file, "a", encoding="utf-8")
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
+    creationflags = (0x08000000 | 0x00000008) if sys.platform == "win32" else 0
 
     global g_gateway_proc
     p = subprocess.Popen(
@@ -366,48 +485,105 @@ def ensure_gateway_8081():
     return False
 
 
-def ensure_sidecar_8085(wait=False):
+def get_sidecar_8085_mode():
+    """检测当前 8085 端口常驻的侧挂眼睛是运行在 GPU 还是 CPU"""
+    if not is_port_open(8085):
+        return None
+    sidecar_state_file = os.path.join(LOGS_DIR, "active_sidecar.json")
+    if os.path.exists(sidecar_state_file):
+        try:
+            with open(sidecar_state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("mode")
+        except Exception:
+            pass
+    try:
+        import psutil
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                cmd = p.info.get("cmdline") or []
+                if "llama-server" in (p.info.get("name") or "").lower() and "8085" in cmd:
+                    if "-ngl" in cmd:
+                        ngl_idx = cmd.index("-ngl")
+                        if ngl_idx + 1 < len(cmd) and cmd[ngl_idx + 1] == "0":
+                            return "cpu"
+                        return "gpu"
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return "gpu"
+
+
+def ensure_sidecar_8085(wait=False, use_gpu=False):
     """
-    启动并守护 8085 视觉侧挂眼睛 (Qwen3-VL-8B)
-    纯 CPU / 系统内存常驻运行，强制隔离 CUDA，绝对 0 显存占用！
-    支持异步后台预热，主脑直接并行加载，绝不阻塞用户等待！
+    启动并守护 8085 视觉侧挂眼睛 (Qwen3VL-4B-Instruct-Q4_K_M)
+    - 纯文本模型一律强制搭载 CPU 内存 (-ngl 0，CUDA_VISIBLE_DEVICES=-1，0 显存绝对防爆)
+    - 若当前运行模式与目标不符，自动平滑热重启切换
     """
     global g_sidecar_proc
-    if is_port_open(8085):
-        sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已常驻在位 (Qwen3-VL-8B · 0显存 · 瞬时复用)！{C_RESET}\n\n")
-        sys.stdout.flush()
-        return True
+    target_mode = "gpu" if use_gpu else "cpu"
 
-    model_path = os.path.join(MODELS_DIR, "Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf")
-    mmproj_path = os.path.join(MODELS_DIR, "mmproj-Qwen3VL-8B-Instruct-F16.gguf")
+    if is_port_open(8085):
+        cur_mode = get_sidecar_8085_mode()
+        if cur_mode == target_mode:
+            mode_desc = "GPU加速 ~4.5G显存 · 0.5s极速识图" if use_gpu else "CPU纯内存 · 0显存安全防爆"
+            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在位 (Qwen3VL-4B · {mode_desc})！{C_RESET}\n\n")
+            sys.stdout.flush()
+            return True
+        else:
+            old_str = "GPU 显存模式" if cur_mode == "gpu" else "CPU 内存模式"
+            new_str = "GPU 显存加速 (~4.5G)" if use_gpu else "CPU 纯内存 (0显存释放)"
+            sys.stdout.write(f"{C_YELLOW}  ├─ 🔄 8085 视觉模式动态切换：当前为 {old_str}，重置切换为 {new_str}...{C_RESET}\n")
+            sys.stdout.flush()
+            kill_port(8085)
+            time.sleep(0.5)
+
+    model_path = os.path.join(MODELS_DIR, "Qwen3VL-4B-Instruct-Q4_K_M.gguf")
+    mmproj_path = os.path.join(MODELS_DIR, "mmproj-Qwen3VL-4B-Instruct-F16.gguf")
+    if not os.path.exists(mmproj_path):
+        mmproj_path = os.path.join(MODELS_DIR, "mmproj-Qwen3VL-4B-Instruct-f16.gguf")
 
     if not (os.path.exists(model_path) and os.path.exists(mmproj_path)):
         return False
 
     today = get_today_str()
     log_file = os.path.join(LOGS_DIR, f"8085_sidecar_{today}.log")
-    log_fp = open(log_file, "a", encoding="utf-8")
+    log_fp = open(log_file, "a", encoding="utf-8", buffering=1)
+    try:
+        log_fp.write(f"\n--- [8085 Sidecar Session at {time.strftime('%Y-%m-%d %H:%M:%S')}] ---\n")
+        log_fp.flush()
+    except Exception:
+        pass
 
+    ngl_val = "99" if use_gpu else "0"
     sidecar_args = [
         LLAMA_SERVER,
         "-m", model_path,
         "--mmproj", mmproj_path,
-        "-ngl", "0",
+        "-ngl", ngl_val,
         "-c", "8192",
-        "-b", "1024",
-        "--ubatch-size", "1024",
+        "-b", "2048",
+        "--ubatch-size", "2048",
         "-t", "6",
         "--parallel", "1",
         "--image-min-tokens", "1024",
-        "--alias", "Qwen3-VL-8B",
+        "--alias", "Qwen3VL-4B,Qwen3VL-4B-Instruct-Q4_K_M,default",
         "--port", "8085",
-        "--api-key", "llamacpp",
-        "--log-file", log_file
+        "--api-key", "llamacpp"
     ]
 
-    # 关键：隔离 CUDA 环境变量，使 8085 纯 CPU 运行，绝不触碰 V100 显存
     env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = "-1"
+    if use_gpu:
+        sidecar_args.extend(["--flash-attn", "on", "--cache-type-k", "f16", "--cache-type-v", "f16"])
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+        mode_msg = "GPU加速 ~4.5G显存 · 0.5s闪电识图"
+    else:
+        env["CUDA_VISIBLE_DEVICES"] = "-1"
+        env["OMP_NUM_THREADS"] = "4"
+        env["MKL_NUM_THREADS"] = "4"
+        mode_msg = "CPU纯内存 · 0显存 · 线程绑定保护"
+
     creationflags = 0x08000000 if sys.platform == "win32" else 0
 
     g_sidecar_proc = subprocess.Popen(
@@ -419,7 +595,18 @@ def ensure_sidecar_8085(wait=False):
         creationflags=creationflags
     )
 
-    sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉眼睛正在后台并行预热 (Qwen3-VL-8B · CPU纯内存 · 0显存)...{C_RESET}\n\n")
+    try:
+        with open(os.path.join(LOGS_DIR, "active_sidecar.json"), "w", encoding="utf-8") as asf:
+            json.dump({
+                "mode": target_mode,
+                "ngl": int(ngl_val),
+                "pid": g_sidecar_proc.pid,
+                "updated_at": time.time()
+            }, asf, indent=2)
+    except Exception:
+        pass
+
+    sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉正在后台预热 (Qwen3VL-4B · {mode_msg})...{C_RESET}\n\n")
     sys.stdout.flush()
 
     if wait:
@@ -428,6 +615,72 @@ def ensure_sidecar_8085(wait=False):
                 return True
             time.sleep(0.3)
 
+    return True
+
+
+def ensure_embedding_8086(wait=False):
+    """
+    启动并守护 8086 向量检索引擎 (BGE-M3 · 8192 超长上下文 · 1024 维密集检索)
+    - 纯 CPU 内存安全常驻 (-ngl 0，CUDA_VISIBLE_DEVICES=-1，0 显存占用，~600MB 内存)
+    - 单日单一日志汇流 (8086_embedding_YYYYMMDD.log)
+    """
+    global g_embedding_proc
+    if is_port_open(8086):
+        sys.stdout.write(f"{C_GREEN}  ├─ 🧮 8086 向量引擎已在位 (BGE-M3 · 8192长文本 · CPU 0显存)！{C_RESET}\n\n"[:79] + "\n")
+        sys.stdout.flush()
+        return True
+
+    model_path = os.path.join(MODELS_DIR, "bge-m3-q8_0.gguf")
+    if not os.path.exists(model_path):
+        model_path = os.path.join(MODELS_DIR, "bge-large-zh-v1.5-q8_0.gguf")
+        if not os.path.exists(model_path):
+            return False
+
+    model_name = os.path.basename(model_path)
+    today = get_today_str()
+    log_file = os.path.join(LOGS_DIR, f"8086_embedding_{today}.log")
+    log_fp = open(log_file, "a", encoding="utf-8", buffering=1)
+    try:
+        log_fp.write(f"\n--- [8086 Embedding Session at {time.strftime('%Y-%m-%d %H:%M:%S')}] ---\n")
+        log_fp.flush()
+    except Exception:
+        pass
+
+    emb_args = [
+        LLAMA_SERVER,
+        "-m", model_path,
+        "--embedding",
+        "-ngl", "0",
+        "-c", "8192",
+        "-t", "4",
+        "--parallel", "1",
+        "--alias", "bge-m3,text-embedding-v1,default",
+        "--port", "8086",
+        "--api-key", "llamacpp"
+    ]
+
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = "-1"
+    env["OMP_NUM_THREADS"] = "4"
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
+
+    g_embedding_proc = subprocess.Popen(
+        emb_args,
+        cwd=BASE_DIR,
+        env=env,
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        creationflags=creationflags
+    )
+
+    sys.stdout.write(f"{C_PURPLE}  ├─ 🧮 8086 向量引擎正在后台启动 ({model_name} · CPU 0显存)...{C_RESET}\n\n"[:79] + "\n")
+    sys.stdout.flush()
+
+    if wait:
+        for _ in range(25):
+            if is_port_open(8086):
+                return True
+            time.sleep(0.3)
     return True
 
 
@@ -511,56 +764,68 @@ def enable_kill_child_processes_on_exit():
         return False
 
 
-def cleanup_all(kill_everything=False):
-    """清理本启动器实例所拉起的子进程，绝不误杀其他独立常驻实例"""
-    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc, g_tray_manager
+
+
+
+def cleanup_all(kill_everything=True):
+    """清理本启动器绑定的全部 AI 进程 (8081网关/8083主脑/8085视觉)，绝不留任何后台孤儿进程与 GPU 显存残留"""
+    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc, g_tray_manager, g_forwarder_stop
     if g_is_cleaning:
         return
     g_is_cleaning = True
+    if g_forwarder_stop:
+        try:
+            g_forwarder_stop.set()
+        except Exception:
+            pass
     if g_tray_manager:
         try:
             g_tray_manager.stop()
         except Exception:
             pass
-    # 仅安全关闭本实例实际拉起的子进程，杜绝波及其他外部实例
-    for proc in [g_main_proc, g_sidecar_proc]:
+    for proc in [g_main_proc, g_sidecar_proc, g_gateway_proc]:
         if proc and proc.poll() is None:
             try:
                 proc.terminate()
-                proc.wait(timeout=2)
+                proc.wait(timeout=1)
             except Exception:
                 try:
                     proc.kill()
                 except Exception:
                     pass
     if kill_everything:
+        kill_port(8081)
         kill_port(8083)
         kill_port(8085)
+        kill_port(8086)
         kill_all_llama()
         try:
             active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
             if os.path.exists(active_state_file):
                 os.remove(active_state_file)
+            active_sidecar_file = os.path.join(LOGS_DIR, "active_sidecar.json")
+            if os.path.exists(active_sidecar_file):
+                os.remove(active_sidecar_file)
         except Exception:
             pass
 
 
 def cleanup_and_exit(signum=None, frame=None):
     """用户按 Ctrl+C 或正常退出时触发"""
-    sys.stdout.write(f"\n{C_YELLOW}正在安全关闭当前启动器托管服务...{C_RESET}\n")
+    sys.stdout.write(f"\n{C_YELLOW}正在安全关闭当前启动器托管服务并释放显存...{C_RESET}\n")
     sys.stdout.flush()
-    cleanup_all(kill_everything=False)
-    sys.stdout.write(f"{C_GREEN}✅ 已安全退出。{C_RESET}\n")
+    cleanup_all(kill_everything=True)
+    sys.stdout.write(f"{C_GREEN}✅ 全部服务已彻底关闭，显存已清空。{C_RESET}\n")
     sys.exit(0)
 
 
-# 注册控制台关闭事件处理 (拦截窗口 X 按钮点击)
+# 注册控制台关闭事件处理 (拦截窗口 X 按钮点击与退出)
 if sys.platform == "win32":
     try:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
         def win_ctrl_handler(dwCtrlType):
-            cleanup_all(kill_everything=False)
+            cleanup_all(kill_everything=True)
             return True
         g_ctrl_handler = HandlerRoutine(win_ctrl_handler)
         kernel32.SetConsoleCtrlHandler(g_ctrl_handler, True)
@@ -573,330 +838,147 @@ signal.signal(signal.SIGTERM, cleanup_and_exit)
 
 def print_banner(hw):
     os.system("cls" if sys.platform == "win32" else "clear")
-    w = 88
+    w = 79
     line_eq = "=" * w
     sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
-    sys.stdout.write(f"{C_BOLD}{C_GREEN}      🚀 AI 大模型统一启动器 v4.0 (Python 原生高能版) · 智能协同网关矩阵{C_RESET}\n")
+    sys.stdout.write(f"{C_BOLD}{C_GREEN}   🚀 AI 大模型统一启动器 v4.0 (Python原生版) · 智能协同网关矩阵{C_RESET}\n")
     sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
-    sys.stdout.write(f"{C_GRAY}  硬件环境：{hw['gpu']} (显存: {hw['vram']}) | {hw['cpu']} | {hw['os']}{C_RESET}\n")
-    sys.stdout.write(f"{C_GRAY}  核心准则：纯 Python 原生驱动 · Windows 内核 Job 绑定 · 网关毫秒级三态裁决{C_RESET}\n")
+    cpu_clean = re.sub(r"with Radeon.*", "", hw.get('cpu', '')).strip()[:28]
+    gpu_clean = f"GPU: {hw.get('gpu', '')} ({hw.get('vram', '')})"[:36]
+    llama_ver = hw.get('llama_version', '未知')
+    sys.stdout.write(f"{C_GRAY}  环境: {gpu_clean} | {cpu_clean}{C_RESET}\n")
+    sys.stdout.write(f"{C_GRAY}  引擎: llama.cpp {C_BOLD}{C_GREEN}{llama_ver}{C_RESET}{C_GRAY} · CUDA 12.4 | 内核Job绑定{C_RESET}\n")
     sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n\n")
+
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.kernel32.SetConsoleTitleW(f"AI 大模型统一启动器 v4.0 [llama.cpp {llama_ver}]")
+        except Exception:
+            pass
+
+
+def resolve_qwen3_coder_path():
+    """动态智能解析 Qwen3-Coder-30B 模型路径，优先匹配 UD-Q5_K_XL，兼容 UD-Q4_K_XL 等规格"""
+    candidates = [
+        "Qwen3-Coder-30B-A3B-Instruct-UD-Q5_K_XL.gguf",
+        "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+        "Qwen3-Coder-30B-A3B-Instruct-Q5_K_M.gguf",
+        "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+    ]
+    for c in candidates:
+        p = os.path.join(MODELS_DIR, c)
+        if os.path.exists(p):
+            return p
+    if os.path.exists(MODELS_DIR):
+        try:
+            for f in os.listdir(MODELS_DIR):
+                if f.lower().startswith("qwen3-coder-30b") and f.lower().endswith(".gguf"):
+                    return os.path.join(MODELS_DIR, f)
+        except Exception:
+            pass
+    return os.path.join(MODELS_DIR, "Qwen3-Coder-30B-A3B-Instruct-UD-Q5_K_XL.gguf")
 
 
 def build_models_menu():
-    """定义可用模型矩阵 (全部 27B 统一搭载 mmproj + --no-mmproj-offload + draft-mtp + -kvu + 4并发)"""
+    """定义可用模型矩阵：严格按照 1级顺序参数量从小到大，2级顺序量化级别从小到大排序，并动态仅展示实际存在的模型文件"""
     mmproj_27b = os.path.join(MODELS_DIR, "mmproj-Qwen3.8-27B-F16.gguf")
 
-    return [
+    all_definitions = [
         {
-            "key": "1",
-            "name": "Qwen3.8-27B-A [全能底座]",
-            "quant": "27B·Q6_K",
-            "ctx": "160K (4槽)",
-            "speed_vram": "21G·MTP投机",
-            "vision": "CPU 0显存",
-            "best_for": "★ 终极主力(三态自适应)",
-            "desc": "27B 旗舰 | 160K 统一池 | 原生 MTP 投机加速 | 0显存 CPU 视觉 | 4槽高吞吐流水线",
-            "recommend": "【👑 终极全能主力 · 网关自适应三态裁决】",
-            "alias": "Qwen3.8-27B-A-Q6_K",
-            "is_text": False,
+            "id": "qwen3.5_4b",
+            "name": "Qwen3.5-4B [纯文本极速]",
+            "short_name": "Qwen3.5-4B",
+            "quant": "Q6_K",
+            "ctx": "256K·单",
+            "speed_vram": "4G·直推",
+            "speed": "88.9 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "低功耗辅助·轻问答",
+            "desc": "4B 轻量级对话与代码辅助 | 256K 超大上下文 | 8085 视觉(CPU 0显存)侧挂",
+            "recommend": "【低功耗快速轻量辅助 · 8085 CPU 0显存安全侧挂】",
+            "alias": "Qwen3.5-4B,default",
+            "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3.5-4B.gguf"),
             "args": [
-                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
-                "--mmproj", mmproj_27b,
+                "-m", os.path.join(MODELS_DIR, "Qwen3.5-4B.gguf"),
                 "-ngl", "99",
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
-                "-c", "163840",
-                "-b", "2048",
-                "--ubatch-size", "2048",
-                "-t", "6",
-                "--parallel", "4",
-                "--kv-unified",
-                "--cache-reuse", "512",
-                "--flash-attn", "on",
-                "--image-min-tokens", "1024",
-                "--no-mmproj-offload",
-                "--ctx-checkpoints", "4",
-                "--spec-type", "draft-mtp",
-                "--spec-draft-n-max", "2",
-                "--spec-draft-n-min", "1",
-                "--reasoning", "auto",
-                "--reasoning-budget", "2048",
-                "--reasoning-effort", "medium",
-                "--reasoning-format", "deepseek",
-                "--reasoning-preserve",
-                "--no-warmup",
-                "--temp", "0.3",
-                "--top-p", "0.95",
-                "--top-k", "20",
-                "--min-p", "0.05",
-                "--dry-multiplier", "0.0",
-                "--dry-base", "1.75",
-                "--dry-allowed-length", "2",
-                "--dry-penalty-last-n", "256",
-                "--repeat-penalty", "1.05",
-                "--presence-penalty", "0.0",
-                "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-A [全能底座],Qwen3.8-27B-A-Q6_K,default"
-            ]
-        },
-        {
-            "key": "2",
-            "name": "Qwen3.8-27B-A [双槽MTP]",
-            "quant": "27B·Q6_K",
-            "ctx": "144K (2槽)",
-            "speed_vram": "21G·MTP极速",
-            "vision": "GPU 直通",
-            "best_for": "日常深度编程·极速单发",
-            "desc": "27B 旗舰 | 144K 统一池 (单槽72K) | 原生 MTP 极速推导 (45+ tok/s) | 视觉直通",
-            "recommend": "【日常深度编程 · 极速单任务】",
-            "alias": "Qwen3.8-27B-A-Q6_K",
-            "is_text": False,
-            "args": [
-                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
-                "--mmproj", mmproj_27b,
-                "-ngl", "99",
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
-                "-c", "147456",
-                "-b", "2048",
-                "--ubatch-size", "2048",
-                "-t", "6",
-                "--parallel", "2",
-                "--kv-unified",
-                "--cache-reuse", "512",
-                "--flash-attn", "on",
-                "--image-min-tokens", "1024",
-                "--no-mmproj-offload",
-                "--ctx-checkpoints", "4",
-                "--spec-type", "draft-mtp",
-                "--spec-draft-n-max", "2",
-                "--spec-draft-n-min", "1",
-                "--reasoning", "auto",
-                "--reasoning-budget", "2048",
-                "--reasoning-effort", "medium",
-                "--reasoning-format", "deepseek",
-                "--reasoning-preserve",
-                "--no-warmup",
-                "--temp", "0.3",
-                "--top-p", "0.95",
-                "--top-k", "20",
-                "--min-p", "0.05",
-                "--dry-multiplier", "0.0",
-                "--dry-base", "1.75",
-                "--dry-allowed-length", "2",
-                "--dry-penalty-last-n", "256",
-                "--repeat-penalty", "1.05",
-                "--presence-penalty", "0.0",
-                "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-A [双槽MTP],Qwen3.8-27B-A-Q6_K,default"
-            ]
-        },
-        {
-            "key": "3",
-            "name": "Qwen3.8-27B-A [4并发]",
-            "quant": "27B·Q6_K",
-            "ctx": "160K (4槽)",
-            "speed_vram": "21G·4槽并行",
-            "vision": "GPU 直通",
-            "best_for": "多Agent高并发高吞吐",
-            "desc": "27B 旗舰 | 160K 统一池 | 4 槽并行高并发高吞吐 | 视觉直通",
-            "recommend": "【多 Agent 高并发竞争】",
-            "alias": "Qwen3.8-27B-A-Q6_K",
-            "is_text": False,
-            "args": [
-                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
-                "--mmproj", mmproj_27b,
-                "-ngl", "99",
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
-                "-c", "163840",
-                "-b", "2048",
-                "--ubatch-size", "512",
-                "-t", "6",
-                "--parallel", "4",
-                "--kv-unified",
-                "--cache-reuse", "512",
-                "--flash-attn", "on",
-                "--image-min-tokens", "1024",
-                "--no-mmproj-offload",
-                "--ctx-checkpoints", "2",
-                "--spec-type", "draft-mtp",
-                "--spec-draft-n-max", "2",
-                "--spec-draft-n-min", "1",
-                "--reasoning", "auto",
-                "--reasoning-budget", "2048",
-                "--reasoning-effort", "medium",
-                "--reasoning-format", "deepseek",
-                "--reasoning-preserve",
-                "--no-warmup",
-                "--temp", "0.3",
-                "--top-p", "0.95",
-                "--top-k", "20",
-                "--min-p", "0.05",
-                "--repeat-penalty", "1.05",
-                "--presence-penalty", "0.0",
-                "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B-A [4并发],Qwen3.8-27B-A-Q6_K,default"
-            ]
-        },
-        {
-            "key": "4",
-            "name": "Qwen3.8-27B [NVFP4极致]",
-            "quant": "27B·NVFP4",
-            "ctx": "160K (2槽)",
-            "speed_vram": "16G·MTP极速",
-            "vision": "GPU 直通",
-            "best_for": "官方高精·极限推导探索",
-            "desc": "27B NVFP4 极致量化 | 160K 统一池 | MTP 极速推导 (生成峰值突破 50+ tok/s) | 视觉直通",
-            "recommend": "【官方高精 · 极限速度探索】",
-            "alias": "Qwen3.8-27B-N-H",
-            "is_text": False,
-            "args": [
-                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-HIGHEST.gguf"),
-                "--mmproj", mmproj_27b,
-                "-ngl", "99",
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
-                "-c", "163840",
-                "-b", "2048",
-                "--ubatch-size", "512",
-                "-t", "6",
-                "--parallel", "4",
-                "--kv-unified",
-                "--cache-reuse", "512",
-                "--flash-attn", "on",
-                "--image-min-tokens", "1024",
-                "--no-mmproj-offload",
-                "--ctx-checkpoints", "2",
-                "--spec-type", "draft-mtp",
-                "--spec-draft-n-max", "2",
-                "--spec-draft-n-min", "1",
-                "--reasoning", "auto",
-                "--reasoning-budget", "2048",
-                "--reasoning-effort", "medium",
-                "--reasoning-format", "deepseek",
-                "--reasoning-preserve",
-                "--no-warmup",
-                "--temp", "0.3",
-                "--top-p", "0.95",
-                "--top-k", "20",
-                "--min-p", "0.05",
-                "--repeat-penalty", "1.05",
-                "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B [NVFP4极致],Qwen3.8-27B-N-H,default"
-            ]
-        },
-        {
-            "key": "5",
-            "name": "Qwen3.8-27B [NVFP4超长]",
-            "quant": "27B·NVFP4",
-            "ctx": "256K (2槽)",
-            "speed_vram": "16G·MTP加速",
-            "vision": "GPU 直通",
-            "best_for": "超长上下文·大代码推演",
-            "desc": "27B NVFP4 极致量化 | 256K 超大统一KV池 | MTP加速 | 视觉直通",
-            "recommend": "【超长上下文 · 巨型代码库推演】",
-            "alias": "Qwen3.8-27B-MID-HIGH",
-            "is_text": False,
-            "args": [
-                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-MID-HIGH.gguf"),
-                "--mmproj", mmproj_27b,
-                "-ngl", "99",
+                "--fit", "off",
                 "--cache-type-k", "q8_0",
                 "--cache-type-v", "q8_0",
                 "-c", "262144",
                 "-b", "2048",
-                "--ubatch-size", "512",
                 "-t", "6",
-                "--parallel", "4",
-                "--kv-unified",
-                "--cache-reuse", "512",
+                "--parallel", "1",
                 "--flash-attn", "on",
-                "--image-min-tokens", "1024",
-                "--no-mmproj-offload",
-                "--ctx-checkpoints", "2",
-                "--spec-type", "draft-mtp",
-                "--spec-draft-n-max", "2",
-                "--spec-draft-n-min", "1",
-                "--reasoning", "auto",
-                "--reasoning-budget", "2048",
-                "--reasoning-effort", "medium",
-                "--reasoning-format", "deepseek",
-                "--reasoning-preserve",
-                "--no-warmup",
                 "--temp", "0.3",
                 "--top-p", "0.95",
                 "--top-k", "20",
                 "--min-p", "0.05",
-                "--repeat-penalty", "1.05",
+                "--repeat-penalty", "1.0",
                 "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Qwen3.8-27B [NVFP4超长],Qwen3.8-27B-MID-HIGH,default"
+                "--alias", "Qwen3.5-4B,default"
             ]
         },
         {
-            "key": "6",
-            "name": "Ornith-1.5-35B [MoE大脑]",
-            "quant": "35B·Q4_K",
-            "ctx": "128K (单槽)",
-            "speed_vram": "23G·MoE并行",
+            "id": "gemma4_e4b",
+            "name": "Gemma-4-E4B [轻量多模]",
+            "short_name": "Gemma-4-E4B",
+            "quant": "Q6_K",
+            "ctx": "128K·单",
+            "speed_vram": "6G·原生",
+            "speed": "60.0 t/s",
             "vision": "CPU 0显存",
-            "best_for": "深度复杂逻辑·数理证明",
-            "desc": "35B 稀疏混合专家 | 128K 超长上下文 | 原生挂载 mmproj-35B (CPU 0显存)",
-            "recommend": "【深度复杂逻辑与数理推理】",
-            "alias": "Ornith-1.5-35B",
+            "sidecar_gpu": False,
+            "best_for": "原生轻量多模态对话",
+            "desc": "4B MoE 架构 | Q6_K_P 高精量化 | 128K 上下文 | 原生挂载 mmproj",
+            "recommend": "【轻量极速多模态对话】",
+            "alias": "Gemma-4-E4B,default",
             "is_text": False,
+            "model_path": os.path.join(MODELS_DIR, "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf"),
             "args": [
-                "-m", os.path.join(MODELS_DIR, "Ornith-1.5-35B-Q4_K_M.gguf"),
-                "--mmproj", os.path.join(MODELS_DIR, "mmproj-Ornith-1.5-35B-A3B-f16.gguf"),
+                "-m", os.path.join(MODELS_DIR, "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf"),
+                "--mmproj", os.path.join(MODELS_DIR, "mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"),
                 "-ngl", "99",
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
+                "--fit", "off",
+                "--cache-type-k", "f16",
+                "--cache-type-v", "f16",
                 "-c", "131072",
-                "-b", "4096",
-                "--ubatch-size", "4096",
+                "-b", "2048",
                 "-t", "6",
                 "--parallel", "1",
                 "--flash-attn", "on",
                 "--image-min-tokens", "1024",
-                "--no-mmproj-offload",
-                "--ctx-checkpoints", "4",
-                "--reasoning", "auto",
-                "--reasoning-budget", "2048",
-                "--reasoning-effort", "medium",
-                "--reasoning-format", "deepseek",
-                "--reasoning-preserve",
                 "--temp", "0.3",
                 "--top-p", "0.95",
                 "--top-k", "20",
                 "--min-p", "0.05",
-                "--repeat-penalty", "1.05",
+                "--repeat-penalty", "1.0",
                 "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
-                "--alias", "Ornith-1.5-35B [MoE大脑],Ornith-1.5-35B,default"
+                "--alias", "Gemma-4-E4B,default"
             ]
         },
         {
-            "key": "7",
+            "id": "qwen3_vl_8b",
             "name": "Qwen3-VL-8B [视觉独立版]",
-            "quant": "8B·UD-Q4",
-            "ctx": "32K  (单槽)",
-            "speed_vram": "8G ·GPU直通",
+            "short_name": "Qwen3-VL-8B",
+            "quant": "UD-Q4",
+            "ctx": "32K·单",
+            "speed_vram": "5G·端到端",
+            "speed": "61.5 t/s",
             "vision": "端到端视觉",
-            "best_for": "高精图文OCR·图纸评审",
+            "sidecar_gpu": False,
+            "best_for": "端到端高精图文OCR",
             "desc": "8B 旗舰视觉 | UD-Q4_K_XL 极致量化 | GPU 直通高精图文推理 (32K)",
             "recommend": "【端到端高精 OCR 与图纸评审】",
-            "alias": "Qwen3-VL-8B",
+            "alias": "Qwen3-VL-8B,default",
             "is_text": False,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf"),
             "args": [
                 "-m", os.path.join(MODELS_DIR, "Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf"),
                 "--mmproj", os.path.join(MODELS_DIR, "mmproj-Qwen3VL-8B-Instruct-F16.gguf"),
                 "-ngl", "99",
+                "--fit", "off",
                 "--cache-type-k", "q8_0",
                 "--cache-type-v", "q8_0",
                 "-c", "32768",
@@ -913,80 +995,405 @@ def build_models_menu():
                 "--min-p", "0.05",
                 "--repeat-penalty", "1.05",
                 "--jinja",
-                "--alias", "Qwen3-VL-8B [视觉独立版],Qwen3-VL-8B,default"
+                "--alias", "Qwen3-VL-8B,default"
             ]
         },
         {
-            "key": "8",
-            "name": "Gemma-4-E4B [轻量多模]",
-            "quant": "4B·Q6_K",
-            "ctx": "128K (单槽)",
-            "speed_vram": "5G ·原生轻量",
-            "vision": "CPU 0显存",
-            "best_for": "轻量极速多模态对话",
-            "desc": "4B MoE 架构 | Q6_K_P 高精量化 | 128K 上下文 | 原生挂载 mmproj",
-            "recommend": "【轻量极速多模态对话】",
-            "alias": "Gemma-4-E4B",
-            "is_text": False,
-            "args": [
-                "-m", os.path.join(MODELS_DIR, "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf"),
-                "--mmproj", os.path.join(MODELS_DIR, "mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"),
-                "-ngl", "99",
-                "--cache-type-k", "f16",
-                "--cache-type-v", "f16",
-                "-c", "131072",
-                "-b", "2048",
-                "-t", "6",
-                "--parallel", "1",
-                "--flash-attn", "on",
-                "--image-min-tokens", "1024",
-                "--temp", "0.3",
-                "--top-p", "0.95",
-                "--top-k", "20",
-                "--min-p", "0.05",
-                "--repeat-penalty", "1.0",
-                "--jinja",
-                "--alias", "Gemma-4-E4B [轻量多模],Gemma-4-E4B,default"
-            ]
-        },
-        {
-            "key": "9",
-            "name": "Qwen3.5-4B [纯文本极速]",
-            "quant": "4B·Q6_K",
-            "ctx": "256K (单槽)",
-            "speed_vram": "4G ·低功耗",
+            "id": "qwen3.8_27b_gsq",
+            "name": "Qwen3.8-27B-GSQ-RCO [256K·2槽·MTP极速]",
+            "short_name": "27B-GSQ",
+            "quant": "IQ3_S",
+            "ctx": "256K·2槽",
+            "speed_vram": "11G·MTP",
+            "speed": "40~45 t/s",
             "vision": "8085侧挂",
-            "best_for": "低功耗代码辅助·轻量问答",
-            "desc": "4B 轻量级对话与代码辅助 | 256K 超大上下文 | 8085 视觉眼睛侧挂",
-            "recommend": "【低功耗快速轻量辅助】",
-            "alias": "Qwen3.5-4B",
+            "sidecar_gpu": False,
+            "best_for": "★无损级3bit·256K长代码",
+            "desc": "GSQ-RCO 广义切片量化 | 256K 超大统一池 (2槽高命中) | 全量 Q8_0 KV极高保真 | MTP投机加速 40~45 t/s | 8085视觉(CPU 0显存)侧挂",
+            "recommend": "【👑 终极黄金底座 · GSQ-RCO 无损级 3bit + 256K 超长统一池 + MTP投机加速 · 8085(CPU 0显存)视觉侧挂】",
+            "alias": "27B-GSQ,Qwen3.8-27B-GSQ,Qwen3.8-27B-GSQ-RCO,Qwen3.8-27B-GSQ-RCO-IQ3_S,default",
             "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf"),
             "args": [
-                "-m", os.path.join(MODELS_DIR, "Qwen3.5-4B.gguf") if os.path.exists(os.path.join(MODELS_DIR, "Qwen3.5-4B.gguf")) else os.path.join(MODELS_DIR, "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf"),
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf"),
                 "-ngl", "99",
+                "--fit", "off",
                 "--cache-type-k", "q8_0",
                 "--cache-type-v", "q8_0",
                 "-c", "262144",
                 "-b", "2048",
+                "--ubatch-size", "2048",
                 "-t", "6",
-                "--parallel", "1",
+                "--parallel", "2",
+                "-sps", "0.05",
+                "--kv-unified",
                 "--flash-attn", "on",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "3",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
                 "--temp", "0.3",
                 "--top-p", "0.95",
                 "--top-k", "20",
                 "--min-p", "0.05",
-                "--repeat-penalty", "1.0",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
                 "--jinja",
-                "--alias", "Qwen3.5-4B [纯文本极速],Qwen3.5-4B,default"
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "27B-GSQ,Qwen3.8-27B-GSQ,Qwen3.8-27B-GSQ-RCO,Qwen3.8-27B-GSQ-RCO-IQ3_S,default"
+            ]
+        },
+        {
+            "id": "qwen3.8_27b_nv_mid_high",
+            "name": "Qwen3.8-27B-NVFP4-MID [160K·2槽·均衡极速]",
+            "short_name": "27B-NV-M",
+            "quant": "NVFP4",
+            "ctx": "160K·2槽",
+            "speed_vram": "16G·MTP",
+            "speed": "42~48 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "★轻量均衡·160K大池",
+            "desc": "轻量均衡 NVFP4 + Q8嵌入与MTP头 | 160K 统一池 (2槽高命中) | 全Q8_0 KV极高保真 | 8085视觉(CPU 0显存)侧挂",
+            "recommend": "【👑 轻量均衡高能底座 · 16G 显存轻量化 + 160K 统一池 + MTP加速 · 8085(CPU 0显存)视觉侧挂】",
+            "alias": "27B-NV-M,Qwen3.8-27B-NVFP4-MID-HIGH,Qwen3.8-27B-NV-M,default",
+            "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-MID-HIGH.gguf"),
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-MID-HIGH.gguf"),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "163840",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "2",
+                "-sps", "0.05",
+                "--kv-unified",
+                "--flash-attn", "on",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "3",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "27B-NV-M,Qwen3.8-27B-NVFP4-MID-HIGH,Qwen3.8-27B-NV-M,default"
+            ]
+        },
+        {
+            "id": "qwen3.8_27b_nv_highest",
+            "name": "Qwen3.8-27B-NVFP4-HIGHEST [2槽·MTP极速]",
+            "short_name": "27B-NV-H",
+            "quant": "NVFP4",
+            "ctx": "144K·2槽",
+            "speed_vram": "22G·MTP",
+            "speed": "45~52 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "★BF16双头·Q8注意力",
+            "desc": "BF16无损词嵌入与MTP头 | Q8_0高精核心注意力 | 144K统一池 (2槽高命中) | 8085视觉(CPU 0显存)侧挂",
+            "recommend": "【👑 官方高精底座 · BF16无损双头 + Q8_0核心注意力 · 8085(CPU 0显存)视觉侧挂】",
+            "alias": "27B-NV-H,Qwen3.8-27B-NVFP4-HIGHEST,Qwen3.8-27B-N-H,default",
+            "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-HIGHEST.gguf"),
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-NVFP4-MTP-HIGHEST.gguf"),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "147456",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "2",
+                "-sps", "0.05",
+                "--kv-unified",
+                "--flash-attn", "on",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "27B-NV-H,Qwen3.8-27B-NVFP4-HIGHEST,Qwen3.8-27B-N-H,default"
+            ]
+        },
+        {
+            "id": "qwen3.8_27b_a",
+            "name": "Qwen3.8-27B-A [2槽·全量Q6K·MTP]",
+            "short_name": "27B-A",
+            "quant": "Q6_K",
+            "ctx": "144K·2槽",
+            "speed_vram": "21G·MTP",
+            "speed": "45~50 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "★全量Q6K·无审查旗舰",
+            "desc": "27B 全量Q6_K旗舰 (无审查) | 144K统一池 (2槽高命中) | 全Q8_0 KV极高保真 | MTP投机加速 | 8085视觉(CPU 0显存)侧挂",
+            "recommend": "【👑 终极全能主力 · 全量 Q6_K 纯文本秒级缓存 + MTP加速 · 8085(CPU 0显存)视觉侧挂】",
+            "alias": "27B-A,Qwen3.8-27B-A,Qwen3.8-27B-A-Q6_K,default",
+            "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-Abliterated-Q6_K.gguf"),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "147456",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "2",
+                "-sps", "0.05",
+                "--kv-unified",
+                "--flash-attn", "on",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "27B-A,Qwen3.8-27B-A,Qwen3.8-27B-A-Q6_K,default"
+            ]
+        },
+        {
+            "id": "qwen3.8_27b_a_work",
+            "name": "Qwen3.8-27B-A-Work [2槽·全量Q6K·MTP]",
+            "short_name": "27B-a-Work",
+            "quant": "Q6_K",
+            "ctx": "144K·2槽",
+            "speed_vram": "21G·MTP",
+            "speed": "45~50 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "★全量Q6K·Work无审查",
+            "desc": "27B-a-Work 全量Q6_K (sme-preview-mtp) | 144K统一池 (2槽高命中) | 全Q8_0 KV极高保真 | MTP投机加速 | 8085视觉(CPU 0显存)侧挂",
+            "recommend": "【👑 27B-a-Work 主力底座 · 全量 Q6_K SME-MTP 加速 · 8085(CPU 0显存)视觉侧挂】",
+            "alias": "27B-a-Work,Qwen3.8-27B-A-Work,27B-A-Work,default",
+            "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Qwen3.8-27B-abliterated-sme-preview-mtp-Q6_K.gguf"),
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Qwen3.8-27B-abliterated-sme-preview-mtp-Q6_K.gguf"),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "147456",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "2",
+                "-sps", "0.05",
+                "--kv-unified",
+                "--flash-attn", "on",
+                "--ctx-checkpoints", "4",
+                "--spec-type", "draft-mtp",
+                "--spec-draft-n-max", "2",
+                "--spec-draft-n-min", "1",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "27B-a-Work,Qwen3.8-27B-A-Work,27B-A-Work,default"
+            ]
+        },
+        {
+            "id": "qwen3_coder_30b",
+            "name": "Qwen3-Coder-30B-A3B [128K·Q8保真·编程王牌]",
+            "short_name": "Qwen3-C30B",
+            "quant": "UD-Q5",
+            "ctx": "128K·单",
+            "speed_vram": "20G·MoE",
+            "speed": "85~87 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "★3.3B激活·128K Q8代码",
+            "desc": "30.5B MoE编程专家 (3.3B激活) | UD-Q5_K_XL 动态自适应量化 | 128K超长大池 | 全Q8_0 KV极高保真 | 8085视觉(CPU 0显存)侧挂",
+            "recommend": "【👑 顶级开源编程底座 · 3.3B 激活专家闪电直通 · 128K Q8 高保真 · 8085(CPU 0显存)视觉侧挂】",
+            "alias": "Qwen3-Coder-30B-A3B,Qwen3-Coder-30B,Qwen3-C30B,qwen3-coder,default",
+            "is_text": True,
+            "model_path": resolve_qwen3_coder_path(),
+            "args": [
+                "-m", resolve_qwen3_coder_path(),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "131072",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "1",
+                "--flash-attn", "on",
+                "--cache-reuse", "512",
+                "--no-warmup",
+                "--temp", "0.2",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Qwen3-Coder-30B-A3B,Qwen3-Coder-30B,Qwen3-C30B,qwen3-coder,default"
+            ]
+        },
+        {
+            "id": "ornith_35b",
+            "name": "Ornith-1.5-35B [256K·MoE推理·Q8保真]",
+            "short_name": "Ornith-35B",
+            "quant": "Q4_K",
+            "ctx": "256K·单",
+            "speed_vram": "20G·MoE",
+            "speed": "50~55 t/s",
+            "vision": "8085侧挂",
+            "sidecar_gpu": False,
+            "best_for": "★全Q8保真·256K极速推理",
+            "desc": "35B 稀疏MoE专家 | 全Q8 KV极高精度保真 | 256K 极限大池 | 8085(CPU 0显存)视觉侧挂 | 50~55 t/s",
+            "recommend": "【深度复杂逻辑推理 · 全Q8_0 KV极高保真度(拒绝MoE路由退化) · MoE专家激活 · 8085 CPU 0显存侧挂 · 256K超长池】",
+            "alias": "Ornith-35B,Ornith-1.5-35B,default",
+            "is_text": True,
+            "model_path": os.path.join(MODELS_DIR, "Ornith-1.5-35B-Q4_K_M.gguf"),
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "Ornith-1.5-35B-Q4_K_M.gguf"),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "262144",
+                "-b", "2048",
+                "--ubatch-size", "2048",
+                "-t", "6",
+                "--parallel", "1",
+                "--flash-attn", "on",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.3",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--dry-multiplier", "0.0",
+                "--dry-base", "1.75",
+                "--dry-allowed-length", "2",
+                "--dry-penalty-last-n", "256",
+                "--repeat-penalty", "1.05",
+                "--presence-penalty", "0.0",
+                "--jinja",
+                "--chat-template-file", TEMPLATE_FILE,
+                "--alias", "Ornith-35B,Ornith-1.5-35B,default"
             ]
         }
     ]
 
+    # 动态文件存在性校验与自动连续编号
+    valid_menu = []
+    idx = 1
+    for item in all_definitions:
+        mpath = item.get("model_path")
+        # 只要主模型文件真实存在于磁盘，才加入菜单展示
+        if mpath and os.path.exists(mpath):
+            item_copy = dict(item)
+            item_copy["key"] = str(idx)
+            valid_menu.append(item_copy)
+            idx += 1
+
+    return valid_menu       
+
 
 def str_display_width(s):
-    """精确计算包含 ANSI 颜色代码与中日韩 CJK 全角字符的终端可见宽度"""
+    """精确计算包含 ANSI 颜色代码、CJK 全角字符与宽符号在终端中的实际显示列数"""
     clean = re.sub(r"\033\[[0-9;]*m", "", s)
-    return sum(2 if unicodedata.east_asian_width(c) in ("F", "W") else 1 for c in clean)
+    w = 0
+    for c in clean:
+        code = ord(c)
+        if code in (0xFE0F, 0xFE0E):
+            continue
+        eaw = unicodedata.east_asian_width(c)
+        if eaw in ("F", "W") or (0x2600 <= code <= 0x27BF) or (0x1F300 <= code <= 0x1FAFF):
+            w += 2
+        else:
+            w += 1
+    return w
 
 
 def pad_display(s, target_width, align="left"):
@@ -1003,37 +1410,39 @@ def pad_display(s, target_width, align="left"):
 
 
 def render_models_grid(menu):
-    """一横排整齐渲染模型列表，上下严格对齐，清晰展示功能参数与推荐场景"""
-    headers = ["序号", "启动形态与模型名称", "规格量化", "上下文/槽位", "显存/推导加速", "视觉方案", "核心定位与推荐场景"]
-    widths  = [5,    26,                  11,       12,          15,            10,       28]
+    """一横排紧凑渲染模型列表，行宽严格 <= 79 列，适配副屏窄终端绝不折行"""
+    headers = ["序号", "模型名", "量化", "上下文/槽", "容量/加速", "推导速度", "推荐场景与定位"]
+    widths  = [4,    13,       5,      9,         9,         9,         23]
 
     header_line = " ".join(pad_display(f"{C_BOLD}{C_CYAN}{h}{C_RESET}", w) for h, w in zip(headers, widths))
-    sep_line = f"{C_GRAY}" + " ".join("─" * w for w in widths) + f"{C_RESET}"
+    sep_line = f"{C_GRAY}" + "=" * 79 + f"{C_RESET}"
 
     sys.stdout.write(f"\n{header_line}\n")
     sys.stdout.write(f"{sep_line}\n")
 
     for item in menu:
         col_key = pad_display(f"{C_BOLD}{C_CYAN}[{item['key']}]{C_RESET}", widths[0])
-        col_name = pad_display(f"{C_GREEN}{item['name']}{C_RESET}", widths[1])
+        # 使用精简名以适配副屏 80 列宽度
+        display_name = item.get("short_name") or item["name"]
+        col_name = pad_display(f"{C_GREEN}{display_name}{C_RESET}", widths[1])
         col_quant = pad_display(f"{C_YELLOW}{item.get('quant', '-')}{C_RESET}", widths[2])
         col_ctx = pad_display(f"{C_CYAN}{item.get('ctx', '-')}{C_RESET}", widths[3])
-        col_speed = pad_display(f"{C_PURPLE}{item.get('speed_vram', '-')}{C_RESET}", widths[4])
-        col_vision = pad_display(f"{C_BLUE}{item.get('vision', '-')}{C_RESET}", widths[5])
+        col_vram = pad_display(f"{C_PURPLE}{item.get('speed_vram', '-')}{C_RESET}", widths[4])
+        col_speed = pad_display(f"{C_YELLOW}{item.get('speed', '-')}{C_RESET}", widths[5])
         col_best = pad_display(f"{C_WHITE}{item.get('best_for', '-')}{C_RESET}", widths[6])
 
-        sys.stdout.write(f"{col_key} {col_name} {col_quant} {col_ctx} {col_speed} {col_vision} {col_best}\n")
+        sys.stdout.write(f"{col_key} {col_name} {col_quant} {col_ctx} {col_vram} {col_speed} {col_best}\n")
 
     sys.stdout.write(f"{sep_line}\n")
     exit_key = pad_display(f"{C_BOLD}{C_RED}[0]{C_RESET}", widths[0])
-    sys.stdout.write(f"{exit_key} {C_GRAY}退出启动器 (安全关闭并清理全部后台服务与显存){C_RESET}\n\n")
+    sys.stdout.write(f"{exit_key} {C_GRAY}退出启动器 (安全清理后台服务与显存){C_RESET}\n\n")
 
 def main():
     global g_main_proc
 
     # 处理 CLI 选项 (例如 --list / --list-models / --help)
     if any(arg.lower() in ("--help", "-h", "/?") for arg in sys.argv[1:]):
-        sys.stdout.write("用法: python launcher_main.py [模型编号: 1-9 | 0(退出)]\n")
+        sys.stdout.write("用法: python launcher_main.py [模型编号: 1-8 | 0(退出)]\n")
         return
     if any(arg.lower() in ("-listmodels", "--list-models", "list", "--list", "-l") for arg in sys.argv[1:]):
         menu = build_models_menu()
@@ -1050,14 +1459,24 @@ def main():
     # 启动 Windows 任务栏通知区域状态托盘 (右键随时快捷操作与退出)
     init_system_tray()
 
-    # 1. 基础组件初始化：拉起 8081 智能协同网关
-    sys.stdout.write(f"{C_BOLD}正在联动拉起 8081 智能协同网关...{C_RESET}\n")
-    if ensure_gateway_8081():
-        sys.stdout.write(f"{C_GREEN}  ├─ ✅ 8081 智能协同网关已就绪 (http://127.0.0.1:8081/dashboard){C_RESET}\n\n")
+    # 1. 核心 AI 端口矩阵与服务协同感知 (8081 网关 · 8083 主脑 · 8085 视觉)
+    sys.stdout.write(f"{C_BOLD}正在联动探测核心端口与 AI 服务矩阵...{C_RESET}\n")
 
-    # 2. 检查 8083 主脑是否已在位常驻运行 (杜绝重复启动互杀)
-    if is_port_open(8083):
-        current_running_name = ""
+    # 🌐 8081 智能协同网关
+    gw_ready = ensure_gateway_8081()
+    gw_tag = f"{C_GREEN}✅ 运行中{C_RESET}" if gw_ready else f"{C_RED}❌ 未就绪{C_RESET}"
+    sys.stdout.write(f"  ├─ 🌐 {C_BOLD}8081 [智能协同网关]{C_RESET} : {gw_tag}\n")
+    sys.stdout.write(f"  │    ├─ {C_GRAY}功能特性: 双协议转译 (Anthropic ↔ OpenAI) · GBNF净化{C_RESET}\n")
+    sys.stdout.write(f"  │    ├─ {C_GRAY}调度引擎: 任务自适应黄金采样矩阵 · Loop-Breaker 熔断{C_RESET}\n")
+    sys.stdout.write(f"  │    ├─ {C_CYAN}看板地址: http://127.0.0.1:8081/dashboard{C_RESET} {C_GRAY}(算力监控){C_RESET}\n")
+    sys.stdout.write(f"  │    ├─ {C_CYAN}API 接口: http://127.0.0.1:8081/v1{C_RESET} {C_GRAY}(Cursor/Claude){C_RESET}\n")
+    sys.stdout.write(f"  │    └─ {C_CYAN}Web 对话: http://127.0.0.1:8081{C_RESET} {C_GRAY}(原生网页交互){C_RESET}\n")
+    sys.stdout.write(f"  │\n")
+
+    # 🧠 8083 主脑推理底座
+    is_8083_up = is_port_open(8083)
+    current_running_name = ""
+    if is_8083_up:
         try:
             import urllib.request
             req_p = urllib.request.Request("http://127.0.0.1:8083/props", headers={"Authorization": "Bearer llamacpp"})
@@ -1076,71 +1495,72 @@ def main():
                 except Exception:
                     pass
         if not current_running_name:
-            current_running_name = "Qwen3.8-27B-A [全能底座]"
+            current_running_name = "8083 主脑引擎"
+        mb_tag = f"{C_GREEN}🟢 在位运行 [{current_running_name[:12]}]{C_RESET}{C_GRAY} (输入编号可平滑置换){C_RESET}"
+    else:
+        mb_tag = f"{C_YELLOW}⏳ 待命中 (从下方列表选择模型加载){C_RESET}"
 
-        sys.stdout.write(f"\n{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
-        sys.stdout.write(f"  🟢 检测到 8083 主脑引擎已在位运行：{C_CYAN}{C_BOLD}{current_running_name}{C_RESET}\n")
-        sys.stdout.write(f"  ├─ 📡 8081 网关控制台: http://127.0.0.1:8081/dashboard\n")
-        sys.stdout.write(f"  ├─ 💡 显存中已常驻权重与 KV 缓存，无需重复等待加载！\n")
-        sys.stdout.write(f"{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
-        sys.stdout.write(f"{C_BOLD}请选择操作：{C_RESET}\n")
-        sys.stdout.write(f"  {C_GREEN}[Enter / 1]{C_RESET} 保持当前主脑继续运行 (进入常驻托盘守护)\n")
-        sys.stdout.write(f"  {C_YELLOW}[2]{C_RESET} 停止当前主脑，重新选择并置换其他模型\n")
-        sys.stdout.write(f"  {C_RED}[0]{C_RESET} 退出当前窗口 (不影响后台主脑继续运行)\n\n")
+    sys.stdout.write(f"  ├─ 🧠 {C_BOLD}8083 [主脑推理底座]{C_RESET} : {mb_tag}\n")
+    sys.stdout.write(f"  │    ├─ {C_GRAY}定位功能: llama-server 推理底座 · 独占 Tesla V100 32GB 显存{C_RESET}\n")
+    sys.stdout.write(f"  │    ├─ {C_GRAY}显存架构: 统一 Q8_0 KV Cache 池 (144K~256K) · MTP 投机加速{C_RESET}\n")
+    sys.stdout.write(f"  │    └─ {C_CYAN}原生端点: http://127.0.0.1:8083/v1{C_RESET} {C_GRAY}(底层原生推理接口){C_RESET}\n")
+    sys.stdout.write(f"  │\n")
 
-        try:
-            attach_choice = input(f"{C_BOLD}请输入操作编号 [默认 1]: {C_RESET}").strip()
-        except (EOFError, KeyboardInterrupt):
-            attach_choice = "0"
+    # 👁️ 8085 视觉侧挂眼睛
+    is_8085_up = is_port_open(8085)
+    if is_8085_up:
+        cur_mode = get_sidecar_8085_mode()
+        mode_desc = "GPU加速" if cur_mode == "gpu" else "CPU 0显存常驻"
+        sc_tag = f"{C_GREEN}🟢 在位就绪 (Qwen3VL-4B · {mode_desc}){C_RESET}"
+    else:
+        sc_tag = f"{C_BLUE}💤 待命就绪 (CPU 0显存常驻，随用随开){C_RESET}"
 
-        if attach_choice in ("", "1"):
-            today = get_today_str()
-            main_log_file = os.path.join(LOGS_DIR, f"8083_llama_{today}.log")
-            update_system_tray(model_name=current_running_name, status_text="运行中 (8081网关/8083主脑)", is_running=True, log_file=main_log_file)
-            sys.stdout.write(f"\n{C_GREEN}✅ 已成功接管当前主脑状态守护与任务栏托盘！{C_RESET}\n")
-            sys.stdout.write(f"  📡 网关双通接口: http://127.0.0.1:8081/v1\n")
-            sys.stdout.write(f"  📊 算力监控大屏: http://127.0.0.1:8081/dashboard\n")
-            sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
-            try:
-                while True:
-                    time.sleep(2)
-                    if not is_port_open(8083):
-                        sys.stdout.write(f"\n{C_YELLOW}检测到 8083 主脑端口已关闭。{C_RESET}\n")
-                        break
-            except KeyboardInterrupt:
-                pass
-            finally:
-                cleanup_all(kill_everything=False)
-            return
-        elif attach_choice == "0":
-            sys.stdout.write("安全退出当前窗口，后台模型继续保持运行。\n")
-            cleanup_all(kill_everything=False)
-            return
-        else:
-            sys.stdout.write(f"\n{C_YELLOW}正在停止当前 8083 主脑并释放显存...{C_RESET}\n")
-            kill_port(8083)
-            check_gpu_memory()
+    sys.stdout.write(f"  ├─ 👁️ {C_BOLD}8085 [视觉侧挂眼睛]{C_RESET} : {sc_tag}\n")
+    sys.stdout.write(f"  │    ├─ {C_GRAY}定位功能: Qwen3VL-4B 视觉眼睛 · 专职 OCR 图表与多模态解析{C_RESET}\n")
+    sys.stdout.write(f"  │    └─ {C_CYAN}视觉端点: http://127.0.0.1:8085/v1{C_RESET} {C_GRAY}(外挂专用){C_RESET}\n")
+    sys.stdout.write(f"  │\n")
 
-    # 3. 呈现模型菜单 (整齐排列一横排网格 UI)
+    # 🧮 8086 向量检索引擎 (BGE-M3)
+    is_8086_up = is_port_open(8086)
+    emb_tag = f"{C_GREEN}🟢 在位就绪 (BGE-M3 · 8192长文本 · CPU 0显存){C_RESET}" if is_8086_up else f"{C_BLUE}💤 待命就绪 (BGE-M3 · CPU 0显存，自动拉起){C_RESET}"
+    sys.stdout.write(f"  └─ 🧮 {C_BOLD}8086 [向量检索引擎]{C_RESET} : {emb_tag}\n")
+    sys.stdout.write(f"       ├─ {C_GRAY}定位功能: BGE-M3 1024维高精语义向量 · 8192长文档/代码库RAG{C_RESET}\n")
+    sys.stdout.write(f"       └─ {C_CYAN}向量端点: http://127.0.0.1:8086/v1/embeddings{C_RESET}\n\n")
+
+    # 默认黄金底座：27B-A (Qwen3.8-27B-Abliterated-Q6_K 全量Q6K无审查旗舰)
+    default_choice = "1"
     menu = build_models_menu()
+    for item in menu:
+        if item.get("short_name") == "27B-A" or "27B-A" in item.get("alias", ""):
+            default_choice = item["key"]
+            break
+
+    if is_port_open(8083) and locals().get("current_running_name"):
+        for item in menu:
+            if (item["short_name"] in current_running_name or 
+                item["name"] in current_running_name or 
+                item.get("alias", "").split(",")[0] in current_running_name):
+                default_choice = item["key"]
+                break
+
     sys.stdout.write(f"{C_BOLD}{C_CYAN}请选择要固定启动的主模型：{C_RESET}")
     render_models_grid(menu)
 
     if len(sys.argv) > 1:
         arg = sys.argv[1].strip()
         if arg in ("--help", "-h"):
-            sys.stdout.write("用法: python launcher_main.py [模型编号: 1-9 | 0(退出)]\n")
+            sys.stdout.write("用法: python launcher_main.py [模型编号: 1-8 | 0(退出)]\n")
             return
         choice = arg
     else:
         try:
-            choice = input(f"{C_BOLD}请输入选项编号 [默认 1]: {C_RESET}").strip()
+            choice = input(f"{C_BOLD}请输入选项编号 [默认 {default_choice}]: {C_RESET}").strip()
         except (EOFError, KeyboardInterrupt):
             sys.stdout.write("\n已取消输入，安全退出。\n")
             choice = "0"
 
     if not choice:
-        choice = "1"
+        choice = default_choice
     if choice == "0":
         cleanup_and_exit()
 
@@ -1152,34 +1572,60 @@ def main():
     if not selected:
         selected = menu[0]
 
-    sys.stdout.write(f"\n{C_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
+    # 校验模型文件是否存在
+    model_path = ""
+    for i, a in enumerate(selected.get("args", [])):
+        if a == "-m" and i + 1 < len(selected["args"]):
+            model_path = selected["args"][i + 1]
+            break
+    if model_path and not os.path.exists(model_path):
+        sys.stdout.write(f"\n{C_RED}{C_BOLD}❌ 未检测到模型文件：{C_RESET}{C_YELLOW}{os.path.basename(model_path)}{C_RESET}\n")
+        sys.stdout.write(f"   预期路径: {model_path}\n\n")
+        sys.stdout.write(f"{C_CYAN}💡 请将从 HuggingFace 下载的 GGUF 文件拷贝放入 models 目录：{C_RESET}\n")
+        sys.stdout.write(f"   📁 {MODELS_DIR}\n")
+        sys.stdout.write(f"{C_GREEN}   文件拷贝完成后，重新输入编号即可秒级拉起（参数已优化就绪）！{C_RESET}\n\n")
+        if len(sys.argv) <= 1:
+            try:
+                input(f"{C_GRAY}按回车键退出...{C_RESET}")
+            except Exception:
+                pass
+        sys.exit(1)
+
+    line_eq = "=" * 79
+    sys.stdout.write(f"\n{C_CYAN}{line_eq}{C_RESET}\n")
     sys.stdout.write(f"  🚀 正在启动: {C_BOLD}{selected['name']}{C_RESET}\n")
-    sys.stdout.write(f"{C_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
+    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n\n")
 
     # 3. 视觉与多模态组件适配 (仅纯文本侧挂模型按需拉起 8085，原生多模态直接释放 8085)
-    if selected.get("is_text") and selected.get("vision") == "8085侧挂":
-        if is_port_open(8085):
-            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在位 (Qwen3-VL-8B · 0显存)！{C_RESET}\n\n")
-        else:
-            sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 检测到当前模型为纯文本，正在按需启动 8085 视觉侧挂眼睛...{C_RESET}\n\n")
-            ensure_sidecar_8085(wait=False)
+    if selected.get("is_text") and "8085" in selected.get("vision", ""):
+        use_gpu_sidecar = bool(selected.get("sidecar_gpu", False))
+        ensure_sidecar_8085(wait=False, use_gpu=use_gpu_sidecar)
     else:
         if is_port_open(8085):
-            sys.stdout.write(f"{C_YELLOW}  ├─ 🧹 当前模型自带原生多模态，正在关闭 8085 侧挂以释放 CPU 与内存...{C_RESET}\n")
+            sys.stdout.write(f"{C_YELLOW}  ├─ 🧹 原生多模态模型：关闭 8085 侧挂释放 CPU/显存...{C_RESET}\n")
             kill_port(8085)
-        sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生多模态全模态底座：GPU/CPU 视觉直通，网关自适应调度 (无需 8085 侧挂，0 内存浪费)！{C_RESET}\n\n")
+        sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生多模态：GPU/CPU 视觉直通，网关自适应调度！{C_RESET}\n\n")
 
-    # 4. 清理 8083 旧进程并校验显存安全
-    kill_port(8083)
+    # 3.1 向量检索引擎守护 (8086 BGE-M3，CPU 0显存常驻)
+    ensure_embedding_8086(wait=False)
+
+    # 4. 清理 8083 旧进程并校验显存安全与端口可绑定性
+    ensure_port_available(8083)
     check_gpu_memory()
 
     # 5. 启动 8083 主脑引擎
     today = get_today_str()
     main_log_file = os.path.join(LOGS_DIR, f"8083_llama_{today}.log")
 
+    # 启动 session 日志转发器，严格保障当日日志持续累加，防止被 llama-server 覆盖截断
+    global g_forwarder_stop
+    session_log, g_forwarder_stop = start_session_log_forwarder(main_log_file, "8083")
+
     # 🌟 动态持久化当前主脑模型状态，供智能协同网关毫秒级直接同步
     try:
         active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
+        has_mtp = ("--spec-type" in selected.get("args", []))
+        spec_type = "draft-mtp" if has_mtp else ""
         with open(active_state_file, "w", encoding="utf-8") as asf:
             json.dump({
                 "model_name": selected["name"],
@@ -1188,6 +1634,8 @@ def main():
                 "quant": selected.get("quant", ""),
                 "ctx": selected.get("ctx", ""),
                 "is_text": selected.get("is_text", False),
+                "has_mtp": has_mtp,
+                "spec_type": spec_type,
                 "updated_at": time.time()
             }, asf, ensure_ascii=False, indent=2)
     except Exception:
@@ -1199,17 +1647,17 @@ def main():
         help_probe = subprocess.run([LLAMA_SERVER, "--help"], capture_output=True, text=True, timeout=5).stdout
         if "--chat-truncate" in help_probe:
             extra_truncate_args = ["--chat-truncate", "--chat-truncate-max-keep", "0.6"]
-            sys.stdout.write(f"{C_CYAN}  ⚡ [PR #19841] 检测到 llama-server 原生支持 --chat-truncate，已激活底层硬件级语义截断防爆！{C_RESET}\n")
+            sys.stdout.write(f"{C_CYAN}  ⚡ [PR #19841] 支持 --chat-truncate，已激活硬件级语义截断！{C_RESET}\n")
     except Exception:
         pass
 
     server_cmd = [LLAMA_SERVER] + selected["args"] + extra_truncate_args + [
         "--port", "8083",
         "--api-key", "llamacpp",
-        "--log-file", main_log_file
+        "--log-file", session_log
     ]
 
-    sys.stdout.write(f"{C_GREEN}  🔥 正在极速加载主脑至 V100 32GB 显存 (日志落盘: {os.path.basename(main_log_file)})...{C_RESET}\n")
+    sys.stdout.write(f"{C_GREEN}  🔥 正在加载主脑至 V100 显存 (日志: {os.path.basename(main_log_file)})...{C_RESET}\n")
     update_system_tray(model_name=selected["name"], status_text="模型加载中 (V100 32GB)...", is_running=False, log_file=main_log_file)
     sys.stdout.flush()
 
@@ -1230,6 +1678,9 @@ def main():
         if is_port_open(8083):
             ready = True
             break
+        # 实时检测子进程是否异常提前退出，避免盲目等待 40 秒
+        if g_main_proc.poll() is not None:
+            break
         time.sleep(0.25)
         if i % 4 == 0:
             sys.stdout.write(".")
@@ -1237,24 +1688,43 @@ def main():
 
     if ready:
         update_system_tray(model_name=selected["name"], status_text="运行中 (8081网关/8083主脑)", is_running=True, log_file=main_log_file)
-        sys.stdout.write(f"\n\n{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n")
-        sys.stdout.write(f"  🎉 主脑引擎已成功常驻！端口: http://127.0.0.1:8083/v1\n")
-        sys.stdout.write(f"  📡 网关双通接口: http://127.0.0.1:8081/v1 (Claude Code / ccswitch)\n")
-        sys.stdout.write(f"  📊 算力监控大屏: http://127.0.0.1:8081/dashboard\n")
-        sys.stdout.write(f"  🔔 任务栏托盘状态已激活：位于屏幕右下角通知区域 (若被折叠请点击 ^ 向上小箭头查看/拖出)\n")
-        sys.stdout.write(f"{C_BOLD}{C_GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{C_RESET}\n\n")
+        line_eq = "=" * 79
+        sys.stdout.write(f"\n\n{C_BOLD}{C_GREEN}{line_eq}{C_RESET}\n")
+        sys.stdout.write(f"  🎉 8083 [主脑推理底座] : {C_CYAN}{C_BOLD}{selected['name']}{C_RESET} 已成功常驻\n")
+        sys.stdout.write(f"     ├─ 底层端点: http://127.0.0.1:8083/v1 (llama.cpp 原生深度推理底座)\n")
+        sys.stdout.write(f"     └─ 架构特性: 独占 Tesla V100 32GB · 统一共享 KV 池 · 支持 MTP\n")
+        if is_port_open(8085):
+            cur_mode = get_sidecar_8085_mode()
+            mode_desc = "GPU极速" if cur_mode == "gpu" else "CPU 0显存"
+            sys.stdout.write(f"  👁️ 8085 [视觉侧挂] : http://127.0.0.1:8085/v1 (Qwen3VL-4B · {mode_desc})\n")
+        sys.stdout.write(f"  📡 8081 [网关接口] : http://127.0.0.1:8081/v1 (供 Claude/Cursor 接入)\n")
+        sys.stdout.write(f"  📊 8081 [算力看板] : http://127.0.0.1:8081/dashboard (实时监控大屏)\n")
+        sys.stdout.write(f"  💬 8081 [网页对话] : http://127.0.0.1:8081 (原生 Web 交互界面)\n")
+        sys.stdout.write(f"  🔔 托盘图标已激活：位于屏幕右下角通知区域 (^ 展开可拖出图标)\n")
+        sys.stdout.write(f"{C_BOLD}{C_GREEN}{line_eq}{C_RESET}\n\n")
         sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
     else:
-        sys.stdout.write(f"\n{C_RED}⚠️ 8083 端口未能在 45 秒内就绪，请检查 {main_log_file}{C_RESET}\n")
+        if g_main_proc.poll() is not None:
+            sys.stdout.write(f"\n{C_RED}❌ 主脑进程启动即异常退出 (退出代码: {g_main_proc.returncode})！{C_RESET}\n")
+            if os.path.exists(main_log_file):
+                try:
+                    with open(main_log_file, "r", encoding="utf-8", errors="ignore") as lf:
+                        lines = [line.strip() for line in lf.readlines() if line.strip()]
+                        err_tail = lines[-6:] if len(lines) >= 6 else lines
+                        sys.stdout.write(f"{C_YELLOW}  📋 日志末尾报错 ({os.path.basename(main_log_file)}):\n" + "\n".join(f"     {l}" for l in err_tail) + f"{C_RESET}\n")
+                except Exception:
+                    pass
+        else:
+            sys.stdout.write(f"\n{C_RED}⚠️ 8083 端口未能在 45 秒内就绪，请检查 {main_log_file}{C_RESET}\n")
 
     try:
         while True:
             time.sleep(1)
-            if g_main_proc.poll() is not None:
+            if g_main_proc.poll() is not None and not is_port_open(8083):
                 sys.stdout.write(f"\n{C_YELLOW}主脑进程已退出 (code={g_main_proc.returncode})。{C_RESET}\n")
                 break
     except KeyboardInterrupt:
-        pass
+        cleanup_all(kill_everything=True)
     finally:
         cleanup_all(kill_everything=False)
 

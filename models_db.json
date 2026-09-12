@@ -55,6 +55,34 @@
     "bestFor": "无审顶尖",
     "note": "Artificial Analysis 智能指数 52"
   },
+  "Qwen3.8-27B-abliterated-sme-preview-mtp-Q6_K": {
+    "displayName": "27B-a-Work",
+    "category": "text",
+    "sizeGB": 20.9,
+    "ctx": 144,
+    "kv": "Q8/Q8",
+    "quant": "Q6_K",
+    "speed": 45.0,
+    "aaIndex": 52.0,
+    "aaRank": "TOP 1 开源第一梯队",
+    "ability": "狱思调双",
+    "bestFor": "工作流无审",
+    "note": "Artificial Analysis 智能指数 52; Qwen3.8-27B SME MTP 深度工作流底座"
+  },
+  "27B-a-Work": {
+    "displayName": "27B-a-Work",
+    "category": "text",
+    "sizeGB": 20.9,
+    "ctx": 144,
+    "kv": "Q8/Q8",
+    "quant": "Q6_K",
+    "speed": 45.0,
+    "aaIndex": 52.0,
+    "aaRank": "TOP 1 开源第一梯队",
+    "ability": "狱思调双",
+    "bestFor": "工作流无审",
+    "note": "Artificial Analysis 智能指数 52; Qwen3.8-27B SME MTP 深度工作流底座"
+  },
   "Qwen3.8-27B-NVFP4-MTP-MID-HIGH": {
     "displayName": "Qwen3.8-27B-MID-HIGH",
     "category": "text",
@@ -157,15 +185,15 @@
     "displayName": "Ornith-1.5-35B",
     "category": "vision",
     "sizeGB": 20.2,
-    "ctx": 128,
+    "ctx": 256,
     "kv": "Q8/Q8",
     "quant": "Q4_K_M",
-    "speed": 72.1,
+    "speed": "50~55",
     "aaIndex": 48.0,
     "aaRank": "TOP 2 MoE深度推理",
     "ability": "图狱理思",
     "bestFor": "深度推理",
-    "note": "Artificial Analysis 智能指数 48; 35B MoE 深度推理"
+    "note": "Artificial Analysis 智能指数 48; 35B MoE 深度推理 (256K极限长上下文 · 全Q8_0 KV极高保真度 · 8085视觉侧挂)"
   },
   "Ornith-1.0-35B-UD-Q4_K_XL": {
     "displayName": "Ornith-1.0-35B-UD",
@@ -180,6 +208,34 @@
     "ability": "图狱理稳",
     "bestFor": "长文对话",
     "note": "Artificial Analysis 智能指数 48"
+  },
+  "Qwen3-Coder-30B-A3B-Instruct-UD-Q5_K_XL": {
+    "displayName": "Qwen3-Coder-30B",
+    "category": "text",
+    "sizeGB": 20.25,
+    "ctx": 96,
+    "kv": "Q8/Q8",
+    "quant": "UD-Q5_K_XL",
+    "speed": "75~85",
+    "aaIndex": 54.0,
+    "aaRank": "TOP 1 开源编程王牌",
+    "ability": "码调速专",
+    "bestFor": "编程Agent",
+    "note": "Qwen3-Coder 30.5B MoE (3.3B激活) · 96K Q8_0 KV极高保真 · 8085视觉眼睛 · 原生思维链直通"
+  },
+  "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL": {
+    "displayName": "Qwen3-Coder-30B-UD-Q4",
+    "category": "text",
+    "sizeGB": 16.45,
+    "ctx": 160,
+    "kv": "Q8/Q8",
+    "quant": "UD-Q4_K_XL",
+    "speed": "80~95",
+    "aaIndex": 53.0,
+    "aaRank": "TOP 1 极速编程",
+    "ability": "码调速飞",
+    "bestFor": "极限吞吐",
+    "note": "Qwen3-Coder 30.5B MoE (3.3B激活) · 16.4GB极致轻量 · 160K Q8 KV · 8085视觉侧挂"
   },
   "Qwen3.6-27B-Fable-Fus-711-UnHeretic-NM-DAU-NEO-MAX-NEO-MTP-Q5_K_M": {
     "displayName": "Qwen3.6-27B-711-MTP",
@@ -237,19 +293,19 @@
     "bestFor": "极速越狱",
     "note": "Artificial Analysis 智能指数 32"
   },
-  "Qwen2.5-VL-3B-Instruct-Q4_K_M": {
-    "displayName": "Qwen2.5-VL-3B",
+  "Qwen3VL-4B-Instruct-Q4_K_M": {
+    "displayName": "Qwen3VL-4B",
     "category": "vision",
-    "sizeGB": 1.8,
-    "ctx": 32,
-    "kv": "Q8/Q8",
+    "sizeGB": 2.5,
+    "ctx": 8,
+    "kv": "F16/F16",
     "quant": "Q4_K_M",
-    "speed": 25.0,
-    "aaIndex": 28.0,
-    "aaRank": "3B CPU 视觉眼睛",
-    "ability": "图思",
+    "speed": 105.0,
+    "aaIndex": 38.0,
+    "aaRank": "4B 极速视觉眼睛",
+    "ability": "图思速",
     "bestFor": "视觉眼睛",
-    "note": "Artificial Analysis 智能指数 28"
+    "note": "8085 侧挂视觉眼睛 · 8K 上下文 · 105 tok/s 极速推导 · 0.5s 闪电识图 · 显存占用 ~4.5GB"
   },
   "PaddleOCR-VL-1.6-GGUF": {
     "displayName": "PaddleOCR-VL-1.6",

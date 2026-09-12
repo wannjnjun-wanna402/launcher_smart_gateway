@@ -104,10 +104,10 @@ python -c "import psutil, subprocess; [p.kill() for p in psutil.process_iter() i
   - `8081_proxy_20260902.log`：8081 智能协同网关日志（计费/协议转译/流水）
   - `8083_llama_20260902.log`：8083 主脑推理引擎日志
   - `8085_sidecar_20260902.log`：8085 视觉侧挂眼睛日志
+  - `8086_embedding_20260902.log`：8086 向量检索引擎日志 (BGE-M3 密集向量)
   - `8087_locate_20260902.log`：（如未来新增 8087 定位专项引擎）
 
 ### 2. 单日单一文件持续累加规则
 - ❌ **严禁拆分**：禁止按时间点分割多个文件，禁止拆分为 `.out.log` 与 `.err.log`。
-- ✅ **唯一累加**：同类服务在当天只允许产生**唯一一个** `.log` 文件，每次重启或产生新日志均以 `append`（追加）模式写入。
-- ✅ **自动落盘**：Python 服务内置 `DailyProxyLogger` 双写控制台与当日日志；`llama-server` 统一挂载 `--log-file` 参数。
+- ✅ **自动落盘与防截断机制**：Python 服务内置 `DailyProxyLogger` 双写控制台与当日日志；**严禁直接将当日主日志传给 `llama-server.exe --log-file`**（因其底层 C++ 恒以 `'w'` 覆盖模式打开，每次重启都会将既有日志截断清空！）。必须由 Python 端使用 `'a'`（append 追加）模式统一汇流，或由 `start_session_log_forwarder` 毫秒级桥接写入，确保全天单日日志 100% 持续累加、零丢失！
 

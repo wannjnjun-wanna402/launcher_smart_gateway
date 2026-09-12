@@ -15,8 +15,8 @@ echo [2/3] 正在清理后台孤儿搜索与可能卡死的脚本进程 (find.ex
 taskkill /F /IM find.exe 2>nul
 taskkill /F /IM grep.exe 2>nul
 
-echo [3/3] 正在重置 8081 与 8083 端口...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8081 :8083"') do (
+echo [3/3] 正在重置 8081、8083 与 8085 端口...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8081 :8083 :8085"') do (
     taskkill /F /PID %%a 2>nul
 )
 

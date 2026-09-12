@@ -50,20 +50,6 @@
         "E:\\llama-win-cuda-12.4-x64\\mcp\\anytxt_mcp.py"
       ],
       "description": "本地全文索引与离线OCR (随用随开节能模式，带0.8s快速探针)"
-    },
-    "sqlite-mcp": {
-      "command": "C:\\Users\\wanna402\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
-      "args": [
-        "E:\\llama-win-cuda-12.4-x64\\mcp\\sqlite_mcp.py"
-      ],
-      "description": "本地结构化数据库交互 (支持SELECT/INSERT/查表/Schema检索，纯Python零依赖)"
-    },
-    "sequential-thinking": {
-      "command": "C:\\Users\\wanna402\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
-      "args": [
-        "E:\\llama-win-cuda-12.4-x64\\mcp\\sequential_thinking_mcp.py"
-      ],
-      "description": "思维链动态分解与反思纠错系统 (纯Python免Node，支持步骤假设与分支推理)"
     }
   }
 }

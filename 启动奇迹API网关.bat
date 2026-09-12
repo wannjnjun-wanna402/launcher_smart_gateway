@@ -21,7 +21,7 @@ echo.
 :: 启动 8081 网关
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8081" ^| findstr "LISTENING"') do set GATEWAY_PID=%%a
 if "%GATEWAY_PID%"=="" (
-    start "" /B "C:\Users\wanna402\AppData\Local\Programs\Python\Python313\python.exe" "%~dp0qwen_tool_proxy.py" --listen 8081 --target 8083 --api-key llamacpp >> "%~dp0logs\8081_proxy_%dt%.log" 2>&1
+    start "" /B "C:\Users\wanna402\AppData\Local\Programs\Python\Python313\python.exe" "%~dp0qwen_tool_proxy.py" --listen 8081 --target 8083 --vision-main 8085 --api-key llamacpp >> "%~dp0logs\8081_proxy_%dt%.log" 2>&1
 )
 
 start "" "http://127.0.0.1:8081/dashboard"

@@ -39,6 +39,15 @@ node_modules/
 .trae/
 .workbuddy/
 
-# 6. 动态变化的数据账本（按需可忽略）
+# 6. 动态变化的数据账本与本地数据库
 token_billing_stats.json
 miracle_api_stats.json
+*.db
+*.sqlite
+*.sqlite3
+
+# 7. 临时工作区与扫描中间件
+scratch/
+scan_*.txt
+verify_*.txt
+*.tmp

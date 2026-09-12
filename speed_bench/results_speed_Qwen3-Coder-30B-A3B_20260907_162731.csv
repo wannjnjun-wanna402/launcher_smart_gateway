@@ -1,0 +1,4 @@
+model,config,desc,ctx,nmax,pmin,vram_mib,task,gen_tok_per_sec,prompt_tok_per_sec,generated_tokens,wall_time_sec
+Qwen3-Coder-30B-A3B,smoke_mtp_off,"冒烟-基准裸速 (MTP关, ctx=32K)",32768,,0.0,22973,code_lru,73.95,86.55,256,4.39
+Qwen3-Coder-30B-A3B,smoke_mtp_off,"冒烟-基准裸速 (MTP关, ctx=32K)",32768,,0.0,22973,reasoning_train,84.14,423.1,256,3.44
+Qwen3-Coder-30B-A3B,smoke_mtp_off,"冒烟-基准裸速 (MTP关, ctx=32K)",32768,,0.0,22973,tech_arch,84.55,280.77,256,3.34

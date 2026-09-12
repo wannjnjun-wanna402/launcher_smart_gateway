@@ -1,0 +1,40 @@
+model,config,desc,ctx,nmax,pmin,vram_mib,task,gen_tok_per_sec,prompt_tok_per_sec,generated_tokens,wall_time_sec
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx32k_mtp_off,"基准裸速 (ctx=32K, MTP关)",32768,,0.0,13035,code_lru,26.54,87.62,256,10.42
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx32k_mtp_off,"基准裸速 (ctx=32K, MTP关)",32768,,0.0,13035,reasoning_train,26.58,187.8,256,10.48
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx32k_mtp_off,"基准裸速 (ctx=32K, MTP关)",32768,,0.0,13035,tech_arch,26.66,103.23,256,10.43
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx96k_mtp_off,"中长裸速 (ctx=96K, MTP关)",98304,,0.0,15683,code_lru,26.61,92.32,256,10.34
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx96k_mtp_off,"中长裸速 (ctx=96K, MTP关)",98304,,0.0,15683,reasoning_train,26.61,188.1,256,10.47
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx96k_mtp_off,"中长裸速 (ctx=96K, MTP关)",98304,,0.0,15683,tech_arch,26.62,100.21,256,10.48
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx256k_mtp_off,"极限裸速 (ctx=256K, MTP关)",262144,,0.0,22403,code_lru,26.39,90.63,256,10.44
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx256k_mtp_off,"极限裸速 (ctx=256K, MTP关)",262144,,0.0,22403,reasoning_train,26.49,184.92,256,10.57
+Qwen3.8-27B-GSQ-IQ3_S,baseline_ctx256k_mtp_off,"极限裸速 (ctx=256K, MTP关)",262144,,0.0,22403,tech_arch,26.57,101.36,256,10.49
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n1_ctx32k,MTP n-max=1 (投机1步),32768,1,0.0,14169,code_lru,37.5,84.54,256,7.63
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n1_ctx32k,MTP n-max=1 (投机1步),32768,1,0.0,14169,reasoning_train,36.74,176.29,256,7.85
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n1_ctx32k,MTP n-max=1 (投机1步),32768,1,0.0,14169,tech_arch,34.46,99.96,256,8.27
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n2_ctx32k,MTP n-max=2 (投机2步),32768,2,0.0,14319,code_lru,39.99,84.08,256,7.21
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n2_ctx32k,MTP n-max=2 (投机2步),32768,2,0.0,14319,reasoning_train,38.84,178.55,256,7.47
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n2_ctx32k,MTP n-max=2 (投机2步),32768,2,0.0,14319,tech_arch,39.53,98.46,256,7.4
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_ctx32k,MTP n-max=3 (投机3步),32768,3,0.0,14469,code_lru,40.83,86.89,256,7.06
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_ctx32k,MTP n-max=3 (投机3步),32768,3,0.0,14469,reasoning_train,36.51,180.93,256,7.89
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_ctx32k,MTP n-max=3 (投机3步),32768,3,0.0,14469,tech_arch,43.99,98.43,256,6.72
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n4_ctx32k,MTP n-max=4 (投机4步),32768,4,0.0,14619,code_lru,44.23,84.53,256,6.6
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n4_ctx32k,MTP n-max=4 (投机4步),32768,4,0.0,14619,reasoning_train,43.31,173.52,256,6.84
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n4_ctx32k,MTP n-max=4 (投机4步),32768,4,0.0,14619,tech_arch,34.91,98.47,256,8.19
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n2_p0.75_ctx32k,"MTP n=2, p-min=0.75 (过滤低置信)",32768,2,0.75,14319,code_lru,36.25,85.36,256,7.86
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n2_p0.75_ctx32k,"MTP n=2, p-min=0.75 (过滤低置信)",32768,2,0.75,14319,reasoning_train,36.65,179.84,256,7.88
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n2_p0.75_ctx32k,"MTP n=2, p-min=0.75 (过滤低置信)",32768,2,0.75,14319,tech_arch,31.77,100.85,256,8.91
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_p0.75_ctx32k,"MTP n=3, p-min=0.75",32768,3,0.75,14469,code_lru,40.17,85.81,256,7.18
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_p0.75_ctx32k,"MTP n=3, p-min=0.75",32768,3,0.75,14469,reasoning_train,38.83,179.29,256,7.53
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_p0.75_ctx32k,"MTP n=3, p-min=0.75",32768,3,0.75,14469,tech_arch,34.17,95.67,256,8.51
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_p0.85_ctx32k,"MTP n=3, p-min=0.85 (高置信)",32768,3,0.85,14469,code_lru,38.39,85.19,256,7.47
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_p0.85_ctx32k,"MTP n=3, p-min=0.85 (高置信)",32768,3,0.85,14469,reasoning_train,38.21,175.45,256,7.59
+Qwen3.8-27B-GSQ-IQ3_S,mtp_n3_p0.85_ctx32k,"MTP n=3, p-min=0.85 (高置信)",32768,3,0.85,14469,tech_arch,36.93,100.59,256,7.79
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx96k_mtp_n2,"生产推荐环境 (ctx=96K, MTP n=2)",98304,2,0.0,17359,code_lru,40.27,86.65,256,7.15
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx96k_mtp_n2,"生产推荐环境 (ctx=96K, MTP n=2)",98304,2,0.0,17359,reasoning_train,39.57,179.56,256,7.36
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx96k_mtp_n2,"生产推荐环境 (ctx=96K, MTP n=2)",98304,2,0.0,17359,tech_arch,38.91,96.62,256,7.51
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx256k_mtp_n2,"生产极限环境 (ctx=256K, MTP n=2)",262144,2,0.0,25359,code_lru,40.56,77.19,256,7.2
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx256k_mtp_n2,"生产极限环境 (ctx=256K, MTP n=2)",262144,2,0.0,25359,reasoning_train,40.09,171.64,256,7.32
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx256k_mtp_n2,"生产极限环境 (ctx=256K, MTP n=2)",262144,2,0.0,25359,tech_arch,36.28,97.21,256,7.95
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx256k_mtp_n3_p0.75,"生产极限高阶 (ctx=256K, MTP n=3, p0.75)",262144,3,0.75,25509,code_lru,36.66,82.79,256,7.81
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx256k_mtp_n3_p0.75,"生产极限高阶 (ctx=256K, MTP n=3, p0.75)",262144,3,0.75,25509,reasoning_train,37.99,180.56,256,7.63
+Qwen3.8-27B-GSQ-IQ3_S,prod_ctx256k_mtp_n3_p0.75,"生产极限高阶 (ctx=256K, MTP n=3, p0.75)",262144,3,0.75,25509,tech_arch,31.26,99.99,256,9.04
