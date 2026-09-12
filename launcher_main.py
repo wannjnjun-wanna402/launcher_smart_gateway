@@ -1310,7 +1310,6 @@ def build_models_menu():
                 "--repeat-penalty", "1.05",
                 "--presence-penalty", "0.0",
                 "--jinja",
-                "--chat-template-file", TEMPLATE_FILE,
                 "--alias", "Qwen3-Coder-30B-A3B,Qwen3-Coder-30B,Qwen3-C30B,qwen3-coder,default"
             ]
         },
