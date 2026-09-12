@@ -75,6 +75,37 @@ g_is_cleaning = False
 g_tray_manager = None
 g_forwarder_stop = None
 
+# -----------------------------------------------------------------------------
+# 🛡️ 智能系统流畅度与硬件资源协调装甲 (保证鼠标/系统100%零卡顿)
+# -----------------------------------------------------------------------------
+try:
+    _total_logical_cores = psutil.cpu_count(logical=True) or 6
+    # 黄金线程法则：始终保留至少 2 个核心专供操作系统、鼠标硬件中断与浏览器渲染
+    OPTIMAL_CPU_THREADS = str(max(2, min(8, _total_logical_cores - 2)))
+except Exception:
+    OPTIMAL_CPU_THREADS = "4"
+
+
+def apply_system_smoothness_armor(pid: int, label: str = "服务"):
+    """
+    智能资源协调装甲：
+    1. 将进程优先级降至 BELOW_NORMAL_PRIORITY_CLASS，保证鼠标/键盘/DWM随时秒级抢占响应
+    2. 绑定 CPU 亲和性，隔离并保留 Core 0 专供系统硬件中断、DWM.exe 与鼠标光标
+    """
+    if not pid:
+        return
+    try:
+        p = psutil.Process(pid)
+        # 1. 优先级降级为低于常规，确保鼠标光标与桌面合成永远秒级抢占
+        if hasattr(psutil, "BELOW_NORMAL_PRIORITY_CLASS"):
+            p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        # 2. 隔离 Core 0，专供 Windows 鼠标中断与显示子系统
+        total_cores = psutil.cpu_count(logical=True) or 6
+        if total_cores > 2:
+            p.cpu_affinity(list(range(1, total_cores)))
+    except Exception:
+        pass
+
 
 class MiracleTrayManager:
     """Windows 任务栏右下角通知区域状态托盘与右键快捷控制中心"""
@@ -565,7 +596,7 @@ def ensure_sidecar_8085(wait=False, use_gpu=False):
         "-c", "8192",
         "-b", "2048",
         "--ubatch-size", "2048",
-        "-t", "6",
+        "-t", OPTIMAL_CPU_THREADS,
         "--parallel", "1",
         "--image-min-tokens", "1024",
         "--alias", "Qwen3VL-4B,Qwen3VL-4B-Instruct-Q4_K_M,default",
@@ -584,7 +615,7 @@ def ensure_sidecar_8085(wait=False, use_gpu=False):
         env["MKL_NUM_THREADS"] = "4"
         mode_msg = "CPU纯内存 · 0显存 · 线程绑定保护"
 
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
+    creationflags = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0
 
     g_sidecar_proc = subprocess.Popen(
         sidecar_args,
@@ -594,6 +625,7 @@ def ensure_sidecar_8085(wait=False, use_gpu=False):
         stderr=subprocess.STDOUT,
         creationflags=creationflags
     )
+    apply_system_smoothness_armor(g_sidecar_proc.pid, "8085视觉侧挂")
 
     try:
         with open(os.path.join(LOGS_DIR, "active_sidecar.json"), "w", encoding="utf-8") as asf:
@@ -662,7 +694,7 @@ def ensure_embedding_8086(wait=False):
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = "-1"
     env["OMP_NUM_THREADS"] = "4"
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
+    creationflags = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0
 
     g_embedding_proc = subprocess.Popen(
         emb_args,
@@ -672,6 +704,7 @@ def ensure_embedding_8086(wait=False):
         stderr=subprocess.STDOUT,
         creationflags=creationflags
     )
+    apply_system_smoothness_armor(g_embedding_proc.pid, "8086向量引擎")
 
     sys.stdout.write(f"{C_PURPLE}  ├─ 🧮 8086 向量引擎正在后台启动 ({model_name} · CPU 0显存)...{C_RESET}\n\n"[:79] + "\n")
     sys.stdout.flush()
@@ -908,7 +941,7 @@ def build_models_menu():
                 "--cache-type-v", "q8_0",
                 "-c", "262144",
                 "-b", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "1",
                 "--flash-attn", "on",
                 "--temp", "0.3",
@@ -945,7 +978,7 @@ def build_models_menu():
                 "--cache-type-v", "f16",
                 "-c", "131072",
                 "-b", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "1",
                 "--flash-attn", "on",
                 "--image-min-tokens", "1024",
@@ -984,7 +1017,7 @@ def build_models_menu():
                 "-c", "32768",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "1",
                 "--flash-attn", "on",
                 "--image-min-tokens", "1024",
@@ -1023,7 +1056,7 @@ def build_models_menu():
                 "-c", "262144",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "2",
                 "-sps", "0.05",
                 "--kv-unified",
@@ -1078,7 +1111,7 @@ def build_models_menu():
                 "-c", "163840",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "2",
                 "-sps", "0.05",
                 "--kv-unified",
@@ -1133,7 +1166,7 @@ def build_models_menu():
                 "-c", "147456",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "2",
                 "-sps", "0.05",
                 "--kv-unified",
@@ -1188,7 +1221,7 @@ def build_models_menu():
                 "-c", "147456",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "2",
                 "-sps", "0.05",
                 "--kv-unified",
@@ -1243,7 +1276,7 @@ def build_models_menu():
                 "-c", "147456",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "2",
                 "-sps", "0.05",
                 "--kv-unified",
@@ -1298,7 +1331,7 @@ def build_models_menu():
                 "-c", "131072",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "1",
                 "--flash-attn", "on",
                 "--cache-reuse", "512",
@@ -1338,7 +1371,7 @@ def build_models_menu():
                 "-c", "262144",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", OPTIMAL_CPU_THREADS,
                 "--parallel", "1",
                 "--flash-attn", "on",
                 "--reasoning", "auto",
@@ -1664,12 +1697,16 @@ def main():
     main_env["CUDA_CACHE_MAXSIZE"] = "2147483648"
     main_env["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
 
+    main_creationflags = 0x00004000 if sys.platform == "win32" else 0
+
     # 以子进程前台常驻运行，实时将主脑推理日志输出到控制台，同时底层 --log-file 自动落盘
     g_main_proc = subprocess.Popen(
         server_cmd,
         cwd=BASE_DIR,
-        env=main_env
+        env=main_env,
+        creationflags=main_creationflags
     )
+    apply_system_smoothness_armor(g_main_proc.pid, "8083主脑底座")
 
     # 毫秒级极速高频轮询检测端口
     ready = False
