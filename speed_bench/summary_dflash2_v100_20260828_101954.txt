@@ -1,8 +1,0 @@
-=== DFlash2 vs MTP vs Baseline 测速汇总 ===
-[1_Baseline_NoSpec] 平均生成速度: 31.26 t/s | 加速比: 1.00x (+0.0%)
-[2_Native_MTP_n2] 平均生成速度: 42.89 t/s | 加速比: 1.37x (+37.2%)
-[3_DFlash2_Official_n7] 平均生成速度: 31.46 t/s | 加速比: 1.01x (+0.6%)
-[4_DFlash2_Light_n3] 平均生成速度: 38.59 t/s | 加速比: 1.23x (+23.4%)
-[5_DFlash2_Mid_n5] 平均生成速度: 36.08 t/s | 加速比: 1.15x (+15.4%)
-[6_DFlash2_pmin0.75_n7] 平均生成速度: 38.69 t/s | 加速比: 1.24x (+23.8%)
-[7_DFlash2_NoBackendSampling_n7] 平均生成速度: 31.28 t/s | 加速比: 1.00x (+0.0%)

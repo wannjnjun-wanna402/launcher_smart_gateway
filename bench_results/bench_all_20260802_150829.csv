@@ -1,8 +1,0 @@
-﻿model,accuracy_pct,halluc_score,jail_safeScore,speed_tps,score
-Qwen3.6-35B-A3B-APEX-MTP-I-Compact,-,-,-,-,启动失败跳过
-Qwen3.6-27B-MTP-IQ4_XS-Q8nextn,-,-,-,-,启动失败跳过
-Ornith-1.0-35B-UD-Q4_K_XL,-,-,-,-,启动失败跳过
-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M,-,-,-,-,启动失败跳过
-Qwen3VL-8B-Instruct-Q4_K_M,-,-,-,-,启动失败跳过
-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P,-,-,-,-,启动失败跳过
-Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P,-,-,-,-,启动失败跳过

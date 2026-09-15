@@ -1,5 +1,0 @@
-=== bench_budget_ab summary ===
-A (budget=2048, backend OFF):  mean 99.53 tok/s
-B (budget unbounded, backend ON): mean 99.44 tok/s
-Delta B-A: -0.09 tok/s  (-0.1%)
-=> 保留 budget=2048 更快，维持现状
