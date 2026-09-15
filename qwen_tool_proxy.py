@@ -133,7 +133,9 @@ def clean_model_name(name):
     clean = re.sub(r"\[.*?\]", "", name).strip()
     clean = clean.replace("Qwen3.8-27B-A-Q6_K", "27B-A")
     nl = clean.lower()
-    if "highest" in nl or "n-h" in nl:
+    if "nex" in nl or "n2.5" in nl:
+        return "Nex-N2.5-Mini"
+    elif "highest" in nl or "n-h" in nl:
         return "27B-NV-H"
     elif "mid-high" in nl:
         return "27B-NV-M"
@@ -141,8 +143,10 @@ def clean_model_name(name):
         return "27B-a-Work"
     elif "coder" in nl or "30b" in nl or "c30b" in nl:
         return "Qwen3-C30B"
-    elif "ornith" in nl or "35b" in nl:
+    elif "ornith" in nl:
         return "Ornith-35B"
+    elif "35b" in nl:
+        return "Nex-N2.5-Mini"
     elif "gemma" in nl or "e4b" in nl:
         return "Gemma-4-E4B"
     elif "vl-8b" in nl or "qwen3-vl" in nl:
@@ -218,12 +222,18 @@ def resolve_model_alias(requested_model="", default_model=None):
         "qwen3.8-27b-n-h": "Qwen3.8-27B-N-H",
         "qwen3.8-27b-highest": "Qwen3.8-27B-N-H",
         "qwen3.8-27b-nvfp4-mtp-highest": "Qwen3.8-27B-N-H",
-        # 35B MoE 系列
+        # 35B MoE 系列 (Nex-N2.5 旗舰 & Ornith)
+        "nex-n2.5-mini-35b": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+        "nex-n2.5-mini": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+        "nex-n2.5": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+        "nex-mini": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+        "nex": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+        "nex-35b": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+        "35b": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
         "ornith-1.5-35b": "Ornith-1.5-35B",
         "ornith-1.5-35b-q4_k_m": "Ornith-1.5-35B",
         "ornith-35b": "Ornith-1.5-35B",
         "ornith": "Ornith-1.5-35B",
-        "35b": "Ornith-1.5-35B",
         # Qwen3-Coder 30B MoE 系列
         "qwen3-coder-30b-a3b": "Qwen3-Coder-30B-A3B",
         "qwen3-coder-30b": "Qwen3-Coder-30B-A3B",
@@ -1273,7 +1283,11 @@ class BillingTracker:
             raw_m = v.get("model", "")
             raw_kname = v.get("key_name", v.get("key", "llamacpp"))
             is_vis = v.get("is_vision", False)
-            if "8085" in raw_m or "侧挂" in raw_m or (is_vis and "VL" in raw_m):
+            if "nex" in raw_m.lower() or "n2.5" in raw_m.lower():
+                new_m = "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]"
+                new_kname = "Llamacpp"
+                v["is_vision"] = False
+            elif "8085" in raw_m or "侧挂" in raw_m or (is_vis and "VL" in raw_m):
                 new_m = "Qwen3VL-4B [8085视觉侧挂·CPU]"
                 new_kname = "Llamacpp (视觉侧挂)"
                 v["is_vision"] = True
@@ -1311,7 +1325,22 @@ class BillingTracker:
             v["model"] = new_m
             v["key_name"] = new_kname
             new_key = f"{v.get('key', 'llamacpp')}::{new_m}"
-            cleaned_dm[new_key] = v
+            if new_key in cleaned_dm:
+                target = cleaned_dm[new_key]
+                target["requests"] = target.get("requests", 0) + v.get("requests", 0)
+                target["prompt_tokens"] = target.get("prompt_tokens", 0) + v.get("prompt_tokens", 0)
+                target["prompt_tokens_cached"] = target.get("prompt_tokens_cached", 0) + v.get("prompt_tokens_cached", 0)
+                target["prompt_tokens_miss"] = target.get("prompt_tokens_miss", 0) + v.get("prompt_tokens_miss", 0)
+                target["completion_tokens"] = target.get("completion_tokens", 0) + v.get("completion_tokens", 0)
+                target["total_tokens"] = target.get("total_tokens", 0) + v.get("total_tokens", 0)
+                target["duration_s"] = round(target.get("duration_s", 0.0) + v.get("duration_s", 0.0), 2)
+                target["guard_saved_tokens"] = target.get("guard_saved_tokens", 0) + v.get("guard_saved_tokens", 0)
+                target["image_count"] = target.get("image_count", 0) + v.get("image_count", 0)
+                target["cost_cny"] = round(target.get("cost_cny", 0.0) + v.get("cost_cny", 0.0), 6)
+                if v.get("last_time", "") > target.get("last_time", ""):
+                    target["last_time"] = v.get("last_time", "")
+            else:
+                cleaned_dm[new_key] = v
         self.data.get("today", {})["by_device_model"] = cleaned_dm
 
     def _save(self):
@@ -1599,9 +1628,19 @@ class BillingTracker:
         with self.lock:
             self._check_day_rollover()
             today_at = self.data.setdefault("today", {}).setdefault("agent_tools", {
-                "total_calls": 0, "bash_calls": 0, "file_calls": 0, "search_calls": 0, "gbnf_sanitized": 0, "loop_broken": 0, "success_rate": 100.0
+                "total_calls": 0, "bash_calls": 0, "file_calls": 0, "search_calls": 0, "gbnf_sanitized": 0, "loop_broken": 0, "hard_fused": 0, "success_rate": 100.0
             })
             today_at["loop_broken"] = today_at.get("loop_broken", 0) + 1
+            self._save()
+
+    def record_circuit_breaker_hard_trip(self, reason=""):
+        """记录 Agent 死循环硬熔断拦截阻断事件 (Circuit Breaker 6.0)"""
+        with self.lock:
+            self._check_day_rollover()
+            today_at = self.data.setdefault("today", {}).setdefault("agent_tools", {
+                "total_calls": 0, "bash_calls": 0, "file_calls": 0, "search_calls": 0, "gbnf_sanitized": 0, "loop_broken": 0, "hard_fused": 0, "success_rate": 100.0
+            })
+            today_at["hard_fused"] = today_at.get("hard_fused", 0) + 1
             self._save()
 
     def record_agent_tool_decision(self, tool_name="bash"):
@@ -3089,7 +3128,7 @@ def call_sidecar_vision_8085(image_item, user_prompt="", key_name="llamacpp"):
         t0 = time.time()
         sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SIDECAR-8085] 👁️ 正在交由 8085 视觉侧挂眼睛 (Qwen3VL-4B · CPU内存) 解析图像...\n")
         sys.stdout.flush()
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             parsed_text = data["choices"][0]["message"]["content"]
             dt = round(time.time() - t0, 2)
@@ -3296,31 +3335,47 @@ def estimate_tokens(text):
     return max(1, int(len(text) * 0.75))
 
 # ============================================================
-#  🌟 Agent 死循环断路器 5.0 (Loop-Breaker 5.0 · 自动净化注意力死锁吸引子)
+#  🌟 Agent 死循环断路器 6.0 (Loop-Breaker 6.0 · 双阶软破局与硬熔断引擎)
 # ============================================================
 def preprocess_agent_loop_breaker(messages: list) -> tuple:
     """
-    智能网关 Agent 工具死锁与循环断路器 (Loop-Breaker 5.0):
-    1. 扫描会话，自动发现由于宿主拦截 (blocked / [loop guard] / permission denied / evidence required) 导致的成对恶性死循环；
-    2. 只要循环连续 >= 2 对，自动保留第 1 对（存证）与最后 1 对（最新状态），中间所有冗余的重复轮次折叠为一条高权威断路器指引；
-    3. 侦测尾部是否存在活跃死锁风险，返回 (squeezed_msgs, squeezed_cnt, has_active_deadlock, deadlock_reason)。
+    智能网关 Agent 工具死锁与循环断路器 (Loop-Breaker 6.0 双阶熔断):
+    1. 特征库升级：深度感知 blocked: / [loop guard] / duplicate tool result omitted /
+       evidence required / permission denied / exit status 9009 / exit status 1 / command not found 等恶性死锁；
+    2. 阶梯一【软破局 (Soft Breaker · 1~2 轮)】：
+       对连续 >= 2 对死锁，自动保留首轮事实与最新状态，折叠压缩中间全部冗余轮次，注入权威断路破局指令，
+       并激活 TaskAdaptiveEngine 采样逃逸策略（temp=0.65, top_p=0.95, dry=0.80, repeat_penalty=1.15）；
+    3. 阶梯二【硬熔断 (Hard Breaker · 严重死锁)】：
+       当满足高危死锁条件时（折叠轮次 >= 4，或长会话尾部连续 >= 2 次失败，或会话中重复命中 loop guard），
+       直接触发 should_hard_break = True，彻底拒绝调用底层 LLM，
+       直接由网关组装标准 200 OK 优雅终止报告，阻断无限空转并释放控制权。
+    返回:
+    (new_msgs, total_squeezed, has_active_deadlock, active_reason, should_hard_break, hard_break_reason)
     """
     if not isinstance(messages, list) or len(messages) < 4:
-        return messages, 0, False, ""
+        return messages, 0, False, "", False, ""
 
     def is_blocked_response(content: str) -> bool:
         if not content:
             return False
         c_low = content.lower()
-        if "blocked:" in c_low or "[loop guard]" in c_low:
-            return True
-        if "has now been blocked or failed" in c_low:
-            return True
-        if "evidence required" in c_low and "read-evidence" in c_low:
-            return True
-        if "permissiondenied" in c_low or "permission denied" in c_low:
-            return True
-        return False
+        block_markers = (
+            "blocked:",
+            "[loop guard]",
+            "has now been blocked or failed",
+            "evidence required",
+            "permissiondenied",
+            "permission denied",
+            "duplicate tool result omitted",
+            "identical to call_id=",
+            "exit status 9009",
+            "command not found",
+            "is not recognized as an internal or external command",
+            "不是内部或外部命令",
+            "路径中具有非法字符",
+            "参数调用“readalllines”时发生异常",
+        )
+        return any(m in c_low for m in block_markers)
 
     def is_loop_candidate_assistant(m: dict) -> bool:
         if not isinstance(m, dict) or m.get("role") != "assistant":
@@ -3328,7 +3383,7 @@ def preprocess_agent_loop_breaker(messages: list) -> tuple:
         c = str(m.get("content") or "")
         if m.get("tool_calls"):
             return True
-        if any(w in c for w in ("追踪器", "状态机卡死", "消费掉未满足", "消费它的未满足")):
+        if any(w in c for w in ("追踪器", "状态机卡死", "消费掉未满足", "消费它的未满足", "<tool_call>", "```tool")):
             return True
         return False
 
@@ -3339,14 +3394,14 @@ def preprocess_agent_loop_breaker(messages: list) -> tuple:
 
     while i < len(messages):
         m = messages[i]
-        # 判断当前消息是否是一个循环对的起点 (assistant 发起调用/思考，紧接着收到 blocked 响应)
+        # 判断当前消息是否是一个循环对的起点 (assistant 发起调用/思考，紧接着收到 blocked/失败响应)
         if is_loop_candidate_assistant(m) and i + 1 < len(messages):
             next_m = messages[i + 1]
             next_role = next_m.get("role")
             next_c = str(next_m.get("content") or "")
 
             if next_role in ("user", "tool") and is_blocked_response(next_c):
-                # 发现 blocked 循环对，向前探测连续长度
+                # 发现 blocked/失败循环对，向前探测连续长度
                 pairs = []
                 while i + 1 < len(messages):
                     cur_asst = messages[i]
@@ -3376,13 +3431,13 @@ def preprocess_agent_loop_breaker(messages: list) -> tuple:
                         breaker_notice = {
                             "role": "user",
                             "content": (
-                                f"[智能网关断路器 (Loop-Breaker 5.0)] 🚨 检测到此前连续发生 {skipped_pairs} 轮相同的 '{tool_name_str}' 失败拦截与 blocked 报错记录。"
+                                f"[智能网关断路器 (Loop-Breaker 6.0)] 🚨 检测到此前连续发生 {skipped_pairs} 轮相同的 '{tool_name_str}' 失败拦截与 blocked/duplicate 报错记录。"
                                 f"网关已自动压缩净化中间重复历史，彻底消除大模型自注意力死锁偏置。\n"
                                 f"【决策严令】：严禁继续使用相同参数重复调用被拦截的工具！请换用只读工具（如 read_file）检查最新状态，或向用户如实说明受阻原因。"
                             )
                         }
                         new_msgs.append(breaker_notice)
-                        detected_reasons.append(f"成功折叠 {skipped_pairs} 轮 '{tool_name_str}' blocked 死循环")
+                        detected_reasons.append(f"成功折叠 {skipped_pairs} 轮 '{tool_name_str}' blocked/重复失败死循环")
 
                     # 保留最后 1 对 (最近的最新真实交互)
                     new_msgs.append(pairs[-1][0])
@@ -3423,7 +3478,39 @@ def preprocess_agent_loop_breaker(messages: list) -> tuple:
         active_reason = "; ".join(detected_reasons)
         has_active_deadlock = True
 
-    return new_msgs, total_squeezed, has_active_deadlock, active_reason
+    # 🚨 阶梯二：硬熔断触发判定 (Hard Circuit Breaker Trip Detection)
+    # 核心原则：精确区分「客户端死锁硬拦截」与「普通脚本调试报错」，严禁误杀正常代码调试试错！
+    should_hard_break = False
+    hard_break_reason = ""
+
+    # 统计尾部「严格连续」硬拦截次数（一旦遇到正常的执行结果，连续失败立即归零中断，杜绝误伤正常代码调试）
+    consecutive_hard_blocks = 0
+    for m in reversed(messages):
+        role = m.get("role")
+        c = str(m.get("content") or "")
+        if role in ("user", "tool"):
+            if is_blocked_response(c):
+                consecutive_hard_blocks += 1
+            else:
+                break
+
+    loop_guard_in_tail = any("[loop guard]" in str(m.get("content") or "") for m in messages[-4:])
+    duplicate_results_cnt = sum(1 for m in messages if "duplicate tool result omitted" in str(m.get("content") or ""))
+
+    if total_squeezed >= 6:
+        should_hard_break = True
+        hard_break_reason = f"此前已累计发生超过 {total_squeezed // 2} 轮工具连续失败/拦截/重复死锁，触发安全硬断路保护"
+    elif consecutive_hard_blocks >= 3 and len(messages) >= 30:
+        should_hard_break = True
+        hard_break_reason = f"会话已持续 {len(messages)} 轮且尾部已「连续 {consecutive_hard_blocks} 次」遭遇客户端硬拦截且无任何实质进展，判定为不可逆死锁"
+    elif loop_guard_in_tail and len(messages) >= 20:
+        should_hard_break = True
+        hard_break_reason = "尾部消息明确命中宿主 [loop guard] 警告，且多轮重试无果"
+    elif duplicate_results_cnt >= 4:
+        should_hard_break = True
+        hard_break_reason = f"检测到客户端连续 {duplicate_results_cnt} 次触发重复执行省略拦截 (duplicate tool result)，陷入无意义重试"
+
+    return new_msgs, total_squeezed, has_active_deadlock, active_reason, should_hard_break, hard_break_reason
 
 # ============================================================
 #  前沿智能语义防爆舱 4.0 (Smart Semantic Context Guard · 汲取 PR #19841 与三端精准剪枝)
@@ -3447,10 +3534,12 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     
     # 动态感知当前后端的总上下文上限 (未提供则自动按 85% 水位计算触发线，70% 作为收敛线)
     ctx_cap = concurrency_queue.get_current_total_ctx() if "concurrency_queue" in globals() else 147456
+    # 🌟 针对 512K 等超大并发总池模型（如 Nex-N2.5）：单会话受原生 256K 物理训练上限保护（红线 240K，收敛线 200K）
+    # 较小模型（如 144K / 32K）则继续按 85% / 70% 水位动态适配
     if max_safe_tokens is None:
-        max_safe_tokens = int(ctx_cap * 0.85)
+        max_safe_tokens = min(int(ctx_cap * 0.85), 245760)
     if target_safe_tokens is None:
-        target_safe_tokens = int(ctx_cap * 0.70)
+        target_safe_tokens = min(int(ctx_cap * 0.70), 204800)
 
     messages = payload.get("messages", [])
     if not isinstance(messages, list) or len(messages) <= 6:
@@ -5972,6 +6061,11 @@ class TaskAdaptiveEngine:
         preset = TASK_SAMPLING_MATRIX.get(task_type, TASK_SAMPLING_MATRIX[TaskType.GENERAL_CHAT])
         applied_params = {}
 
+        cur_mod_name = ""
+        if "concurrency_queue" in globals():
+            cur_mod_name = concurrency_queue.get_active_model_name()
+        is_nex_or_moe = any(k in cur_mod_name.lower() for k in ("nex", "moe", "n2.5"))
+
         # 0. 🚨 智能网关死循环断路器 (Loop-Breaker 5.0) 紧急逃逸机制
         # 若检测到 Agent 陷入连续 blocked / loop-guard 死锁，强制打破贪婪解码与自注意力陷阱
         if has_loop_deadlock:
@@ -5987,9 +6081,15 @@ class TaskAdaptiveEngine:
             req_payload["repeat_penalty"] = 1.10
             applied_params["repeat_penalty"] = "1.10 (防复读)"
         else:
-            # 1. Temperature 智能裁决 (客户端通用默认值 0.7/0.8/1.0 自动自适应优化，特定定制值予以保留)
+            # 1. Temperature 智能裁决 (针对 Nex/MoE 思考模型注入黄金 0.60 基准)
             client_temp = req_payload.get("temperature")
-            if client_temp is None or client_temp in (0.7, 0.8, 1.0):
+            if is_nex_or_moe:
+                if client_temp is None or client_temp in (0.7, 0.8, 1.0, 0.2, 0.3):
+                    req_payload["temperature"] = 0.60
+                    applied_params["temp"] = "0.60 (MoE自适应)"
+                else:
+                    applied_params["temp"] = f"{client_temp} (客户端保留)"
+            elif client_temp is None or client_temp in (0.7, 0.8, 1.0):
                 req_payload["temperature"] = preset["temperature"]
                 applied_params["temp"] = f"{preset['temperature']} (自适应)"
             else:
@@ -5997,7 +6097,13 @@ class TaskAdaptiveEngine:
 
             # 2. Top-P 智能裁决
             client_top_p = req_payload.get("top_p")
-            if client_top_p is None or client_top_p in (0.9, 1.0):
+            if is_nex_or_moe:
+                if client_top_p is None or client_top_p in (0.9, 1.0, 0.8):
+                    req_payload["top_p"] = 0.95
+                    applied_params["top_p"] = "0.95 (MoE自适应)"
+                else:
+                    applied_params["top_p"] = f"{client_top_p} (客户端保留)"
+            elif client_top_p is None or client_top_p in (0.9, 1.0):
                 req_payload["top_p"] = preset["top_p"]
                 applied_params["top_p"] = f"{preset['top_p']} (自适应)"
             else:
@@ -6011,9 +6117,15 @@ class TaskAdaptiveEngine:
             else:
                 applied_params["top_k"] = f"{client_top_k} (客户端保留)"
 
-            # 4. Min-P 采样注入 (根据推荐矩阵，默认置 0.0 解除硬截断)
+            # 4. Min-P 采样注入 (Nex-N2.5 思考模型推荐 0.05 稳定截断，非思考模型 0.0)
             client_min_p = req_payload.get("min_p")
-            if client_min_p is None or client_min_p in (0.05, 0.02):
+            if is_nex_or_moe:
+                if client_min_p is None or client_min_p in (0.0, 0.02):
+                    req_payload["min_p"] = 0.05
+                    applied_params["min_p"] = "0.05 (MoE自适应)"
+                else:
+                    applied_params["min_p"] = f"{client_min_p} (客户端保留)"
+            elif client_min_p is None or client_min_p in (0.05, 0.02):
                 req_payload["min_p"] = preset.get("min_p", 0.0)
                 applied_params["min_p"] = f"{preset.get('min_p', 0.0)} (自适应)"
             else:
@@ -6092,6 +6204,13 @@ class TaskAdaptiveEngine:
         req_payload["reasoning_effort"] = effort
         req_payload["reasoning_budget"] = budget
         req_payload["enable_thinking"] = enable_thinking
+
+        # 7. Max Tokens 动态保底拓宽：防止深度思考（Thinking）耗光默认 2048 输出预算导致 content/tool_calls 假死截断
+        client_max_tokens = req_payload.get("max_tokens") or req_payload.get("max_completion_tokens")
+        if client_max_tokens is None or (isinstance(client_max_tokens, int) and client_max_tokens < 4096):
+            target_max_tokens = max(8192, budget + 4096) if enable_thinking else 8192
+            req_payload["max_tokens"] = target_max_tokens
+            applied_params["max_tokens"] = f"{target_max_tokens} (拓宽保底)"
 
         # 7. Presence Penalty 智能裁决 (Thinking 模式下建议 0.0，Instruct 模式建议 1.5)
         client_pp = req_payload.get("presence_penalty")
@@ -6503,8 +6622,8 @@ class MCPDynamicRouter:
                 best_score = sim
                 best_domain = d_key
 
-        # 语义置信度阈值：>= 0.12 判定为命中该域意图，否则判定为纯聊天/编码/思考 (0 tools)
-        if best_domain and best_score >= 0.12:
+        # 语义置信度阈值：>= 0.65 判定为命中该域意图，否则判定为纯聊天/编码/思考 (0 tools)
+        if best_domain and best_score >= 0.65:
             return best_domain
 
         return None
@@ -7160,7 +7279,18 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
             path = "/"
 
         # 0. 状态感知 API (/api/state, /health)
-        if path in ("/api/state", "/api/status", "/health"):
+        # 0. 极速健康检查探活端点 (/health, /ping) - 0.001s 瞬时返回，不挂起任何重型遥测
+        if path in ("/health", "/ping"):
+            self.send_response(200)
+            self._send_cors_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", "16")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}\n')
+            return
+
+        # 0.1 详细状态感知 API (/api/state, /api/status)
+        if path in ("/api/state", "/api/status"):
             st_data = {
                 "status": "ok",
                 "current_state": backend_manager.current_state,
@@ -7516,9 +7646,9 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                 actual_model = resolve_model_alias(requested_model)
                 req_json["model"] = clean_model_name(actual_model)
 
-                # 🌟 Agent 死循环断路器 (Loop-Breaker 5.0): 自动侦测并压缩重复失败/blocked轮次
+                # 🌟 Agent 死循环断路器 (Loop-Breaker 6.0): 自动侦测并压缩重复失败/blocked轮次 & 硬熔断守护
                 raw_msgs = req_json.get("messages", [])
-                squeezed_msgs, squeezed_cnt, has_loop_deadlock, loop_reason = preprocess_agent_loop_breaker(raw_msgs)
+                squeezed_msgs, squeezed_cnt, has_loop_deadlock, loop_reason, should_hard_break, hard_break_reason = preprocess_agent_loop_breaker(raw_msgs)
                 if squeezed_cnt > 0:
                     req_json["messages"] = squeezed_msgs
                     sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [LOOP-BREAKER] ✂️ 成功净化 {squeezed_cnt} 条死循环冗余消息 ({loop_reason})，瓦解自注意力死锁偏置！\n")
@@ -7532,6 +7662,25 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                         tracker.record_loop_breaker_event(reason=loop_reason)
                     except Exception:
                         pass
+
+                # 🚨 阶梯二：硬熔断紧急阻断 (Hard Circuit Breaker Trip)
+                if should_hard_break:
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CIRCUIT-BREAKER-6.0] 🛑 触发自动化硬熔断保护！\n")
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CIRCUIT-BREAKER-6.0] 🛡️ 拦截原因: {hard_break_reason}\n")
+                    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CIRCUIT-BREAKER-6.0] ⚡ 成功阻断无效死循环 GPU 空转，直接向客户端返回优雅终止报告并释放控制权！\n")
+                    sys.stdout.flush()
+                    try:
+                        tracker.record_circuit_breaker_hard_trip(reason=hard_break_reason)
+                    except Exception:
+                        pass
+                    is_stream_req = bool(req_json.get("stream", False))
+                    self._send_hard_break_response(
+                        reason=hard_break_reason,
+                        requested_model=requested_model,
+                        is_stream=is_stream_req,
+                        is_anthropic_protocol=is_anthropic_protocol
+                    )
+                    return
 
                 msg_str = json.dumps(req_json.get("messages", []), ensure_ascii=False)
                 tools_str = json.dumps(req_json.get("tools", []), ensure_ascii=False)
@@ -7613,8 +7762,16 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                                 sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [DUAL-BRAIN-MoA] 🧠⚡ 8085 小脑规划完成，已交由 8083 深度推演\n"[:79] + "\n")
                                 sys.stdout.flush()
                     except Exception as moa_e:
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [DUAL-BRAIN-MoA] 8085 侧挂跳过 ({type(moa_e).__name__})\n"[:79] + "\n")
-                        sys.stdout.flush()
+                        msgs = cleaned_json.get("messages", [])
+                        if msgs and msgs[-1].get("role") == "user":
+                            orig_c = msgs[-1].get("content", "")
+                            if isinstance(orig_c, str) and not orig_c.startswith("【单脑原生自规划"):
+                                msgs[-1]["content"] = f"【单脑原生自规划 (Self-MoA)】请先以结构化大纲列出核心推演步骤，随后展开最权威详尽的解答。\n\n{orig_c}"
+                                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SELF-MoA] ⚡ 8085未启动，已平滑激活单主脑原生自规划反思 (Self-MoA)\n"[:79] + "\n")
+                                sys.stdout.flush()
+                        else:
+                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [DUAL-BRAIN-MoA] 8085 侧挂跳过 ({type(moa_e).__name__})\n"[:79] + "\n")
+                            sys.stdout.flush()
 
                 # 2. 装配黄金采样参数与 27B 约束思考预算 (含死锁逃逸策略)
                 task_type, preset, applied_params, effort, budget, inline_tag = TaskAdaptiveEngine.apply_adaptive_sampling(
@@ -7897,10 +8054,12 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                     heartbeat_worker.start()
 
                     client_disconnected = False
+                    t_first_token = 0.0
                     while True:
                         line = resp.readline()
                         if not first_token_received.is_set():
                             first_token_received.set()
+                            t_first_token = time.time()
                         if not line:
                             if not is_anthropic_protocol and not client_disconnected:
                                 try:
@@ -7918,6 +8077,8 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                                     prompt_tokens_recorded = u.get("prompt_tokens", 0)
                                     completion_tokens_recorded = u.get("completion_tokens", 0)
                                     cached_tokens_recorded = u.get("prompt_tokens_details", {}).get("cached_tokens", 0)
+                                if "timings" in chunk_data and isinstance(chunk_data["timings"], dict):
+                                    res_obj = {"timings": chunk_data["timings"]}
                                 else:
                                     choices = chunk_data.get("choices", [])
                                     if choices:
@@ -8132,8 +8293,10 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                         vision_dispatched_imgs=img_count,
                         vision_cached_imgs=cached_imgs_cnt
                     )
-                    tps = round(completion_tokens_recorded / duration, 1) if duration > 0.05 else 0.0
-                    prefill_tps = round(prompt_tokens_recorded / max(0.05, duration * 0.15), 1)
+                    prefill_dur = max(0.01, (t_first_token - t_backend_start)) if ('t_first_token' in locals() and t_first_token > 0 and 't_backend_start' in locals() and t_first_token > t_backend_start) else max(0.01, duration * 0.15)
+                    decode_dur = max(0.01, (time.time() - t_first_token)) if ('t_first_token' in locals() and t_first_token > 0) else max(0.01, duration - prefill_dur)
+                    tps = round(completion_tokens_recorded / decode_dur, 1) if decode_dur > 0.01 else 0.0
+                    prefill_tps = round(prompt_tokens_recorded / prefill_dur, 1) if prefill_dur > 0.01 else 0.0
                     if "res_obj" in locals() and isinstance(res_obj, dict) and "timings" in res_obj:
                         tm = res_obj.get("timings", {})
                         if isinstance(tm, dict):
@@ -8156,7 +8319,7 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                     today_total = tracker.data.get("today", {}).get("total_tokens", prompt_tokens_recorded + completion_tokens_recorded)
                     sys.stdout.write(
                         f"[{time.strftime('%H:%M:%S')}] [GATEWAY-AUDIT] {proto_tag} 设备: {key_name} | 模型: {recorded_model_name} | "
-                        f"真实上下文: In={prompt_tokens_recorded:,}{hit_str}, Out={completion_tokens_recorded:,} ({tps} tok/s){guard_str} | "
+                        f"真实上下文: In={prompt_tokens_recorded:,}{hit_str}, Out={completion_tokens_recorded:,} (吐字: {tps} tok/s | 预填: {prefill_tps} tok/s){guard_str} | "
                         f"本次: ¥{cost:.5f} | 今日累计: ¥{today_cost:.4f} (吞吐: {today_total:,} Tok, {today_reqs}次, 耗时{duration:.2f}s)\n"
                     )
                     sys.stdout.flush()
@@ -8193,6 +8356,142 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        except Exception:
+            pass
+
+    def _send_hard_break_response(self, reason, requested_model, is_stream, is_anthropic_protocol):
+        """
+        智能网关硬熔断响应发生器 (Circuit Breaker 6.0):
+        当检测到 Agent 陷入深度死锁时，主动切断底层 GPU 请求，直接返回合法的 200 OK 优雅终止响应。
+        通过下发结构化人类可读指引且将 finish_reason 设为 stop / end_turn (无 tool_calls)，
+        使客户端（Reasonix/Cline/Cursor等）自然结束当前轮次，不触发客户端网络重试，将控制权平稳交回用户。
+        """
+        fuse_content = (
+            f"【🚨 智能网关自动化硬熔断保护 (Circuit Breaker 6.0 Activated)】\n\n"
+            f"智能网关侦测到底层任务已陷入深度「工具执行受阻 / 报错死锁循环」并主动实施安全硬熔断保护：\n"
+            f"• 触发原因：{reason}\n"
+            f"• 保护机制：为防止显存溢出、GPU 无谓高负荷运转与整机卡顿，网关已主动切断后续工具链递归调用。\n\n"
+            f"【可能的原因与排查指引】：\n"
+            f"1. 平台环境命令差异：如 Windows 环境下缺少某些特定命令（例如使用了未配置的命令或路径格式异常）；\n"
+            f"2. 文件权限与规则约束：如修改文件前未先调用 read_file 查看目标文件证据链（Evidence Required）；\n"
+            f"3. 建议操作：请在客户端终止当前任务并【新建会话 (New Session)】，明确指定具体执行指令后重试。"
+        )
+        try:
+            if is_anthropic_protocol:
+                if not is_stream:
+                    body_obj = {
+                        "id": f"msg_fuse_{int(time.time()*1000)}",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": requested_model or "default",
+                        "content": [{"type": "text", "text": fuse_content}],
+                        "stop_reason": "end_turn",
+                        "stop_sequence": None,
+                        "usage": {
+                            "input_tokens": 0,
+                            "output_tokens": len(fuse_content)
+                        }
+                    }
+                    body_bytes = json.dumps(body_obj, ensure_ascii=False).encode("utf-8")
+                    self.send_response(200)
+                    self._send_cors_headers()
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body_bytes)))
+                    self.end_headers()
+                    self.wfile.write(body_bytes)
+                    self.wfile.flush()
+                else:
+                    self.send_response(200)
+                    self._send_cors_headers()
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+
+                    anth_id = f"msg_fuse_{int(time.time()*1000)}"
+                    events = [
+                        ("message_start", {"type": "message_start", "message": {"id": anth_id, "type": "message", "role": "assistant", "model": requested_model or "default", "content": [], "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 0, "output_tokens": 1}}}),
+                        ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": fuse_content}}),
+                        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+                        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None}, "usage": {"output_tokens": len(fuse_content)}}),
+                        ("message_stop", {"type": "message_stop"})
+                    ]
+                    for ev_name, ev_data in events:
+                        payload = f"event: {ev_name}\r\ndata: {json.dumps(ev_data, ensure_ascii=False)}\r\n\r\n".encode("utf-8")
+                        c_len = f"{len(payload):X}\r\n".encode("ascii")
+                        self.wfile.write(c_len + payload + b"\r\n")
+                    self.wfile.write(b"0\r\n\r\n")
+                    self.wfile.flush()
+            else:
+                if not is_stream:
+                    body_obj = {
+                        "id": f"chatcmpl-fuse-{int(time.time()*1000)}",
+                        "object": "chat.completion",
+                        "created": int(time.time()),
+                        "model": requested_model or "default",
+                        "choices": [{
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": fuse_content
+                            },
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {
+                            "prompt_tokens": 0,
+                            "completion_tokens": len(fuse_content),
+                            "total_tokens": len(fuse_content)
+                        }
+                    }
+                    body_bytes = json.dumps(body_obj, ensure_ascii=False).encode("utf-8")
+                    self.send_response(200)
+                    self._send_cors_headers()
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body_bytes)))
+                    self.end_headers()
+                    self.wfile.write(body_bytes)
+                    self.wfile.flush()
+                else:
+                    self.send_response(200)
+                    self._send_cors_headers()
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+
+                    chunk_id = f"chatcmpl-fuse-{int(time.time()*1000)}"
+                    created_ts = int(time.time())
+                    chunk1 = {
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": requested_model or "default",
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": fuse_content},
+                            "finish_reason": None
+                        }]
+                    }
+                    c1_bytes = f"data: {json.dumps(chunk1, ensure_ascii=False)}\n\n".encode("utf-8")
+                    self.wfile.write(f"{len(c1_bytes):X}\r\n".encode("ascii") + c1_bytes + b"\r\n")
+
+                    chunk2 = {
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": requested_model or "default",
+                        "choices": [{
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    c2_bytes = f"data: {json.dumps(chunk2, ensure_ascii=False)}\n\n".encode("utf-8")
+                    self.wfile.write(f"{len(c2_bytes):X}\r\n".encode("ascii") + c2_bytes + b"\r\n")
+
+                    done_bytes = b"data: [DONE]\n\n"
+                    self.wfile.write(f"{len(done_bytes):X}\r\n".encode("ascii") + done_bytes + b"\r\n")
+                    self.wfile.write(b"0\r\n\r\n")
+                    self.wfile.flush()
         except Exception:
             pass
 

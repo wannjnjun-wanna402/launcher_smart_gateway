@@ -912,6 +912,18 @@ def resolve_qwen3_coder_path():
     return os.path.join(MODELS_DIR, "Qwen3-Coder-30B-A3B-Instruct-UD-Q5_K_XL.gguf")
 
 
+# ===============================================================================
+#  ⚡ 核心架构铁律：思考预算与真实内容输出预算彻底解耦 (永久规则)
+# ===============================================================================
+#  1. 真实内容输出预算（Answer / Content Budget）恒为无限（-n -1）：
+#     - 模型答题、写脚本、生成长文档、组装工具调用的正文输出空间一直都是无限的。
+#     - 严禁在底层或网关给真实内容输出硬设较小物理截断值，绝不能把干活阶段掐死！
+#  2. 思考预算（Reasoning Budget）仅约束思考链内部（<think> ... </think>）：
+#     - 思考链按任务类型进行自适应分级（low: 1024, medium: 2048/4096, high/xhigh: 8192 或 --reasoning-budget）；
+#     - 思考不管用多少，用完了采样器强制闭合 </think> 标签，立刻转入无限制的正文输出去干活！
+#  3. 思考归思考，干活归干活：思考预算耗尽绝不等于任务中断！
+# ===============================================================================
+
 def build_models_menu():
     """定义可用模型矩阵：严格按照 1级顺序参数量从小到大，2级顺序量化级别从小到大排序，并动态仅展示实际存在的模型文件"""
     mmproj_27b = os.path.join(MODELS_DIR, "mmproj-Qwen3.8-27B-F16.gguf")
@@ -1394,6 +1406,52 @@ def build_models_menu():
                 "--chat-template-file", TEMPLATE_FILE,
                 "--alias", "Ornith-35B,Ornith-1.5-35B,default"
             ]
+        },
+        {
+            "id": "nex_n25_mini",
+            "name": "Nex-N2.5-Mini-35B [512K·4槽·原生全模态MoE极速]",
+            "short_name": "Nex-N2.5-VL",
+            "quant": "Q4_K",
+            "ctx": "512K·4槽",
+            "speed_vram": "22G·原生多模",
+            "speed": "60~65 t/s",
+            "vision": "8085副脑+原生多模",
+            "sidecar_gpu": False,
+            "best_for": "★原生多模态·8085副脑协同·512K四并发",
+            "desc": "35B MoE架构 (256专家·Top-8激活) | 512K 超大统一池 (4槽高并发) | 原生 mmproj-f16 视觉直通 | 8085 CPU智囊副脑协同 | 全Q8_0 KV保真 | 60~65 t/s",
+            "recommend": "【👑 顶级全模态双脑旗舰 · 35B原生高精视觉 + 8085 CPU智囊副脑协同 + 512K大池(4并发) + 64 t/s 极速】",
+            "alias": "Nex-N2.5,Nex-N2.5-mini,Nex-N2.5-VL,nex-mini,default",
+            "is_text": False,
+            "model_path": os.path.join(MODELS_DIR, "nex-agi_Nex-N2.5-mini-Q4_K_M.gguf"),
+            "args": [
+                "-m", os.path.join(MODELS_DIR, "nex-agi_Nex-N2.5-mini-Q4_K_M.gguf"),
+                "--mmproj", os.path.join(MODELS_DIR, "mmproj-nex-agi_Nex-N2.5-mini-f16.gguf"),
+                "-ngl", "99",
+                "--fit", "off",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q8_0",
+                "-c", "524288",
+                "-b", "2048",
+                "--ubatch-size", "512",
+                "-t", OPTIMAL_CPU_THREADS,
+                "--parallel", "4",
+                "--kv-unified",
+                "--flash-attn", "on",
+                "--image-min-tokens", "1024",
+                "--reasoning", "auto",
+                "--reasoning-budget", "2048",
+                "--reasoning-effort", "medium",
+                "--reasoning-format", "deepseek",
+                "--reasoning-preserve",
+                "--no-warmup",
+                "--temp", "0.6",
+                "--top-p", "0.95",
+                "--top-k", "20",
+                "--min-p", "0.05",
+                "--repeat-penalty", "1.05",
+                "--jinja",
+                "--alias", "Nex-N2.5,Nex-N2.5-mini,Nex-N2.5-VL,nex-mini,default"
+            ]
         }
     ]
 
@@ -1406,6 +1464,11 @@ def build_models_menu():
         if mpath and os.path.exists(mpath):
             item_copy = dict(item)
             item_copy["key"] = str(idx)
+            # ⚡ 永久铁律保障：显式注入 -n -1，保证真实内容输出预算恒为无限，彻底杜绝底层缺省 2048 导致思考中途断电截断！
+            args_list = list(item_copy.get("args", []))
+            if "-n" not in args_list and "--predict" not in args_list and "--n-predict" not in args_list:
+                args_list.extend(["-n", "-1"])
+            item_copy["args"] = args_list
             valid_menu.append(item_copy)
             idx += 1
 
@@ -1581,7 +1644,7 @@ def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1].strip()
         if arg in ("--help", "-h"):
-            sys.stdout.write("用法: python launcher_main.py [模型编号: 1-8 | 0(退出)]\n")
+            sys.stdout.write(f"用法: python launcher_main.py [模型编号: 1-{len(menu)} | 0(退出)]\n")
             return
         choice = arg
     else:
@@ -1628,15 +1691,16 @@ def main():
     sys.stdout.write(f"  🚀 正在启动: {C_BOLD}{selected['name']}{C_RESET}\n")
     sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n\n")
 
-    # 3. 视觉与多模态组件适配 (仅纯文本侧挂模型按需拉起 8085，原生多模态直接释放 8085)
-    if selected.get("is_text") and "8085" in selected.get("vision", ""):
+    # 3. 视觉与多模态副脑组件适配 (全系标配 8085 CPU 智囊副脑，0显存常驻)
+    if "8085" in selected.get("vision", ""):
         use_gpu_sidecar = bool(selected.get("sidecar_gpu", False))
         ensure_sidecar_8085(wait=False, use_gpu=use_gpu_sidecar)
+        if not selected.get("is_text"):
+            sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生全模态 + 🧠 8085 CPU 智囊副脑已就绪 (双脑协同 MoA)！{C_RESET}\n\n")
     else:
         if is_port_open(8085):
-            sys.stdout.write(f"{C_YELLOW}  ├─ 🧹 原生多模态模型：关闭 8085 侧挂释放 CPU/显存...{C_RESET}\n")
+            sys.stdout.write(f"{C_YELLOW}  ├─ 🧹 关闭未配置的 8085 侧挂释放 CPU/显存...{C_RESET}\n")
             kill_port(8085)
-        sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生多模态：GPU/CPU 视觉直通，网关自适应调度！{C_RESET}\n\n")
 
     # 3.1 向量检索引擎守护 (8086 BGE-M3，CPU 0显存常驻)
     ensure_embedding_8086(wait=False)
