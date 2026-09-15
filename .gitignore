@@ -46,8 +46,23 @@ miracle_api_stats.json
 *.sqlite
 *.sqlite3
 
-# 7. 临时工作区与扫描中间件
+# 7. 临时工作区与旧版评测脚本
 scratch/
 scan_*.txt
 verify_*.txt
 *.tmp
+bench_results/
+benchmarks/
+archive_deprecated/
+docs/
+tools/
+mcp/
+locate-anything/
+启动*测速.bat
+启动AI智能任务自适应网关.bat
+AI启动器端口8081网页服务.bat
+chat_template.jinja
+chat_template_oneline.txt
+anytxt_mcp.py
+LICENSE*
+AGENTS.md
