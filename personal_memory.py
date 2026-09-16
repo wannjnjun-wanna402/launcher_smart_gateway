@@ -256,21 +256,85 @@ def delete_memory(memory_id: int) -> bool:
     return deleted
 
 
-def get_relevant_context(query: str, max_items: int = 2) -> str:
-    """生成静默注入系统提示词的长期记忆片段 (若无相关记忆则返回空字符串)"""
+def get_permanent_doctrines() -> list:
+    """获取所有底座永久公理 (category IN ('permanent', 'doctrine'))，用于全局常驻注入"""
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, category, content, tags FROM memories WHERE category IN ('permanent', 'doctrine') ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r["id"],
+            "category": r["category"],
+            "content": r["content"],
+            "tags": r["tags"]
+        }
+        for r in rows
+    ]
+
+
+def upsert_doctrine(content: str, tags: str = "准则,规范,永久公理", category: str = "doctrine") -> dict:
+    """插入或更新一条系统级底座永久公理，防止重复插入"""
+    init_db()
+    conn = get_connection()
+    text = content.strip()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM memories WHERE category = ? AND content = ?", (category, text))
+        row = cur.fetchone()
+        if row:
+            mem_id = row["id"]
+            conn.execute("UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?", (tags, now_str, mem_id))
+            res = {"status": "updated", "id": mem_id, "content": text}
+        else:
+            cur.execute(
+                "INSERT INTO memories (category, content, tags, embedding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (category, text, tags, "", now_str, now_str)
+            )
+            res = {"status": "created", "id": cur.lastrowid, "content": text}
+    conn.close()
+    return res
+
+
+def get_doctrines_text() -> str:
+    """获取底座永久公理格式化文本 (常驻注入，不消耗相似度检索)"""
+    doctrines = get_permanent_doctrines()
+    if not doctrines:
+        return ""
+    lines = ["【系统底座核心准则与执行公理 (全局常驻)】:"]
+    for d in doctrines:
+        lines.append(f"• {d['content']}")
+    return "\n".join(lines)
+
+
+def get_dynamic_memory_text(query: str, max_items: int = 2) -> str:
+    """按意图语义检索召回的高置信度个人偏好/历史记忆"""
     results = recall_memory(query, limit=max_items)
     if not results:
         return ""
-    
-    # 只有相关度 (score >= 0.12) 才自动注入，避免噪声干扰
-    high_rel = [r for r in results if r.get("score", 0) >= 0.12]
+    # 过滤掉公理分类，避免双重召回；相关度阈值 >= 0.12 避免噪点
+    high_rel = [r for r in results if r.get("score", 0) >= 0.12 and r.get("category") not in ("permanent", "doctrine")]
     if not high_rel:
         return ""
-
     lines = ["【个人长期记忆与用户偏好 (海马体自动召回)】:"]
     for r in high_rel:
         lines.append(f"• [{r['category']}] {r['content']}")
     return "\n".join(lines)
+
+
+def get_relevant_context(query: str, max_items: int = 2) -> str:
+    """生成静默注入系统提示词的完整片段 (底座公理 + 动态记忆)"""
+    parts = []
+    doc_text = get_doctrines_text()
+    if doc_text:
+        parts.append(doc_text)
+    dyn_text = get_dynamic_memory_text(query, max_items=max_items)
+    if dyn_text:
+        parts.append(dyn_text)
+    return "\n\n".join(parts)
 
 
 # 模块自测
@@ -282,3 +346,4 @@ if __name__ == "__main__":
     print("Recalled:", json.dumps(recalled, ensure_ascii=False, indent=2))
     context = get_relevant_context("显存多大")
     print("Auto-injected Context:\n", context)
+

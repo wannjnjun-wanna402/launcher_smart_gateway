@@ -662,6 +662,29 @@ class ConcurrencyQueue:
         with self.lock:
             return getattr(self, "current_total_ctx", 114688) or 114688
 
+    def get_current_slot_ctx(self):
+        """
+        获取单槽位物理上下文容量（Per-Slot Context）。
+        单会话请求只能由单个 Slot 承载，因此单次请求的物理绝对上限恒为单槽容量。
+        例如 144K·2槽 时，单槽物理上限为 72K (73,728 Token)。
+        """
+        total = self.get_current_total_ctx()
+        slots = 1
+        try:
+            ab_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
+            if os.path.exists(ab_file):
+                with open(ab_file, "r", encoding="utf-8") as f:
+                    ab_data = json.load(f)
+                    ctx_str = ab_data.get("ctx", "")
+                    m_slot = re.search(r"(\d+)槽", ctx_str)
+                    if m_slot:
+                        slots = max(1, int(m_slot.group(1)))
+                    elif "parallel" in ab_data:
+                        slots = max(1, int(ab_data["parallel"]))
+        except Exception:
+            pass
+        return max(32768, total // slots)
+
     def acquire(self, is_vision=False, estimated_tokens=0, timeout=120.0):
         """
         V100 智能负载准入控制：
@@ -3517,42 +3540,59 @@ def preprocess_agent_loop_breaker(messages: list) -> tuple:
 # ============================================================
 def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_tokens=None):
     """
-    企业级前沿语义防爆引擎 4.0：
+    企业级前沿语义防爆引擎 4.0 (单槽容量精准适配版)：
     深度融合 llama.cpp PR #19841 核心思想 (基于会话成对原子性 Pair-wise Turn Truncation)，
-    自适应动态感知底层模型的上下文总量，按 85% 水位触发防爆，70% 水位平滑收敛。
-    
-    【四重前沿精密剪枝流水线】：
-    1. [全量人设守护 (System Anchor)]: System Prompt 100% 字节不丢，规则/绝对路径硬约束永存。
-    2. [用户首轮意图锚点 (Initial Goal Anchor)]: 永久锁定首轮 User Prompt，杜绝长对话丢大目标（上下文健忘症）。
-    3. [双端语义中折叠 (Sandwich Mid-Folding)]: 对中间巨型工具输出保留 Head 2000 + Tail 2000，门槛严控 24,000 字符，
-       杜绝中小型代码文件腰斩导致的 missing lines 证据缺失死锁！
-    4. [轮次原子对裁剪 (Turn-Pair Truncation)]: 以 [User -> Assistant(带 tool_calls) -> Tools] 为不可分割单元整轮淘汰，
-       双向彻底杜绝拆散 tool_calls 导致的 llama.cpp 400 崩溃，平滑收敛到目标安全水位！
+    自适应动态感知底层模型的【单槽物理容量 (Per-Slot Context)】，按 80% 水位触发防爆，65% 水位平滑收敛。
+    确保为深度思考 (Thinking Budget) 与长输出 (Content Budget) 预留充沛的 24,000+ Token 吐字空间，
+    彻底杜绝预填挤满槽位导致的 1-Token 假截断！
     """
     if not isinstance(payload, dict):
         return payload, False, 0
-    
-    # 动态感知当前后端的总上下文上限 (未提供则自动按 85% 水位计算触发线，70% 作为收敛线)
+
+    # 动态感知当前后端的单槽物理容量与总并发池 (单会话请求恒受限于单槽物理容量，绝非总池)
+    slot_cap = concurrency_queue.get_current_slot_ctx() if "concurrency_queue" in globals() else 73728
     ctx_cap = concurrency_queue.get_current_total_ctx() if "concurrency_queue" in globals() else 147456
-    # 🌟 针对 512K 等超大并发总池模型（如 Nex-N2.5）：单会话受原生 256K 物理训练上限保护（红线 240K，收敛线 200K）
-    # 较小模型（如 144K / 32K）则继续按 85% / 70% 水位动态适配
+
+    # 🌟 严格以单槽物理容量为基准：
+    # 安全红线 80% (例如 72K 槽位对应 ~58K)，彻底防止挤满单槽导致 1 token 假截断；
+    # 收敛目标 65% (例如 72K 槽位对应 ~48K)，确保给模型输出预留充沛的 24K+ 纯吐字空间！
     if max_safe_tokens is None:
-        max_safe_tokens = min(int(ctx_cap * 0.85), 245760)
+        max_safe_tokens = min(int(slot_cap * 0.80), 245760)
     if target_safe_tokens is None:
-        target_safe_tokens = min(int(ctx_cap * 0.70), 204800)
+        target_safe_tokens = min(int(slot_cap * 0.65), 200000)
 
     messages = payload.get("messages", [])
-    if not isinstance(messages, list) or len(messages) <= 6:
+    if not isinstance(messages, list) or not messages:
         return payload, False, 0
 
     total_str = json.dumps(messages, ensure_ascii=False)
     cur_tokens = estimate_tokens(total_str)
-    
+
     if cur_tokens <= max_safe_tokens:
         return payload, False, 0
 
-    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD-4.0] ⚠️ 请求上下文高达 {cur_tokens:,} Token (超 {max_safe_tokens//1024}K 安全红线/总池 {ctx_cap//1024}K)，激活 PR #19841 精密语义截断流水线...\n")
+    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD-4.0] ⚠️ 请求上下文高达 {cur_tokens:,} Token (超单槽安全红线 {max_safe_tokens//1024}K / 单槽物理 {slot_cap//1024}K / 总池 {ctx_cap//1024}K)，激活 PR #19841 精密语义截断流水线...\n")
     sys.stdout.flush()
+
+    # 针对少量但单条超大的特殊情况（例如超大文件/单条记忆提取消息 > 10万 Token）
+    if len(messages) <= 6:
+        trimmed_msgs = []
+        for m in messages:
+            m_copy = dict(m)
+            c_txt = m_copy.get("content", "")
+            if isinstance(c_txt, str) and len(c_txt) > 24000:
+                head = c_txt[:6000]
+                tail = c_txt[-6000:]
+                orig_len = len(c_txt)
+                m_copy["content"] = f"{head}\n\n... [智能网关安全折叠中间 {orig_len - 12000:,} 字符，保障单槽 {slot_cap//1024}K 物理安全] ...\n\n{tail}"
+            trimmed_msgs.append(m_copy)
+        payload_copy = dict(payload)
+        payload_copy["messages"] = trimmed_msgs
+        new_tokens = estimate_tokens(json.dumps(trimmed_msgs, ensure_ascii=False))
+        saved_tokens = max(0, cur_tokens - new_tokens)
+        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD-4.0] ✅ 少量超大单条消息修剪完成：由 {cur_tokens:,} 收敛至 {new_tokens:,} Token (安全节省 {saved_tokens:,} Token)\n")
+        sys.stdout.flush()
+        return payload_copy, True, saved_tokens
 
     # 1. 拆解 system 消息与普通对话消息
     system_msgs = [m for m in messages if m.get("role") == "system"]
@@ -3574,8 +3614,6 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     tail_msgs = remaining_msgs[-protected_tail_count:] if protected_tail_count > 0 else remaining_msgs
 
     # 4. 第一层：双端语义中折叠 (Sandwich Mid-Folding)
-    # 🌟 门槛大幅由 1,200 提升至 24,000 字符 (~6,000 Token)！
-    # 严禁将几百行正常的代码或 read_file 工具输出腰斩，杜绝客户端报 'missing lines' 证据缺失导致死锁！
     trimmed_middle = []
     for idx, m in enumerate(middle_msgs):
         m_copy = dict(m)
@@ -3584,7 +3622,7 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
             head = content[:2000]
             tail = content[-2000:]
             orig_len = len(content)
-            m_copy["content"] = f"[历史超大文件/工具输出已由智能网关中折叠 (原长 {orig_len:,} 字符，保留核心首尾)]:\n{head}\n... [中间 {orig_len - 4000:,} 字符已折叠省略，保障 160K 算力池安全] ...\n{tail}"
+            m_copy["content"] = f"[历史超大文件/工具输出已由智能网关中折叠 (原长 {orig_len:,} 字符，保留核心首尾)]:\n{head}\n... [中间 {orig_len - 4000:,} 字符已折叠省略，保障单槽 {slot_cap//1024}K 物理安全] ...\n{tail}"
         elif isinstance(content, list):
             trimmed_blocks = []
             for b in content:
@@ -3603,12 +3641,12 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
         trimmed_middle.append(m_copy)
 
     # 组装基础列表验证当前 Token
-    def _assemble_msgs(mid_list):
+    def _assemble_msgs(mid_list, tail_list=None):
         res = list(system_msgs)
         if first_user_anchor:
             res.append(first_user_anchor)
         res.extend(mid_list)
-        res.extend(tail_msgs)
+        res.extend(tail_list if tail_list is not None else tail_msgs)
         return res
 
     assembled = _assemble_msgs(trimmed_middle)
@@ -3616,15 +3654,12 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     new_tokens = estimate_tokens(new_str)
 
     # 5. 第二层：PR #19841 规范 · 会话轮次原子对 (Turn-Pair) 级进阶裁剪
-    # 若中折叠后依然超过 target_safe_tokens (115K)，按整轮剔除最久远的历史
     while new_tokens > target_safe_tokens and len(trimmed_middle) > 1:
-        # 寻找下一个 User 轮次边界
         cut_step = 1
         while cut_step < len(trimmed_middle) and trimmed_middle[cut_step].get("role") != "user":
             cut_step += 1
         trimmed_middle = trimmed_middle[cut_step:]
 
-        # 双向配对安全净化：清除失去对应 assistant.tool_calls 的悬空 tool 响应
         valid_call_ids = set()
         for m in _assemble_msgs(trimmed_middle):
             if m.get("role") == "assistant" and "tool_calls" in m:
@@ -3637,7 +3672,7 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
             if m.get("role") in ("tool", "function"):
                 tid = m.get("tool_call_id")
                 if tid and tid not in valid_call_ids:
-                    continue  # 丢弃孤儿返回
+                    continue
             sanitized_mid.append(m)
         trimmed_middle = sanitized_mid
 
@@ -3645,10 +3680,26 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
         new_str = json.dumps(assembled, ensure_ascii=False)
         new_tokens = estimate_tokens(new_str)
 
+    # 6. 第三层：若 middle 已裁剪完但整体依旧偏高，对 tail 中超大工具输出适度中折叠
+    if new_tokens > target_safe_tokens:
+        sanitized_tail = []
+        for tm in tail_msgs:
+            tm_copy = dict(tm)
+            content = tm_copy.get("content", "")
+            if isinstance(content, str) and len(content) > 16000:
+                head = content[:2000]
+                tail = content[-2000:]
+                orig_len = len(content)
+                tm_copy["content"] = f"{head}\n... [智能网关安全中折叠中间 {orig_len - 4000:,} 字符，保障单槽安全] ...\n{tail}"
+            sanitized_tail.append(tm_copy)
+        assembled = _assemble_msgs(trimmed_middle, sanitized_tail)
+        new_str = json.dumps(assembled, ensure_ascii=False)
+        new_tokens = estimate_tokens(new_str)
+
     payload_copy = dict(payload)
     payload_copy["messages"] = assembled
     saved_tokens = max(0, cur_tokens - new_tokens)
-    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD-4.0] ✅ 语义截断修剪完成：由 {cur_tokens:,} 稳定收敛至 {new_tokens:,} Token (安全防护节省 {saved_tokens:,} Token)，100% 杜绝显存溢出与400错配！\n")
+    sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD-4.0] ✅ 语义截断修剪完成：由 {cur_tokens:,} 稳定收敛至 {new_tokens:,} Token (安全防护节省 {saved_tokens:,} Token)，为输出预留充足空间！\n")
     sys.stdout.flush()
     return payload_copy, True, saved_tokens
 
@@ -6206,13 +6257,17 @@ class TaskAdaptiveEngine:
         req_payload["enable_thinking"] = enable_thinking
 
         # 7. Max Tokens 动态保底拓宽：防止深度思考（Thinking）耗光默认 2048 输出预算导致 content/tool_calls 假死截断
+                # 7. Max Tokens 动态拓宽与双向映射：彻底根除底层 llama.cpp 不识别 max_completion_tokens 导致的 1-Token 假截断
         client_max_tokens = req_payload.get("max_tokens") or req_payload.get("max_completion_tokens")
         if client_max_tokens is None or (isinstance(client_max_tokens, int) and client_max_tokens < 4096):
             target_max_tokens = max(8192, budget + 4096) if enable_thinking else 8192
-            req_payload["max_tokens"] = target_max_tokens
-            applied_params["max_tokens"] = f"{target_max_tokens} (拓宽保底)"
+        else:
+            target_max_tokens = max(8192, int(client_max_tokens))
 
-        # 7. Presence Penalty 智能裁决 (Thinking 模式下建议 0.0，Instruct 模式建议 1.5)
+        req_payload["max_tokens"] = target_max_tokens
+        req_payload["n_predict"] = target_max_tokens
+        applied_params["max_tokens"] = f"{target_max_tokens} (充沛保底)"
+
         client_pp = req_payload.get("presence_penalty")
         if client_pp is None:
             if enable_thinking:
@@ -7717,19 +7772,31 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                         sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [MCP-ROUTER] 🔀 命中意图域【{domain_cn}】: 挂载 {len(domain_tools)} 个专属工具\n"[:79] + "\n")
                         sys.stdout.flush()
 
-                # ---- 🌟 阶段四：个人长期向量记忆与知识库 RAG 上下文静默注入 ----
+                # ---- 🌟 阶段四：个人长期向量记忆与底座核心准则静默注入 ----
                 try:
                     import personal_memory
-                    mem_ctx = personal_memory.get_relevant_context(intent_text)
-                    if mem_ctx:
-                        msgs = cleaned_json.get("messages", [])
-                        if msgs:
-                            if msgs[0].get("role") == "system":
-                                msgs[0]["content"] = msgs[0]["content"].strip() + f"\n\n{mem_ctx}"
-                            else:
-                                msgs.insert(0, {"role": "system", "content": mem_ctx})
-                            sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [MEMORY-RAG] 🧠 命中长期记忆海马体，已静默注入用户偏好/背景\n"[:79] + "\n")
-                            sys.stdout.flush()
+                    msgs = cleaned_json.get("messages", [])
+                    if msgs:
+                        doc_text = personal_memory.get_doctrines_text()
+                        dyn_text = personal_memory.get_dynamic_memory_text(intent_text)
+                        
+                        if msgs[0].get("role") == "system":
+                            sys_content = msgs[0].get("content", "")
+                            inject_parts = []
+                            if doc_text and "【系统底座核心准则" not in sys_content:
+                                inject_parts.append(doc_text)
+                            if dyn_text and dyn_text not in sys_content:
+                                inject_parts.append(dyn_text)
+                            if inject_parts:
+                                msgs[0]["content"] = sys_content.strip() + "\n\n" + "\n\n".join(inject_parts)
+                                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [MEMORY-RAG] 🧠 静默注入系统底座准则与长期记忆偏好\n"[:79] + "\n")
+                                sys.stdout.flush()
+                        else:
+                            full_inject = personal_memory.get_relevant_context(intent_text)
+                            if full_inject:
+                                msgs.insert(0, {"role": "system", "content": full_inject})
+                                sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [MEMORY-RAG] 🧠 新建系统提示词并静默注入底座准则与偏好\n"[:79] + "\n")
+                                sys.stdout.flush()
                 except Exception:
                     pass
 
@@ -7841,6 +7908,10 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格按底层后端总上下文 85% 水位动态适配，杜绝溢出 400 报错) ----
                 cleaned_json, guard_triggered, guard_saved_tokens = enforce_context_safety_guard(cleaned_json)
+                # 🌟 底层硬件铁律保底：确保发给 llama-server 的参数中必须包含显式充沛的 max_tokens 与 n_predict
+                m_tok = cleaned_json.get("max_tokens") or cleaned_json.get("max_completion_tokens") or 8192
+                cleaned_json["max_tokens"] = max(8192, int(m_tok))
+                cleaned_json["n_predict"] = cleaned_json["max_tokens"]
 
                 forward_body = json.dumps(cleaned_json, ensure_ascii=False).encode("utf-8")
                 # 🌟 精确计算经 OCR 提取与防爆修剪后的真实 Token 负载 (绝非原始 base64 虚高体积)

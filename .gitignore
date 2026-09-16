@@ -42,6 +42,7 @@ node_modules/
 # 6. 动态变化的数据账本与本地数据库
 token_billing_stats.json
 miracle_api_stats.json
+miracle_api_keys.json
 *.db
 *.sqlite
 *.sqlite3
