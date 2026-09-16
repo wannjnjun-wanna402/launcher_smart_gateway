@@ -644,7 +644,21 @@ class ConcurrencyQueue:
         with self.lock:
             return self.current_model_alias or "27B-A"
 
-    def get_current_total_ctx(self):
+    def get_current_total_ctx(self, backend_port=8083):
+        # 1. 优先通过 8083 /props 接口实时探针拉取真实物理上下文 (零硬编码，自适应 RTX 5080 / 4090 / V100 等任意显卡与模型)
+        try:
+            req_props = urllib.request.Request(f"http://127.0.0.1:{backend_port}/props", headers={"Authorization": "Bearer llamacpp"}, method="GET")
+            with urllib.request.urlopen(req_props, timeout=0.8) as resp_p:
+                p_data = json.loads(resp_p.read().decode("utf-8"))
+                val = p_data.get("default_generation_settings", {}).get("n_ctx")
+                if val and isinstance(val, int) and val > 0:
+                    with self.lock:
+                        self.current_total_ctx = val
+                    return val
+        except Exception:
+            pass
+
+        # 2. 备选方案：从 active_backend.json 读取
         try:
             ab_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
             if os.path.exists(ab_file):
@@ -660,16 +674,31 @@ class ConcurrencyQueue:
         except Exception:
             pass
         with self.lock:
-            return getattr(self, "current_total_ctx", 114688) or 114688
+            return getattr(self, "current_total_ctx", 147456) or 147456
 
-    def get_current_slot_ctx(self):
+    def get_current_slot_ctx(self, backend_port=8083):
         """
         获取单槽位物理上下文容量（Per-Slot Context）。
-        单会话请求只能由单个 Slot 承载，因此单次请求的物理绝对上限恒为单槽容量。
-        例如 144K·2槽 时，单槽物理上限为 72K (73,728 Token)。
+        单会话请求恒受限于单槽容量，完全自适应任意显卡（如 V100 32GB、RTX 5080 16GB、4090等）：
+        1. 优先通过 8083 /props 获取真实 total_ctx 与 total_slots；
+        2. 计算真实单槽容量 = total_ctx // max(1, total_slots)；
+        3. 按物理真实容量返回，彻底杜绝小显存卡被大保底写死。
         """
-        total = self.get_current_total_ctx()
+        total = self.get_current_total_ctx(backend_port=backend_port)
         slots = 1
+        # 1. 尝试从 /props 探测 total_slots
+        try:
+            req_props = urllib.request.Request(f"http://127.0.0.1:{backend_port}/props", headers={"Authorization": "Bearer llamacpp"}, method="GET")
+            with urllib.request.urlopen(req_props, timeout=0.8) as resp_p:
+                p_data = json.loads(resp_p.read().decode("utf-8"))
+                s_val = p_data.get("total_slots")
+                if s_val and isinstance(s_val, int) and s_val > 0:
+                    slots = s_val
+                    return max(4096, total // slots)
+        except Exception:
+            pass
+
+        # 2. 备选方案：从 active_backend.json 读取槽位数
         try:
             ab_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
             if os.path.exists(ab_file):
@@ -683,7 +712,7 @@ class ConcurrencyQueue:
                         slots = max(1, int(ab_data["parallel"]))
         except Exception:
             pass
-        return max(32768, total // slots)
+        return max(4096, total // max(1, slots))
 
     def acquire(self, is_vision=False, estimated_tokens=0, timeout=120.0):
         """
@@ -3553,13 +3582,33 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     slot_cap = concurrency_queue.get_current_slot_ctx() if "concurrency_queue" in globals() else 73728
     ctx_cap = concurrency_queue.get_current_total_ctx() if "concurrency_queue" in globals() else 147456
 
-    # 🌟 严格以单槽物理容量为基准：
-    # 安全红线 80% (例如 72K 槽位对应 ~58K)，彻底防止挤满单槽导致 1 token 假截断；
-    # 收敛目标 65% (例如 72K 槽位对应 ~48K)，确保给模型输出预留充沛的 24K+ 纯吐字空间！
+    # 🌟 动态按比例计算防爆阈值与折叠步长 (物理自适应大显存 V100 与紧凑显存 RTX 5080/4090):
+    # 针对超小/紧凑槽位 (slot_cap <= 16K): 70% 红线, 55% 收敛 (预留 45% 纯吐字空间)
+    # 针对中等槽位 (16K < slot_cap <= 32K): 75% 红线, 60% 收敛 (预留 40% 吐字空间)
+    # 针对大显存槽位 (slot_cap > 32K): 80% 红线, 65% 收敛 (预留 35% 空间，例如 72K 槽预留 25K+ 空间)
+    if slot_cap <= 16384:
+        ratio_redline = 0.70
+        ratio_target = 0.55
+        max_tail = 6
+        fold_threshold = max(3000, int(slot_cap * 0.50))
+        fold_head_tail = max(600, int(fold_threshold * 0.15))
+    elif slot_cap <= 32768:
+        ratio_redline = 0.75
+        ratio_target = 0.60
+        max_tail = 10
+        fold_threshold = max(6000, int(slot_cap * 0.55))
+        fold_head_tail = max(1000, int(fold_threshold * 0.12))
+    else:
+        ratio_redline = 0.80
+        ratio_target = 0.65
+        max_tail = 20
+        fold_threshold = 24000
+        fold_head_tail = 2000
+
     if max_safe_tokens is None:
-        max_safe_tokens = min(int(slot_cap * 0.80), 245760)
+        max_safe_tokens = min(int(slot_cap * ratio_redline), 245760)
     if target_safe_tokens is None:
-        target_safe_tokens = min(int(slot_cap * 0.65), 200000)
+        target_safe_tokens = min(int(slot_cap * ratio_target), 200000)
 
     messages = payload.get("messages", [])
     if not isinstance(messages, list) or not messages:
@@ -3574,17 +3623,17 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [CONTEXT-GUARD-4.0] ⚠️ 请求上下文高达 {cur_tokens:,} Token (超单槽安全红线 {max_safe_tokens//1024}K / 单槽物理 {slot_cap//1024}K / 总池 {ctx_cap//1024}K)，激活 PR #19841 精密语义截断流水线...\n")
     sys.stdout.flush()
 
-    # 针对少量但单条超大的特殊情况（例如超大文件/单条记忆提取消息 > 10万 Token）
+    # 针对少量但单条超大的特殊情况（例如超大文件/单条记忆提取消息）
     if len(messages) <= 6:
         trimmed_msgs = []
         for m in messages:
             m_copy = dict(m)
             c_txt = m_copy.get("content", "")
-            if isinstance(c_txt, str) and len(c_txt) > 24000:
-                head = c_txt[:6000]
-                tail = c_txt[-6000:]
+            if isinstance(c_txt, str) and len(c_txt) > fold_threshold:
+                head = c_txt[:fold_head_tail * 2]
+                tail = c_txt[-fold_head_tail * 2:]
                 orig_len = len(c_txt)
-                m_copy["content"] = f"{head}\n\n... [智能网关安全折叠中间 {orig_len - 12000:,} 字符，保障单槽 {slot_cap//1024}K 物理安全] ...\n\n{tail}"
+                m_copy["content"] = f"{head}\n\n... [智能网关安全折叠中间 {orig_len - fold_head_tail * 4:,} 字符，保障单槽 {slot_cap//1024}K 物理安全] ...\n\n{tail}"
             trimmed_msgs.append(m_copy)
         payload_copy = dict(payload)
         payload_copy["messages"] = trimmed_msgs
@@ -3608,8 +3657,8 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
         first_user_anchor = other_msgs[0]
         remaining_msgs = other_msgs[1:]
 
-    # 3. 提取尾部活跃窗口 (保护最近 20 条消息完整连续，确保 5~8 轮完整工具链与代码快照绝对不被截断)
-    protected_tail_count = min(20, len(remaining_msgs))
+    # 3. 提取尾部活跃窗口 (动态自适应槽位容量，保护最近连续交互与代码快照绝对不被截断)
+    protected_tail_count = min(max_tail, len(remaining_msgs))
     middle_msgs = remaining_msgs[:-protected_tail_count] if protected_tail_count > 0 else []
     tail_msgs = remaining_msgs[-protected_tail_count:] if protected_tail_count > 0 else remaining_msgs
 
@@ -3618,21 +3667,21 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     for idx, m in enumerate(middle_msgs):
         m_copy = dict(m)
         content = m_copy.get("content", "")
-        if isinstance(content, str) and len(content) > 24000:
-            head = content[:2000]
-            tail = content[-2000:]
+        if isinstance(content, str) and len(content) > fold_threshold:
+            head = content[:fold_head_tail]
+            tail = content[-fold_head_tail:]
             orig_len = len(content)
-            m_copy["content"] = f"[历史超大文件/工具输出已由智能网关中折叠 (原长 {orig_len:,} 字符，保留核心首尾)]:\n{head}\n... [中间 {orig_len - 4000:,} 字符已折叠省略，保障单槽 {slot_cap//1024}K 物理安全] ...\n{tail}"
+            m_copy["content"] = f"[历史超大文件/工具输出已由智能网关中折叠 (原长 {orig_len:,} 字符，保留核心首尾)]:\n{head}\n... [中间 {orig_len - fold_head_tail * 2:,} 字符已折叠省略，保障单槽 {slot_cap//1024}K 物理安全] ...\n{tail}"
         elif isinstance(content, list):
             trimmed_blocks = []
             for b in content:
                 if isinstance(b, dict) and b.get("type") == "text":
                     b_txt = b.get("text", "")
-                    if len(b_txt) > 24000:
-                        b_head = b_txt[:2000]
-                        b_tail = b_txt[-2000:]
+                    if len(b_txt) > fold_threshold:
+                        b_head = b_txt[:fold_head_tail]
+                        b_tail = b_txt[-fold_head_tail:]
                         b_len = len(b_txt)
-                        trimmed_blocks.append({"type": "text", "text": f"[历史超大输出已中折叠 (原长 {b_len:,} 字符)]:\n{b_head}\n... [折叠 {b_len - 4000:,} 字符] ...\n{b_tail}"})
+                        trimmed_blocks.append({"type": "text", "text": f"[历史超大输出已中折叠 (原长 {b_len:,} 字符)]:\n{b_head}\n... [折叠 {b_len - fold_head_tail * 2:,} 字符] ...\n{b_tail}"})
                     else:
                         trimmed_blocks.append(b)
                 else:
@@ -3683,14 +3732,15 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     # 6. 第三层：若 middle 已裁剪完但整体依旧偏高，对 tail 中超大工具输出适度中折叠
     if new_tokens > target_safe_tokens:
         sanitized_tail = []
+        tail_fold_thresh = max(4000, int(fold_threshold * 0.65))
         for tm in tail_msgs:
             tm_copy = dict(tm)
             content = tm_copy.get("content", "")
-            if isinstance(content, str) and len(content) > 16000:
-                head = content[:2000]
-                tail = content[-2000:]
+            if isinstance(content, str) and len(content) > tail_fold_thresh:
+                head = content[:fold_head_tail]
+                tail = content[-fold_head_tail:]
                 orig_len = len(content)
-                tm_copy["content"] = f"{head}\n... [智能网关安全中折叠中间 {orig_len - 4000:,} 字符，保障单槽安全] ...\n{tail}"
+                tm_copy["content"] = f"{head}\n... [智能网关安全中折叠中间 {orig_len - fold_head_tail * 2:,} 字符，保障单槽安全] ...\n{tail}"
             sanitized_tail.append(tm_copy)
         assembled = _assemble_msgs(trimmed_middle, sanitized_tail)
         new_str = json.dumps(assembled, ensure_ascii=False)
@@ -6262,11 +6312,16 @@ class TaskAdaptiveEngine:
         if client_max_tokens is None or (isinstance(client_max_tokens, int) and client_max_tokens < 4096):
             target_max_tokens = max(8192, budget + 4096) if enable_thinking else 8192
         else:
-            target_max_tokens = max(8192, int(client_max_tokens))
+            target_max_tokens = max(4096, int(client_max_tokens))
+
+        # 🌟 槽位安全留白：针对小显存卡 (RTX 5080/4090)，确保 max_tokens 留有单槽安全边界，杜绝预填与生成追尾
+        slot_cap = concurrency_queue.get_current_slot_ctx() if "concurrency_queue" in globals() else 73728
+        safe_output_limit = max(2048, int(slot_cap * 0.40))
+        target_max_tokens = min(target_max_tokens, safe_output_limit)
 
         req_payload["max_tokens"] = target_max_tokens
         req_payload["n_predict"] = target_max_tokens
-        applied_params["max_tokens"] = f"{target_max_tokens} (充沛保底)"
+        applied_params["max_tokens"] = f"{target_max_tokens} (自适应保底)"
 
         client_pp = req_payload.get("presence_penalty")
         if client_pp is None:
@@ -7908,9 +7963,11 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
 
                 # ---- 🌟 智能上下文安全防爆舱 (严格按底层后端总上下文 85% 水位动态适配，杜绝溢出 400 报错) ----
                 cleaned_json, guard_triggered, guard_saved_tokens = enforce_context_safety_guard(cleaned_json)
-                # 🌟 底层硬件铁律保底：确保发给 llama-server 的参数中必须包含显式充沛的 max_tokens 与 n_predict
+                # 🌟 底层硬件铁律保底：确保发给 llama-server 的参数中必须包含显式充沛且符合物理槽位的 max_tokens 与 n_predict
+                slot_cap = concurrency_queue.get_current_slot_ctx() if "concurrency_queue" in globals() else 73728
+                safe_output_limit = max(2048, int(slot_cap * 0.40))
                 m_tok = cleaned_json.get("max_tokens") or cleaned_json.get("max_completion_tokens") or 8192
-                cleaned_json["max_tokens"] = max(8192, int(m_tok))
+                cleaned_json["max_tokens"] = min(max(2048, int(m_tok)), safe_output_limit)
                 cleaned_json["n_predict"] = cleaned_json["max_tokens"]
 
                 forward_body = json.dumps(cleaned_json, ensure_ascii=False).encode("utf-8")
