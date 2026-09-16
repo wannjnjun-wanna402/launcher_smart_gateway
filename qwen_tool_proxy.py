@@ -6921,19 +6921,28 @@ class Qwen27BBackendManager:
     STATE_VISION_27B = "VISION_27B"
     STATE_PIPELINE_4SLOT = "PIPELINE_4SLOT"
 
-    def __init__(self, root_dir=r'E:\llama-win-cuda-12.4-x64', models_dir=r'E:\models', port=8083, api_key="llamacpp"):
-        self.root_dir = root_dir
+    def __init__(self, root_dir=None, models_dir=None, port=8083, api_key="llamacpp"):
+        self.root_dir = root_dir or os.path.dirname(os.path.abspath(__file__))
+        if not models_dir:
+            candidate_dirs = [
+                os.environ.get("MODELS_DIR"),
+                r"E:\models",
+                r"D:\models",
+                r"C:\models",
+                os.path.join(self.root_dir, "models")
+            ]
+            models_dir = next((p for p in candidate_dirs if p and os.path.exists(p)), os.path.join(self.root_dir, "models"))
         self.models_dir = models_dir
         self.port = port
         self.api_key = api_key
         self.current_state = self.STATE_MTP_2SLOT
         self.lock = threading.Lock()
         self.last_activity_time = time.time()
-        self.server_exe = os.path.join(root_dir, "llama-server.exe")
-        self.template_file = os.path.join(root_dir, "chat_template_qwen_fixed.jinja")
-        self.model_path = os.path.join(models_dir, "Qwen3.8-27B-Abliterated-Q6_K.gguf")
-        self.mmproj_path = os.path.join(models_dir, "mmproj-Qwen3.8-27B-F16.gguf")
-        self.log_dir = os.path.join(root_dir, "logs")
+        self.server_exe = os.path.join(self.root_dir, "llama-server.exe")
+        self.template_file = os.path.join(self.root_dir, "chat_template_qwen_fixed.jinja")
+        self.model_path = os.path.join(self.models_dir, "Qwen3.8-27B-Abliterated-Q6_K.gguf")
+        self.mmproj_path = os.path.join(self.models_dir, "mmproj-Qwen3.8-27B-F16.gguf")
+        self.log_dir = os.path.join(self.root_dir, "logs")
 
     def get_today_log(self):
         today = time.strftime("%Y%m%d")

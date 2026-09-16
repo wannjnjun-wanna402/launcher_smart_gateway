@@ -1,14 +1,9 @@
 @echo off
 chcp 65001 >nul
 title 奇迹API网关 · 监控中心
+cd /d "%~dp0"
 
 if not exist "%~dp0logs" mkdir "%~dp0logs"
-
-set "CUDA_CACHE_MAXSIZE=2147483648"
-set "CUDA_DEVICE_MAX_CONNECTIONS=1"
-
-for /f %%I in ('"C:\Users\wanna402\AppData\Local\Programs\Python\Python313\python.exe" -c "import time; print(time.strftime('%%%%Y%%%%m%%%%d'))"') do set "dt=%%I"
-if "%dt%"=="" set "dt=%DATE:~-4%%DATE:~3,2%%DATE:~0,2%"
 
 echo ====================================================================================
 echo   🚀 奇迹智能协同网关 (端口: 8081 -^> 8083)
@@ -18,10 +13,10 @@ echo   [监控大屏] http://127.0.0.1:8081/dashboard (硬件遥测 · 槽位在
 echo ====================================================================================
 echo.
 
-:: 启动 8081 网关
+:: 检查 8081 是否已在运行
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8081" ^| findstr "LISTENING"') do set GATEWAY_PID=%%a
 if "%GATEWAY_PID%"=="" (
-    start "" /B "C:\Users\wanna402\AppData\Local\Programs\Python\Python313\python.exe" "%~dp0qwen_tool_proxy.py" --listen 8081 --target 8083 --vision-main 8085 --api-key llamacpp >> "%~dp0logs\8081_proxy_%dt%.log" 2>&1
+    start "" /B python "%~dp0qwen_tool_proxy.py" --listen 8081 --target 8083 --api-key llamacpp
 )
 
 start "" "http://127.0.0.1:8081/dashboard"

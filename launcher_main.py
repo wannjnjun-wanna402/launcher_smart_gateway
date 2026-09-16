@@ -45,7 +45,21 @@ def resolve_llama_server_dir():
     return SCRIPT_DIR
 
 BASE_DIR = resolve_llama_server_dir()
-MODELS_DIR = r"E:\models" if os.path.exists(r"E:\models") else os.path.join(BASE_DIR, "models")
+
+def resolve_models_dir():
+    candidates = [
+        os.environ.get("MODELS_DIR"),
+        r"E:\models",
+        r"D:\models",
+        r"C:\models",
+        os.path.join(BASE_DIR, "models"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return os.path.join(BASE_DIR, "models")
+
+MODELS_DIR = resolve_models_dir()
 PYTHON_EXE = sys.executable
 LLAMA_SERVER = os.path.join(BASE_DIR, "llama-server.exe")
 TEMPLATE_FILE = os.path.join(SCRIPT_DIR, "chat_template_qwen_fixed.jinja")
@@ -53,6 +67,26 @@ if not os.path.exists(TEMPLATE_FILE):
     TEMPLATE_FILE = os.path.join(BASE_DIR, "chat_template_qwen_fixed.jinja")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+def cleanup_stale_session_logs():
+    """启动前自动清理或合流既往异常残留的临时 session 日志文件，确保每个端口/模型单日仅呈现单一累加主日志"""
+    try:
+        import glob
+        today_str = time.strftime("%Y%m%d")
+        for sf in glob.glob(os.path.join(LOGS_DIR, "_*_sess_*.log")):
+            try:
+                target_prefix = "8083_llama_" if "8083" in sf else ("8085_sidecar_" if "8085" in sf else "")
+                if target_prefix:
+                    target_log = os.path.join(LOGS_DIR, f"{target_prefix}{today_str}.log")
+                    with open(sf, "r", encoding="utf-8", errors="replace") as r_sf, open(target_log, "a", encoding="utf-8") as w_df:
+                        w_df.write(r_sf.read())
+                os.remove(sf)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+cleanup_stale_session_logs()
 
 # ANSI 终端色彩
 C_RESET = "\033[0m"
