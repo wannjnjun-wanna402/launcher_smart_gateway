@@ -21,7 +21,7 @@
 | **`启动奇迹API网关.bat`** | 双击引导 | 桌面双击入口：拉起后台网关服务并自动打开监控大屏 |
 | **`一键安全停止所有AI服务.bat`** | 双击引导 | 桌面双击入口：换模型或关机前一键清空显存与解除端口占用 |
 | **`requirements.txt`** | 依赖清单 | 核心运行库清单 (psutil, requests, pyyaml) |
-| **`launcher_smart_gateway_core.zip`** | 离线打包 | **一键绿色全套离线压缩包（约 140KB），点击即可直接下载复制** |
+| **`launcher_smart_gateway_core.zip`** | 离线打包 | **[📥 点击直接下载官方 Release 绿色离线包 (约 148KB)](https://github.com/wannjnjun-wanna402/launcher_smart_gateway/releases/download/v4.0.0/launcher_smart_gateway_core.zip)** |
 
 ---
 
