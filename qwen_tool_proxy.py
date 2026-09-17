@@ -267,15 +267,15 @@ class GPUTelemetry:
     def __init__(self):
         self.lock = threading.Lock()
         self.data = {
-            "online": True,
-            "gpu_name": "Tesla V100-PCIE-32GB",
-            "vram_used_mb": 27340,
-            "vram_total_mb": 32768,
-            "vram_pct": 83.4,
+            "online": False,
+            "gpu_name": "硬件探测中...",
+            "vram_used_mb": 0,
+            "vram_total_mb": 0,
+            "vram_pct": 0.0,
             "gpu_util_pct": 0,
-            "power_w": 45,
-            "power_limit_w": 300,
-            "temp_c": 38,
+            "power_w": 0,
+            "power_limit_w": 0,
+            "temp_c": 0,
             "last_updated": time.time()
         }
         self._silent_probe_once()
@@ -327,7 +327,9 @@ class GPUTelemetry:
                             "last_updated": time.time()
                         }
         except Exception:
-            pass
+            with self.lock:
+                if not self.data.get("online"):
+                    self.data["gpu_name"] = "CPU / 集显模式"
 
     def get_status(self):
         with self.lock:
@@ -765,7 +767,7 @@ class ConcurrencyQueue:
                 ceiling_trigger = int(ctx_limit * 0.92)
                 if heavy_prefill_active or (total_ctx_in_use + estimated_tokens > ceiling_trigger and total_ctx_in_use > (ctx_limit * 0.5)):
                     if not waited_prefill:
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-ADMISSION] 🚦 V100 负载避让触发：检测到已有槽位正在 100% 算力狂算大预填(或总KV水位>{total_ctx_in_use//1024}K/{ctx_limit//1024}K)，本任务({estimated_tokens:,} tok)在网关平滑等待...\n")
+                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-ADMISSION] 🚦 物理算力负载避让触发：检测到已有槽位正在 100% 算力狂算大预填(或总KV水位>{total_ctx_in_use//1024}K/{ctx_limit//1024}K)，本任务({estimated_tokens:,} tok)在网关平滑等待...\n")
                         sys.stdout.flush()
                         waited_prefill = True
                     time.sleep(1.0)
@@ -2365,6 +2367,7 @@ class BillingTracker:
             vram_used_gb = round(gpu_st.get("vram_used_mb", 0) / 1024.0, 1)
             vram_total_gb = round(gpu_st.get("vram_total_mb", 0) / 1024.0, 1)
             st["gpu_health"] = {
+                "gpu_name": gpu_st.get("gpu_name", "GPU"),
                 "temp_c": temp_c,
                 "power_w": round(power_w, 1),
                 "power_limit_w": round(power_limit_w, 1),
@@ -4419,11 +4422,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card-sub" id="peak-tps">今日纯工作耗时: 0.0s (剔除空闲)</div>
     </div>
 
-    <!-- 9. 🌡️ Tesla V100 硬件体温与能效脉搏 -->
+    <!-- 9. 🌡️ 硬件体温与能效脉搏 -->
     <div class="card" style="border-color: rgba(248, 113, 113, 0.45); background: radial-gradient(circle at top right, rgba(255, 51, 102, 0.1), rgba(10,15,26,0.7));">
       <span class="card-geek-tag">//09</span>
       <div class="card-label" style="color: #f87171;">
-        <span>🌡️ Tesla V100 硬件体温与能效</span>
+        <span id="kpi-gpu-title">🌡️ 硬件体温与能效脉搏</span>
         <span style="font-size: 11px; color: #00ff9d; font-family: var(--font-mono);" id="kpi-gpu-tdp-badge">TDP 0%</span>
       </div>
       <div class="card-value" id="kpi-gpu-summary" style="font-size: 16px;">
@@ -5507,8 +5510,11 @@ async function updateStats() {
       }
     }
 
-    // 🌟 9. 🌡️ Tesla V100 硬件体温与能效脉搏 KPI 更新 (真实数据，无数据显0)
+    // 🌟 9. 🌡️ 硬件体温与能效脉搏 KPI 更新 (真实数据，无数据显0)
     const gh = data.gpu_health || {};
+    const gName = gh.gpu_name || "硬件算力";
+    const elGTitle = document.getElementById('kpi-gpu-title');
+    if (elGTitle) elGTitle.innerText = `🌡️ ${gName} 体温与能效`;
     const gTemp = gh.temp_c ?? 0;
     const gPower = gh.power_w !== undefined ? Math.round(gh.power_w) : 0;
     const gPowerLim = gh.power_limit_w !== undefined ? Math.round(gh.power_limit_w) : 0;

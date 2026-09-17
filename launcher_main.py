@@ -15,20 +15,31 @@ import time
 import socket
 import subprocess
 import signal
+# 强制 UTF-8 标准输出
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# 🛡️ 开箱自愈装甲：核心依赖缺失时自动静默安装补齐，彻底杜绝新机器双击闪退
+try:
+    import psutil
+except ImportError:
+    sys.stdout.write("[INIT] 🚀 首次运行检测到缺少基础运行库，正在自动静默补齐 (psutil, requests, pyyaml)...\n")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "psutil>=5.9.0", "requests>=2.28.0", "pyyaml>=6.0"])
+        import psutil
+        sys.stdout.write("[INIT] ✅ 依赖环境补齐成功，正在进入大模型中枢...\n\n")
+    except Exception as e:
+        sys.stderr.write(f"[WARN] 自动补齐依赖受限: {e}，若报错请手动执行: pip install -r requirements.txt\n")
+
 import json
-import psutil
 import atexit
 import ctypes
 import unicodedata
 import re
 import threading
 from ctypes import wintypes
-
-# 强制 UTF-8 标准输出
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 智能解析 llama.cpp 核心运行与模型目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -489,27 +500,54 @@ def get_llamacpp_version():
 
 
 def get_hardware_info():
-    """获取 GPU、CPU 与系统内存状态"""
-    gpu_desc = "NVIDIA Tesla V100 32GB"
-    gpu_mem = "32.0 GB"
+    """获取真实 GPU、CPU 与系统内存状态及智能算力分档"""
+    gpu_desc = "CPU 推理模式 / 集成显卡"
+    gpu_mem = "系统共享内存"
+    vram_mb = 0
+    has_nvidia = False
     try:
         smi = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
+            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, errors="ignore"
         )
         if smi.returncode == 0 and smi.stdout.strip():
             parts = [p.strip() for p in smi.stdout.strip().split(",")]
             if len(parts) >= 2:
                 gpu_desc = parts[0]
-                gpu_mem = parts[1]
+                try:
+                    vram_mb = int(float(parts[1]))
+                    gpu_mem = f"{vram_mb / 1024:.1f} GB"
+                except Exception:
+                    gpu_mem = parts[1]
+                has_nvidia = True
     except Exception:
         pass
+
+    if not has_nvidia:
+        try:
+            mem = psutil.virtual_memory()
+            gpu_mem = f"{mem.available / (1024**3):.1f} GB (可用内存)"
+        except Exception:
+            gpu_mem = "共享内存"
+
+    # 计算硬件算力分级 Tier
+    if has_nvidia and vram_mb >= 22000:
+        tier = "Tier 1 [旗舰级显存 >=24GB · 支持27B/35B深度推理与4并发]"
+    elif has_nvidia and vram_mb >= 10000:
+        tier = "Tier 2 [主流级显存 12GB~20GB · 推荐7B~14B或27B紧凑版]"
+    elif has_nvidia and vram_mb > 0:
+        tier = "Tier 3 [紧凑型显卡 <=8GB · 推荐0.5B~4B轻量模型]"
+    else:
+        tier = "CPU / 集显模式 [推荐轻量模型 · 限制KV与线程]"
 
     cpu_count = os.cpu_count() or 8
     llama_ver = get_llamacpp_version()
     return {
         "gpu": gpu_desc,
         "vram": gpu_mem,
+        "vram_mb": vram_mb,
+        "tier": tier,
+        "has_nvidia": has_nvidia,
         "cpu": f"{cpu_count} 核心线程",
         "llama_version": llama_ver,
         "os": "Windows 64-bit"
@@ -909,11 +947,13 @@ def print_banner(hw):
     line_eq = "=" * w
     sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
     sys.stdout.write(f"{C_BOLD}{C_GREEN}   🚀 AI 大模型统一启动器 v4.0 (Python原生版) · 智能协同网关矩阵{C_RESET}\n")
-    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
     cpu_clean = re.sub(r"with Radeon.*", "", hw.get('cpu', '')).strip()[:28]
     gpu_clean = f"GPU: {hw.get('gpu', '')} ({hw.get('vram', '')})"[:36]
     llama_ver = hw.get('llama_version', '未知')
+    tier_info = hw.get('tier', '')
     sys.stdout.write(f"{C_GRAY}  环境: {gpu_clean} | {cpu_clean}{C_RESET}\n")
+    if tier_info:
+        sys.stdout.write(f"{C_GRAY}  算力: {C_PURPLE}{tier_info}{C_RESET}\n")
     sys.stdout.write(f"{C_GRAY}  引擎: llama.cpp {C_BOLD}{C_GREEN}{llama_ver}{C_RESET}{C_GRAY} · CUDA 12.4 | 内核Job绑定{C_RESET}\n")
     sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n\n")
 
@@ -1509,6 +1549,87 @@ def build_models_menu():
     return valid_menu       
 
 
+def adapt_model_args_for_hardware(args_list, hw):
+    """
+    根据当前物理硬件（GPU 显存容量或 CPU 模式）动态自适应微调启动参数，杜绝跨机运行时的 CUDA OOM 爆显存或崩溃。
+    - Tier 1 (>= 22GB 显存，如 V100 32GB / RTX 4090 24GB): 100% 保持原始极致参数 (零缩水、满血并发与投机)。
+    - Tier 2 (10GB ~ 20GB 显存，如 RTX 3060 12GB / 4070 12GB / 5080 16GB):
+        • 动态限制总上下文池 -c <= 65536 ~ 98304;
+        • 动态限制并发槽位 --parallel <= 2;
+    - Tier 3 (<= 8GB 显存，如 RTX 3050 / 4060 / 笔记本显卡):
+        • 动态限制 -c <= 32768;
+        • 限制 --parallel <= 1;
+        • 自动将 KV Cache 压缩为 --cache-type-k q4_0 --cache-type-v q4_0;
+    - CPU / 集显模式 (无 NVIDIA GPU):
+        • 强制 -ngl 0 (纯 CPU 推理，避免报缺少 CUDA 设备);
+        • 限制 -c <= 32768, --parallel 1;
+        • 自动将 KV Cache 压缩为 --cache-type-k q4_0 --cache-type-v q4_0;
+        • 禁用 --flash-attn on (转为 off 规避老 CPU 兼容问题)。
+    """
+    if not hw or not isinstance(hw, dict):
+        return list(args_list)
+
+    adapted = list(args_list)
+    has_nvidia = hw.get("has_nvidia", False)
+    vram_mb = hw.get("vram_mb", 0)
+
+    # 1. 纯 CPU / 集成显卡环境
+    if not has_nvidia or vram_mb == 0:
+        for i, a in enumerate(adapted):
+            if a in ("-ngl", "--gpu-layers", "--n-gpu-layers") and i + 1 < len(adapted):
+                adapted[i + 1] = "0"
+            elif a == "-c" and i + 1 < len(adapted):
+                try:
+                    if int(adapted[i + 1]) > 32768:
+                        adapted[i + 1] = "32768"
+                except Exception:
+                    pass
+            elif a in ("--parallel", "-np") and i + 1 < len(adapted):
+                adapted[i + 1] = "1"
+            elif a in ("--cache-type-k", "--cache-type-v") and i + 1 < len(adapted):
+                adapted[i + 1] = "q4_0"
+            elif a == "--flash-attn" and i + 1 < len(adapted):
+                adapted[i + 1] = "off"
+        return adapted
+
+    # 2. Tier 1 (旗舰卡 >= 22GB，如 V100 32GB / RTX 4090 24GB): 零修改，100% 满血直通
+    if vram_mb >= 22000:
+        return adapted
+
+    # 3. Tier 3 紧凑级显卡 (<= 8GB)
+    if vram_mb < 9500:
+        for i, a in enumerate(adapted):
+            if a == "-c" and i + 1 < len(adapted):
+                try:
+                    if int(adapted[i + 1]) > 32768:
+                        adapted[i + 1] = "32768"
+                except Exception:
+                    pass
+            elif a in ("--parallel", "-np") and i + 1 < len(adapted):
+                adapted[i + 1] = "1"
+            elif a in ("--cache-type-k", "--cache-type-v") and i + 1 < len(adapted):
+                adapted[i + 1] = "q4_0"
+        return adapted
+
+    # 4. Tier 2 主流级显卡 (10GB ~ 20GB，如 RTX 3060 12G / 4070 12G / 5080 16G)
+    max_c = 65536 if vram_mb < 15000 else 98304
+    for i, a in enumerate(adapted):
+        if a == "-c" and i + 1 < len(adapted):
+            try:
+                if int(adapted[i + 1]) > max_c:
+                    adapted[i + 1] = str(max_c)
+            except Exception:
+                pass
+        elif a in ("--parallel", "-np") and i + 1 < len(adapted):
+            try:
+                if int(adapted[i + 1]) > 2:
+                    adapted[i + 1] = "2"
+            except Exception:
+                pass
+
+    return adapted
+
+
 def str_display_width(s):
     """精确计算包含 ANSI 颜色代码、CJK 全角字符与宽符号在终端中的实际显示列数"""
     clean = re.sub(r"\033\[[0-9;]*m", "", s)
@@ -1538,8 +1659,8 @@ def pad_display(s, target_width, align="left"):
     return s + " " * pad
 
 
-def render_models_grid(menu):
-    """一横排紧凑渲染模型列表，行宽严格 <= 79 列，适配副屏窄终端绝不折行"""
+def render_models_grid(menu, hw=None):
+    """一横排紧凑渲染模型列表，行宽严格 <= 79 列，动态打标契合当前硬件的推荐模型"""
     headers = ["序号", "模型名", "量化", "上下文/槽", "容量/加速", "推导速度", "推荐场景与定位"]
     widths  = [4,    13,       5,      9,         9,         9,         23]
 
@@ -1549,11 +1670,28 @@ def render_models_grid(menu):
     sys.stdout.write(f"\n{header_line}\n")
     sys.stdout.write(f"{sep_line}\n")
 
+    vram_mb = hw.get("vram_mb", 32768) if hw else 32768
+    has_nvidia = hw.get("has_nvidia", True) if hw else True
+
     for item in menu:
         col_key = pad_display(f"{C_BOLD}{C_CYAN}[{item['key']}]{C_RESET}", widths[0])
-        # 使用精简名以适配副屏 80 列宽度
         display_name = item.get("short_name") or item["name"]
-        col_name = pad_display(f"{C_GREEN}{display_name}{C_RESET}", widths[1])
+
+        # 智能匹配算力推荐
+        is_rec = False
+        s_lower = display_name.lower()
+        if not has_nvidia or vram_mb < 9500:
+            if "4b" in s_lower or "e4b" in s_lower or "8b" in s_lower:
+                is_rec = True
+        elif vram_mb >= 22000:
+            if "27b-a" in s_lower or "35b" in s_lower or "nex" in s_lower:
+                is_rec = True
+        else: # Tier 2 (10~20G)
+            if "27b" in s_lower or "30b" in s_lower or "8b" in s_lower:
+                is_rec = True
+
+        name_prefix = "⭐" if is_rec else ""
+        col_name = pad_display(f"{C_GREEN}{name_prefix}{display_name}{C_RESET}", widths[1])
         col_quant = pad_display(f"{C_YELLOW}{item.get('quant', '-')}{C_RESET}", widths[2])
         col_ctx = pad_display(f"{C_CYAN}{item.get('ctx', '-')}{C_RESET}", widths[3])
         col_vram = pad_display(f"{C_PURPLE}{item.get('speed_vram', '-')}{C_RESET}", widths[4])
@@ -1564,7 +1702,12 @@ def render_models_grid(menu):
 
     sys.stdout.write(f"{sep_line}\n")
     exit_key = pad_display(f"{C_BOLD}{C_RED}[0]{C_RESET}", widths[0])
-    sys.stdout.write(f"{exit_key} {C_GRAY}退出启动器 (安全清理后台服务与显存){C_RESET}\n\n")
+    sys.stdout.write(f"{exit_key} {C_GRAY}退出启动器 (安全清理后台服务与显存){C_RESET}\n")
+    if hw:
+        tier_label = hw.get("tier", "").split(" · ")[0] if hw.get("tier") else ""
+        sys.stdout.write(f"{C_GRAY}  💡 算力契合: {C_PURPLE}{tier_label}{C_RESET}{C_GRAY} · 带 ⭐ 为契合本机的推荐主力{C_RESET}\n\n")
+    else:
+        sys.stdout.write("\n")
 
 def main():
     global g_main_proc
@@ -1573,7 +1716,7 @@ def main():
     if any(arg.lower() in ("--help", "-h", "/?") for arg in sys.argv[1:]):
         sys.stdout.write("用法: python launcher_main.py [模型编号: 1-8 | 0(退出)]\n")
         return
-    if any(arg.lower() in ("-listmodels", "--list-models", "list", "--list", "-l") for arg in sys.argv[1:]):
+    if any(arg.lower() in ("-listmodels", "--list-models", "list", "--list", "-l", "-list") for arg in sys.argv[1:]):
         menu = build_models_menu()
         out = [{"index": idx + 1, "name": m["alias"], "tag": m["desc"], "category": "vision" if not m["is_text"] else "text"} for idx, m in enumerate(menu)]
         print(json.dumps(out, ensure_ascii=False))
@@ -1630,7 +1773,7 @@ def main():
         mb_tag = f"{C_YELLOW}⏳ 待命中 (从下方列表选择模型加载){C_RESET}"
 
     sys.stdout.write(f"  ├─ 🧠 {C_BOLD}8083 [主脑推理底座]{C_RESET} : {mb_tag}\n")
-    sys.stdout.write(f"  │    ├─ {C_GRAY}定位功能: llama-server 推理底座 · 独占 Tesla V100 32GB 显存{C_RESET}\n")
+    sys.stdout.write(f"  │    ├─ {C_GRAY}定位功能: llama-server 推理底座 · 独占 {hw.get('gpu', 'GPU')} ({hw.get('vram', '')}) 算力{C_RESET}\n")
     sys.stdout.write(f"  │    ├─ {C_GRAY}显存架构: 统一 Q8_0 KV Cache 池 (144K~256K) · MTP 投机加速{C_RESET}\n")
     sys.stdout.write(f"  │    └─ {C_CYAN}原生端点: http://127.0.0.1:8083/v1{C_RESET} {C_GRAY}(底层原生推理接口){C_RESET}\n")
     sys.stdout.write(f"  │\n")
@@ -1656,13 +1799,22 @@ def main():
     sys.stdout.write(f"       ├─ {C_GRAY}定位功能: BGE-M3 1024维高精语义向量 · 8192长文档/代码库RAG{C_RESET}\n")
     sys.stdout.write(f"       └─ {C_CYAN}向量端点: http://127.0.0.1:8086/v1/embeddings{C_RESET}\n\n")
 
-    # 默认黄金底座：27B-A (Qwen3.8-27B-Abliterated-Q6_K 全量Q6K无审查旗舰)
+    # 智能黄金底座默认选型：根据物理硬件档位推荐
     default_choice = "1"
     menu = build_models_menu()
-    for item in menu:
-        if item.get("short_name") == "27B-A" or "27B-A" in item.get("alias", ""):
-            default_choice = item["key"]
-            break
+    has_nvidia = hw.get("has_nvidia", True)
+    vram_mb = hw.get("vram_mb", 32768)
+
+    if not has_nvidia or vram_mb < 9500:
+        for item in menu:
+            if "4B" in item.get("short_name", ""):
+                default_choice = item["key"]
+                break
+    else:
+        for item in menu:
+            if item.get("short_name") == "27B-A" or "27B-A" in item.get("alias", ""):
+                default_choice = item["key"]
+                break
 
     if is_port_open(8083) and locals().get("current_running_name"):
         for item in menu:
@@ -1673,7 +1825,7 @@ def main():
                 break
 
     sys.stdout.write(f"{C_BOLD}{C_CYAN}请选择要固定启动的主模型：{C_RESET}")
-    render_models_grid(menu)
+    render_models_grid(menu, hw)
 
     if len(sys.argv) > 1:
         arg = sys.argv[1].strip()
@@ -1781,14 +1933,20 @@ def main():
     except Exception:
         pass
 
-    server_cmd = [LLAMA_SERVER] + selected["args"] + extra_truncate_args + [
+    # 🌟 核心防爆自适应装甲：动态按当前硬件调优参数
+    final_args = adapt_model_args_for_hardware(selected["args"], hw)
+    if final_args != selected["args"]:
+        sys.stdout.write(f"{C_YELLOW}  🛡️ [硬件自适应] 检测到当前算力/显存约束，已自适应调优上下文池与并发参数防爆显存！{C_RESET}\n")
+
+    server_cmd = [LLAMA_SERVER] + final_args + extra_truncate_args + [
         "--port", "8083",
         "--api-key", "llamacpp",
         "--log-file", session_log
     ]
 
-    sys.stdout.write(f"{C_GREEN}  🔥 正在加载主脑至 V100 显存 (日志: {os.path.basename(main_log_file)})...{C_RESET}\n")
-    update_system_tray(model_name=selected["name"], status_text="模型加载中 (V100 32GB)...", is_running=False, log_file=main_log_file)
+    gpu_display = hw.get('gpu', 'GPU')
+    sys.stdout.write(f"{C_GREEN}  🔥 正在加载主脑至 {gpu_display} 算力池 (日志: {os.path.basename(main_log_file)})...{C_RESET}\n")
+    update_system_tray(model_name=selected["name"], status_text=f"模型加载中 ({gpu_display[:18]})...", is_running=False, log_file=main_log_file)
     sys.stdout.flush()
 
     main_env = os.environ.copy()

@@ -2,6 +2,7 @@
 chcp 65001 >nul
 title 奇迹API网关 · 监控中心
 cd /d "%~dp0"
+where python >nul 2>nul || (echo [错误] 未检测到 Python，请先安装 Python 3.10+ 并勾选 Add to PATH & pause & exit /b 1)
 
 if not exist "%~dp0logs" mkdir "%~dp0logs"
 
