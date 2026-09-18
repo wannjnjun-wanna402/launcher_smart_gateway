@@ -58,16 +58,25 @@ def resolve_llama_server_dir():
 BASE_DIR = resolve_llama_server_dir()
 
 def resolve_models_dir():
+    # 优先检测包含真实有效 GGUF 模型文件的目录 (H:\models -> 本地 models -> E:\models -> D:\models -> C:\models)
     candidates = [
         os.environ.get("MODELS_DIR"),
+        r"H:\models",
+        os.path.join(SCRIPT_DIR, "models"),
+        os.path.join(BASE_DIR, "models"),
         r"E:\models",
         r"D:\models",
         r"C:\models",
-        os.path.join(BASE_DIR, "models"),
     ]
-    for p in candidates:
-        if p and os.path.exists(p):
-            return p
+    for c in candidates:
+        try:
+            if c and os.path.exists(c) and any(f.lower().endswith(".gguf") for f in os.listdir(c)):
+                return c
+        except Exception:
+            pass
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
     return os.path.join(BASE_DIR, "models")
 
 MODELS_DIR = resolve_models_dir()
@@ -913,6 +922,10 @@ def cleanup_all(kill_everything=True):
                 os.remove(active_sidecar_file)
         except Exception:
             pass
+        try:
+            cleanup_stale_session_logs()
+        except Exception:
+            pass
 
 
 def cleanup_and_exit(signum=None, frame=None):
@@ -998,11 +1011,27 @@ def resolve_qwen3_coder_path():
 #  3. 思考归思考，干活归干活：思考预算耗尽绝不等于任务中断！
 # ===============================================================================
 
-def build_models_menu():
-    """定义可用模型矩阵：严格按照 1级顺序参数量从小到大，2级顺序量化级别从小到大排序，并动态仅展示实际存在的模型文件"""
-    mmproj_27b = os.path.join(MODELS_DIR, "mmproj-Qwen3.8-27B-F16.gguf")
+def find_model_path(*filenames):
+    for fn in filenames:
+        if not fn:
+            continue
+        p = os.path.join(MODELS_DIR, fn)
+        if os.path.exists(p):
+            return p
+    return os.path.join(MODELS_DIR, filenames[0]) if filenames else ""
 
-    all_definitions = [
+
+def find_mmproj_path(*filenames):
+    for fn in filenames:
+        if not fn:
+            continue
+        p = os.path.join(MODELS_DIR, fn)
+        if os.path.exists(p):
+            return p
+    return ""
+
+
+BUILTIN_FALLBACK_DEFINITIONS = [
         {
             "id": "qwen3.5_4b",
             "name": "Qwen3.5-4B [纯文本极速]",
@@ -1529,22 +1558,137 @@ def build_models_menu():
         }
     ]
 
+def build_models_menu(hw=None):
+    """定义可用模型矩阵：优先读取 models_config.local.json / models_config.example.json，严格隔离硬件配置与代码；动态自适应参数与编号"""
+    mmproj_27b = find_mmproj_path("Qwen3.8-27B-mmproj-BF16.gguf", "mmproj-Qwen3.8-27B-F16.gguf")
+
+    # 🌟 架构解耦重构：模型参数配置完全外置于 JSON 文件，严格隔离机器硬件特化参数与 Git 核心代码！
+    # 加载优先级：models_config.local.json (本机硬件特化配置·Git忽略) -> models_config.example.json (出厂示例模板)
+    cfg_local = os.path.join(BASE_DIR, "models_config.local.json")
+    cfg_example = os.path.join(BASE_DIR, "models_config.example.json")
+    target_cfg = cfg_local if os.path.exists(cfg_local) else cfg_example
+
+    all_definitions = []
+    if os.path.exists(target_cfg):
+        try:
+            with open(target_cfg, "r", encoding="utf-8") as f:
+                cfg_data = json.load(f)
+                raw_models = cfg_data.get("models", [])
+                for rm in raw_models:
+                    m_item = dict(rm)
+                    m_fns = m_item.get("model_filenames")
+                    if not m_fns:
+                        m_fn = m_item.get("model_filename")
+                        m_fns = [m_fn] if m_fn else []
+                    if m_fns:
+                        m_item["model_path"] = find_model_path(*m_fns)
+                    all_definitions.append(m_item)
+        except Exception as e:
+            sys.stdout.write(f"{C_RED}⚠️ 读取模型配置失败 ({target_cfg}): {e}{C_RESET}\n")
+
+    # 若 JSON 不存在或加载为空，采用内置全量矩阵保底
+    if not all_definitions:
+        all_definitions = list(BUILTIN_FALLBACK_DEFINITIONS)
+
     # 动态文件存在性校验与自动连续编号
     valid_menu = []
     idx = 1
+    matched_paths = set()
     for item in all_definitions:
         mpath = item.get("model_path")
+        if not mpath:
+            m_fns = item.get("model_filenames") or ([item.get("model_filename")] if item.get("model_filename") else [])
+            if m_fns:
+                mpath = find_model_path(*m_fns)
+                item["model_path"] = mpath
+
         # 只要主模型文件真实存在于磁盘，才加入菜单展示
         if mpath and os.path.exists(mpath):
             item_copy = dict(item)
             item_copy["key"] = str(idx)
-            # ⚡ 永久铁律保障：显式注入 -n -1，保证真实内容输出预算恒为无限，彻底杜绝底层缺省 2048 导致思考中途断电截断！
             args_list = list(item_copy.get("args", []))
+
+            # 动态改写模型路径与投影器路径，消除不同电脑间盘符写死问题
+            for i in range(len(args_list)):
+                if args_list[i] in ("-m", "--model") and i + 1 < len(args_list):
+                    args_list[i + 1] = mpath
+                elif args_list[i] == "--mmproj" and i + 1 < len(args_list):
+                    mm_name = os.path.basename(args_list[i + 1])
+                    mm_resolved = find_mmproj_path(mm_name)
+                    if mm_resolved:
+                        args_list[i + 1] = mm_resolved
+                elif args_list[i] in ("-md", "--model-draft") and i + 1 < len(args_list):
+                    draft_name = os.path.basename(args_list[i + 1])
+                    draft_resolved = find_model_path(draft_name)
+                    if os.path.exists(draft_resolved):
+                        args_list[i + 1] = draft_resolved
+                elif args_list[i] == "--chat-template-file" and i + 1 < len(args_list):
+                    args_list[i + 1] = TEMPLATE_FILE
+
+            # ⚡ 永久铁律保障：显式注入 -n -1，保证真实内容输出预算恒为无限
             if "-n" not in args_list and "--predict" not in args_list and "--n-predict" not in args_list:
                 args_list.extend(["-n", "-1"])
+
+            # 🛡️ 硬件自适应微调 (根据显存档位智能缩放上下文与并发)
+            if hw:
+                args_list = adapt_model_args_for_hardware(args_list, hw)
+
             item_copy["args"] = args_list
             valid_menu.append(item_copy)
+            matched_paths.add(os.path.normpath(mpath).lower())
             idx += 1
+
+    # 智能动态扩展：扫描 MODELS_DIR 中用户后续新加入的其他 .gguf 模型 (排除辅助模型)
+    if os.path.isdir(MODELS_DIR):
+        try:
+            for fname in sorted(os.listdir(MODELS_DIR)):
+                if fname.lower().endswith(".gguf") and not re.search(r"mmproj|bge|embedding|dflash|draft|locate|paddleocr", fname, re.I):
+                    fpath = os.path.join(MODELS_DIR, fname)
+                    if os.path.normpath(fpath).lower() not in matched_paths:
+                        short_title = re.sub(r"\.gguf$", "", fname, flags=re.I)[:20]
+                        auto_args = [
+                            "-m", fpath,
+                            "-ngl", "99",
+                            "--fit", "off",
+                            "--cache-type-k", "q8_0",
+                            "--cache-type-v", "q8_0",
+                            "-c", "65536",
+                            "-b", "2048",
+                            "--ubatch-size", "512",
+                            "-t", OPTIMAL_CPU_THREADS,
+                            "--parallel", "1",
+                            "--flash-attn", "on",
+                            "--temp", "0.3",
+                            "--top-p", "0.95",
+                            "--jinja",
+                            "--alias", f"{short_title},default",
+                            "-n", "-1"
+                        ]
+                        if hw:
+                            auto_args = adapt_model_args_for_hardware(auto_args, hw)
+                        valid_menu.append({
+                            "id": f"auto_{idx}",
+                            "name": f"{fname[:30]} [自动发现]",
+                            "short_name": short_title[:13],
+                            "quant": "自动",
+                            "ctx": "64K",
+                            "speed_vram": "GPU加速",
+                            "speed": "- tok/s",
+                            "vision": "8085侧挂",
+                            "sidecar_gpu": False,
+                            "best_for": "新入库模型·自适应",
+                            "desc": f"从 {MODELS_DIR} 自动扫描发现的模型文件",
+                            "recommend": f"【自动发现】{fname}",
+                            "alias": f"{short_title},default",
+                            "is_text": True,
+                            "model_path": fpath,
+                            "args": auto_args,
+                            "key": str(idx)
+                        })
+                        matched_paths.add(os.path.normpath(fpath).lower())
+                        idx += 1
+        except Exception:
+            pass
 
     return valid_menu       
 
@@ -1801,7 +1945,7 @@ def main():
 
     # 智能黄金底座默认选型：根据物理硬件档位推荐
     default_choice = "1"
-    menu = build_models_menu()
+    menu = build_models_menu(hw)
     has_nvidia = hw.get("has_nvidia", True)
     vram_mb = hw.get("vram_mb", 32768)
 

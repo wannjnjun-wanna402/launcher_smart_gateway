@@ -754,20 +754,23 @@ class ConcurrencyQueue:
                 st = self.get_dynamic_status()
                 slots = st.get("slots_detail", [])
                 
-                # 检查当前是否有槽位正在进行巨型预填 (prefill 状态且 prompt > 20K)
+                # 检查当前是否有槽位正在进行巨型预填 (正在 prefill 且 prompt > 20K)
                 heavy_prefill_active = False
                 total_ctx_in_use = 0
                 for s in slots:
-                    total_ctx_in_use += s.get("ctx_used", 0)
-                    if s.get("is_active") and s.get("stage") == "prefill" and s.get("n_prompt", 0) > 20000:
-                        heavy_prefill_active = True
+                    # 关键修复：只有处于活跃运算状态(is_active/is_processing)的槽位才计入占用！
+                    # 空闲槽位(idle)中保留的历史 KV 缓存属于可随时复用或覆写的命中缓存，绝不能计为拥塞阻塞！
+                    if s.get("is_active") and s.get("is_processing", False):
+                        total_ctx_in_use += s.get("ctx_used", 0)
+                        if s.get("stage") == "prefill" and s.get("n_prompt", 0) > 20000:
+                            heavy_prefill_active = True
 
                 # 若总上下文水位超警戒线 (动态 92% 总池容量) 或已有巨型预填正在压榨算力，避让等待 1 秒
                 ctx_limit = self.get_current_total_ctx()
                 ceiling_trigger = int(ctx_limit * 0.92)
                 if heavy_prefill_active or (total_ctx_in_use + estimated_tokens > ceiling_trigger and total_ctx_in_use > (ctx_limit * 0.5)):
                     if not waited_prefill:
-                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-ADMISSION] 🚦 物理算力负载避让触发：检测到已有槽位正在 100% 算力狂算大预填(或总KV水位>{total_ctx_in_use//1024}K/{ctx_limit//1024}K)，本任务({estimated_tokens:,} tok)在网关平滑等待...\n")
+                        sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SMART-ADMISSION] 🚦 物理算力负载避让触发：检测到已有活跃槽位正在 100% 算力狂算大预填(活跃KV水位>{total_ctx_in_use//1024}K/{ctx_limit//1024}K)，本任务({estimated_tokens:,} tok)在网关平滑等待...\n")
                         sys.stdout.flush()
                         waited_prefill = True
                     time.sleep(1.0)
@@ -3053,10 +3056,10 @@ def compute_image_hash(img_data_str: str) -> str:
 
 
 def check_backend_is_multimodal(backend_port=8083):
-    """检测 8083 主模型是否自带原生多模态能力 (如挂载了 --mmproj)"""
+    """检测 8083 主模型是否自带原生多模态能力 (如挂载了 --mmproj 或 active_backend 声明)"""
     try:
         req = urllib.request.Request(f"http://127.0.0.1:{backend_port}/props", headers={"Authorization": "Bearer llamacpp"}, method="GET")
-        with urllib.request.urlopen(req, timeout=0.5) as resp:
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
             if resp.status == 200:
                 p_data = json.loads(resp.read().decode("utf-8"))
                 top_mods = p_data.get("modalities")
@@ -3074,6 +3077,18 @@ def check_backend_is_multimodal(backend_port=8083):
                     return True
     except Exception:
         pass
+
+    # 备选方案：从 active_backend.json 实时判定
+    try:
+        ab_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "active_backend.json")
+        if os.path.exists(ab_file):
+            with open(ab_file, "r", encoding="utf-8") as f:
+                ab_data = json.load(f)
+                if not ab_data.get("is_text", True) or "多模态" in ab_data.get("model_name", ""):
+                    return True
+    except Exception:
+        pass
+
     return False
 
 def scan_images_in_payload(payload):
@@ -3145,9 +3160,10 @@ def call_sidecar_vision_8085(image_item, user_prompt="", key_name="llamacpp"):
     try:
         url = "http://127.0.0.1:8085/v1/chat/completions"
         concurrency_queue.active_vision = 1
-        prompt_text = "请详尽识别并描述图像中的所有内容（包括代码、报错信息、UI界面布局、窗口文字、按钮颜色、图表数据、文字排版等），给出高精度的结构化图文解析："
-        if user_prompt:
-            prompt_text += f"\n用户提问重点：{user_prompt}"
+        if user_prompt and len(user_prompt.strip()) > 0:
+            prompt_text = f"请简明解析图像，重点针对用户问题准确回答：\n{user_prompt}"
+        else:
+            prompt_text = "请简明提取图像中的关键信息、文字与视觉核心特征："
 
         # 标准化 image_item 格式为 OpenAI 规范：{"type": "image_url", "image_url": {"url": ...}}
         normalized_img_item = image_item
@@ -3170,7 +3186,7 @@ def call_sidecar_vision_8085(image_item, user_prompt="", key_name="llamacpp"):
                     ]
                 }
             ],
-            "max_tokens": 1024,
+            "max_tokens": 384,
             "temperature": 0.2
         }
 
@@ -3183,7 +3199,7 @@ def call_sidecar_vision_8085(image_item, user_prompt="", key_name="llamacpp"):
         t0 = time.time()
         sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [SIDECAR-8085] 👁️ 正在交由 8085 视觉侧挂眼睛 (Qwen3VL-4B · CPU内存) 解析图像...\n")
         sys.stdout.flush()
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             parsed_text = data["choices"][0]["message"]["content"]
             dt = round(time.time() - t0, 2)
@@ -3305,10 +3321,10 @@ def process_native_vision_pipeline(cleaned_json, target_port=8083, key_name="lla
                             if parsed:
                                 with VISION_IMAGE_CACHE_LOCK:
                                     VISION_IMAGE_OCR_CACHE[h] = parsed
-                                new_content.append({"type": "text", "text": f"【🖼️ 8085 视觉侧挂眼睛 (Qwen3VL-4B) 深度解析结果】:\n{parsed}"})
+                                new_content.append({"type": "text", "text": f"[系统视觉感知模块已解析图像内容如下]:\n{parsed}\n[请根据上述图像内容直接回答用户提问]"})
                                 pending_to_cache.append(h)
                             else:
-                                fallback_desc = f"【🖼️ 图像附件 {h[:8]} (已建立视觉记忆，无需重复编码)】"
+                                fallback_desc = f"[图像附件 {h[:8]}]"
                                 with VISION_IMAGE_CACHE_LOCK:
                                     VISION_IMAGE_OCR_CACHE[h] = fallback_desc
                                 new_content.append({"type": "text", "text": fallback_desc})
@@ -3325,7 +3341,7 @@ def process_native_vision_pipeline(cleaned_json, target_port=8083, key_name="lla
             if is_cached and (is_historical or msg_idx != last_img_msg_idx or not is_main_multimodal):
                 sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] [VISION-CACHE] ⚡ 历史图像指纹命中缓存 (hash={h[:8]})，0.001s 瞬时复用！\n")
                 sys.stdout.flush()
-                desc = f"【🖼️ 图像指纹: {h[:8]} 视觉结构化解析】:\n{cached_entry}" if isinstance(cached_entry, str) else f"【🖼️ 图像指纹: {h[:8]} (已建立视觉记忆，无需重复编码)】"
+                desc = f"[系统视觉感知模块已解析图像内容如下]:\n{cached_entry}\n[请根据上述图像内容直接回答用户提问]" if isinstance(cached_entry, str) else f"[图像附件 {h[:8]}]"
                 msg_copy = dict(msg)
                 msg_copy["content"] = desc
                 new_messages.append(msg_copy)
@@ -3349,11 +3365,11 @@ def process_native_vision_pipeline(cleaned_json, target_port=8083, key_name="lla
                         with VISION_IMAGE_CACHE_LOCK:
                             VISION_IMAGE_OCR_CACHE[h] = parsed
                         msg_copy = dict(msg)
-                        msg_copy["content"] = f"【🖼️ 8085 视觉侧挂眼睛 (Qwen3VL-4B) 深度解析结果】:\n{parsed}"
+                        msg_copy["content"] = f"[系统视觉感知模块已解析图像内容如下]:\n{parsed}\n[请根据上述图像内容直接回答用户提问]"
                         new_messages.append(msg_copy)
                         pending_to_cache.append(h)
                     else:
-                        fallback_desc = f"【🖼️ 图像附件 {h[:8]} (已建立视觉记忆，无需重复编码)】"
+                        fallback_desc = f"[图像附件 {h[:8]}]"
                         with VISION_IMAGE_CACHE_LOCK:
                             VISION_IMAGE_OCR_CACHE[h] = fallback_desc
                         msg_copy = dict(msg)
@@ -3660,39 +3676,44 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
         first_user_anchor = other_msgs[0]
         remaining_msgs = other_msgs[1:]
 
-    # 3. 提取尾部活跃窗口 (动态自适应槽位容量，保护最近连续交互与代码快照绝对不被截断)
+    # 3. 提取尾部活跃窗口 (动态自适应槽位容量，保证最新对话连贯性)
+    # 核心升级：初始 protected_tail_count 设为 min(max_tail, len(remaining_msgs))，
+    # 但若整体超标，允许自适应向前释放更早轮次，直至收敛到 target_safe_tokens！
     protected_tail_count = min(max_tail, len(remaining_msgs))
-    middle_msgs = remaining_msgs[:-protected_tail_count] if protected_tail_count > 0 else []
-    tail_msgs = remaining_msgs[-protected_tail_count:] if protected_tail_count > 0 else remaining_msgs
 
-    # 4. 第一层：双端语义中折叠 (Sandwich Mid-Folding)
-    trimmed_middle = []
-    for idx, m in enumerate(middle_msgs):
-        m_copy = dict(m)
-        content = m_copy.get("content", "")
-        if isinstance(content, str) and len(content) > fold_threshold:
-            head = content[:fold_head_tail]
-            tail = content[-fold_head_tail:]
-            orig_len = len(content)
-            m_copy["content"] = f"[历史超大文件/工具输出已由智能网关中折叠 (原长 {orig_len:,} 字符，保留核心首尾)]:\n{head}\n... [中间 {orig_len - fold_head_tail * 2:,} 字符已折叠省略，保障单槽 {slot_cap//1024}K 物理安全] ...\n{tail}"
-        elif isinstance(content, list):
-            trimmed_blocks = []
-            for b in content:
-                if isinstance(b, dict) and b.get("type") == "text":
-                    b_txt = b.get("text", "")
-                    if len(b_txt) > fold_threshold:
-                        b_head = b_txt[:fold_head_tail]
-                        b_tail = b_txt[-fold_head_tail:]
-                        b_len = len(b_txt)
-                        trimmed_blocks.append({"type": "text", "text": f"[历史超大输出已中折叠 (原长 {b_len:,} 字符)]:\n{b_head}\n... [折叠 {b_len - fold_head_tail * 2:,} 字符] ...\n{b_tail}"})
+    def _split_and_trim(p_tail_count):
+        m_msgs = remaining_msgs[:-p_tail_count] if p_tail_count > 0 else []
+        t_msgs = remaining_msgs[-p_tail_count:] if p_tail_count > 0 else remaining_msgs
+        t_mid = []
+        for idx, m in enumerate(m_msgs):
+            m_copy = dict(m)
+            content = m_copy.get("content", "")
+            if isinstance(content, str) and len(content) > fold_threshold:
+                head = content[:fold_head_tail]
+                tail = content[-fold_head_tail:]
+                orig_len = len(content)
+                m_copy["content"] = f"[历史超大文件/输出已中折叠 (原长 {orig_len:,} 字符)]:\n{head}\n... [中间 {orig_len - fold_head_tail * 2:,} 字符已折叠省略] ...\n{tail}"
+            elif isinstance(content, list):
+                trimmed_blocks = []
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        b_txt = b.get("text", "")
+                        if len(b_txt) > fold_threshold:
+                            b_head = b_txt[:fold_head_tail]
+                            b_tail = b_txt[-fold_head_tail:]
+                            b_len = len(b_txt)
+                            trimmed_blocks.append({"type": "text", "text": f"[历史超大输出已中折叠 (原长 {b_len:,} 字符)]:\n{b_head}\n... [折叠 {b_len - fold_head_tail * 2:,} 字符] ...\n{b_tail}"})
+                        else:
+                            trimmed_blocks.append(b)
                     else:
                         trimmed_blocks.append(b)
-                else:
-                    trimmed_blocks.append(b)
-            m_copy["content"] = trimmed_blocks
-        trimmed_middle.append(m_copy)
+                m_copy["content"] = trimmed_blocks
+            t_mid.append(m_copy)
+        return t_mid, t_msgs
 
-    # 组装基础列表验证当前 Token
+    trimmed_middle, tail_msgs = _split_and_trim(protected_tail_count)
+
+    # 组装消息列表并估算 Token
     def _assemble_msgs(mid_list, tail_list=None):
         res = list(system_msgs)
         if first_user_anchor:
@@ -3705,7 +3726,15 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
     new_str = json.dumps(assembled, ensure_ascii=False)
     new_tokens = estimate_tokens(new_str)
 
-    # 5. 第二层：PR #19841 规范 · 会话轮次原子对 (Turn-Pair) 级进阶裁剪
+    # 5. 第二层：若 Token 超标，逐步缩减 protected_tail_count，将更早历史移入 middle 进行原子轮次裁剪
+    while new_tokens > target_safe_tokens and protected_tail_count > 4:
+        protected_tail_count = max(4, protected_tail_count - 2)
+        trimmed_middle, tail_msgs = _split_and_trim(protected_tail_count)
+        assembled = _assemble_msgs(trimmed_middle)
+        new_str = json.dumps(assembled, ensure_ascii=False)
+        new_tokens = estimate_tokens(new_str)
+
+    # 6. 第三层：PR #19841 规范 · 会话轮次原子对 (Turn-Pair) 级剪枝 middle
     while new_tokens > target_safe_tokens and len(trimmed_middle) > 1:
         cut_step = 1
         while cut_step < len(trimmed_middle) and trimmed_middle[cut_step].get("role") != "user":
@@ -3732,11 +3761,15 @@ def enforce_context_safety_guard(payload, max_safe_tokens=None, target_safe_toke
         new_str = json.dumps(assembled, ensure_ascii=False)
         new_tokens = estimate_tokens(new_str)
 
-    # 6. 第三层：若 middle 已裁剪完但整体依旧偏高，对 tail 中超大工具输出适度中折叠
+    # 7. 第四层：深层折叠 tail 中的大文本消息（门槛降至 4000 字符，保留最近 2 条原样）
     if new_tokens > target_safe_tokens:
         sanitized_tail = []
-        tail_fold_thresh = max(4000, int(fold_threshold * 0.65))
-        for tm in tail_msgs:
+        tail_fold_thresh = 4000
+        for idx, tm in enumerate(tail_msgs):
+            # 保留绝对最新的最后 2 条消息不折叠
+            if idx >= len(tail_msgs) - 2:
+                sanitized_tail.append(tm)
+                continue
             tm_copy = dict(tm)
             content = tm_copy.get("content", "")
             if isinstance(content, str) and len(content) > tail_fold_thresh:

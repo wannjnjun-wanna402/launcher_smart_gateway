@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "ddg-search": {
+      "command": "uvx",
+      "args": ["--with", "duckduckgo-mcp-server[browser]", "duckduckgo-mcp-server"],
+      "env": {
+        "DDG_SAFE_SEARCH": "MODERATE",
+        "DDG_REGION": "cn-zh"
+      }
+    },
+    "anytxt": {
+      "command": "C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe",
+      "args": ["H:\\llama-bin-win-cuda-13.3-x64\\qidongqi\\anytxt_mcp_bridge.py"]
+    }
+  }
+}
