@@ -5,19 +5,18 @@
 - **约定优于配置**：遵循目录约定即可零配置运行，个性化仅需覆盖 `*.local.json`
 - **单机一份配置**：每台机器复制 `*.example.json` 为 `*.local.json` 并修改即可
 
-## 目录结构约定
+## 目录结构约定（配置与根目录同级，`*.local.json` 本机生效且 Git 忽略）
 ```
 <项目根目录>/
 ├── llama-server.exe          # llama.cpp 服务端（必需）
 ├── models/                   # 模型目录（必需）
 │   ├── *.gguf               # 主模型文件
 │   └── mmproj-*.gguf        # 多模态投影文件
-├── config/                   # 配置目录（自动创建）
-│   ├── hardware.local.json      # 机器硬件环境（自动生成/手动修正）
-│   ├── models.local.json        # 模型参数配置（必需）
-│   ├── mcp_servers.local.json   # MCP 服务配置（可选）
-│   ├── skills.local.json        # 本地技能配置（可选）
-│   └── gateway.local.json       # 网关参数配置（可选）
+├── hardware.local.json       # 机器硬件环境（向导生成/手动修正）
+├── models_config.local.json  # 模型参数配置（必需，模板见 models_config.example.json）
+├── mcp_servers.local.json    # MCP 服务配置（可选，模板见 mcp_servers.example.json）
+├── skills_servers.local.json # 本地技能配置（可选，模板见 skills_servers.example.json）
+├── gateway.local.json        # 网关参数配置（预留未启用；端口默认 8081/8083/8085/8086/8087）
 └── logs/                     # 日志目录（自动创建）
 ```
 
@@ -42,11 +41,11 @@
 }
 ```
 
-### 2. models.local.json - 模型参数（核心配置）
+### 2. models_config.local.json - 模型参数（核心配置，模板见根目录 models_config.example.json）
 ```json
 {
   "version": "1.0",
-  "comment": "本机模型启动配置，复制自 models.example.json 并修改路径/参数",
+  "comment": "本机模型启动配置，复制自根目录 models_config.example.json 并修改路径/参数",
   "models": [
     {
       "id": "my_27b_q6k",                    // 唯一标识
@@ -102,7 +101,7 @@
 }
 ```
 
-### 4. skills.local.json - 本地技能
+### 4. skills_servers.local.json - 本地技能（模板见根目录 skills_servers.example.json）
 ```json
 {
   "version": "1.0",
@@ -115,7 +114,7 @@
 }
 ```
 
-### 5. gateway.local.json - 网关参数
+### 5. gateway.local.json - 网关参数（预留，当前版本端口由代码默认：8081 网关/8083 主脑/8085 视觉/8086 向量/8087 工具）
 ```json
 {
   "version": "1.0",
