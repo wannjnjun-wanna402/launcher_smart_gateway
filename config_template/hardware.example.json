@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "comment": "硬件环境配置 - 复制为 hardware.local.json 并根据本机实际情况修改。留空项将自动检测。",
+  "llama_server_path": "",           // 留空自动查找：项目根目录 / 环境变量 LLAMA_SERVER_DIR / 常见路径
+  "models_dir": "",                  // 留空自动查找：项目根目录/models / 环境变量 MODELS_DIR / 常见路径
+  "python_exe": "",                  // 留空使用当前 python 解释器
+  "gpu_memory_mb": 0,                // 0=自动检测 nvidia-smi；手动指定显存 MB（如 32768, 24576, 16384, 12288, 8192）
+  "cpu_threads": 0,                  // 0=自动计算（逻辑核心数-2，最小2最大8）；手动指定覆盖
+  "cuda_version": "auto"             // "auto"/"12.4"/"13.0" 等，用于选择对应 dll
+}

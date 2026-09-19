@@ -49,7 +49,12 @@ miracle_api_keys.json
 
 # 6.1 本机特定硬件与模型参数配置 (禁止上推，隔离本机特化环境)
 models_config.local.json
+mcp_servers.local.json
+skills_servers.local.json
+hardware.local.json
+gateway.local.json
 config.local.json
+config/*.local.json
 
 # 7. 临时工作区与旧版评测脚本
 scratch/
@@ -65,9 +70,6 @@ mcp/
 locate-anything/
 启动*测速.bat
 启动AI智能任务自适应网关.bat
-AI启动器端口8081网页服务.bat
 chat_template.jinja
 chat_template_oneline.txt
 anytxt_mcp.py
-LICENSE*
-AGENTS.md

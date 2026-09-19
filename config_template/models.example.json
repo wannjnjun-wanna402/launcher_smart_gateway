@@ -1,0 +1,166 @@
+{
+  "version": "1.0",
+  "comment": "模型参数配置模板 - 复制为 models.local.json 并在本机修改。所有路径相对于 models_dir，支持 ${BASE_DIR} ${MODELS_DIR} 占位符。API参数供网关/前端读取。",
+  "models": [
+    {
+      "id": "qwen3vl_4b",
+      "name": "Qwen3VL-4B [轻量极速多模·64K]",
+      "short_name": "Qwen3VL-4B",
+      "quant": "Q4_K_M",
+      "ctx": "64K/单",
+      "vision": "原生多模+8085副脑",
+      "is_text": false,
+      "model_filename": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+      "mmproj_filename": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+      "args": [
+        "-ngl", "99",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
+        "-c", "65536",
+        "-b", "2048",
+        "--ubatch-size", "512",
+        "--parallel", "1",
+        "--flash-attn", "on",
+        "--image-min-tokens", "1024",
+        "--temp", "0.3",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--min-p", "0.05",
+        "-n", "-1"
+      ],
+      "api_params": {
+        "max_tokens": -1,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "reasoning_budget": 1024
+      }
+    },
+    {
+      "id": "qwen3_5_4b",
+      "name": "Qwen3.5-4B [纯文本极速·256K]",
+      "short_name": "Qwen3.5-4B",
+      "quant": "Q6_K",
+      "ctx": "256K·单",
+      "vision": "8085侧挂",
+      "is_text": true,
+      "model_filename": "Qwen3.5-4B.gguf",
+      "args": [
+        "-ngl", "99",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
+        "-c", "262144",
+        "-b", "2048",
+        "--parallel", "1",
+        "--flash-attn", "on",
+        "--temp", "0.3",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--min-p", "0.05",
+        "-n", "-1"
+      ],
+      "api_params": {
+        "max_tokens": -1,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "reasoning_budget": 2048
+      }
+    },
+    {
+      "id": "gemma4_e4b",
+      "name": "Gemma-4-E4B [轻量多模·128K]",
+      "short_name": "Gemma-4-E4B",
+      "quant": "Q6_K",
+      "ctx": "128K·单",
+      "vision": "原生多模+8085副脑",
+      "is_text": false,
+      "model_filename": "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf",
+      "mmproj_filename": "mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf",
+      "args": [
+        "-ngl", "99",
+        "--cache-type-k", "f16",
+        "--cache-type-v", "f16",
+        "-c", "131072",
+        "-b", "2048",
+        "--parallel", "1",
+        "--flash-attn", "on",
+        "--image-min-tokens", "1024",
+        "--temp", "0.3",
+        "--top-p", "0.95",
+        "-n", "-1"
+      ],
+      "api_params": {
+        "max_tokens": -1,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "reasoning_budget": 1024
+      }
+    },
+    {
+      "id": "qwen3_8_27b_a",
+      "name": "Qwen3.8-27B-A [单槽·全量Q6K·MTP·原生多模]",
+      "short_name": "27B-A",
+      "quant": "Q6_K",
+      "ctx": "144K·单槽",
+      "vision": "原生多模+8085副脑",
+      "is_text": false,
+      "model_filename": "Qwen3.8-27B-Abliterated-Q6_K.gguf",
+      "mmproj_filename": "mmproj-Qwen3.8-27B-F16.gguf",
+      "args": [
+        "-ngl", "99",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
+        "-c", "147456",
+        "-b", "2048",
+        "--ubatch-size", "2048",
+        "--parallel", "1",
+        "--flash-attn", "on",
+        "--spec-type", "draft-mtp",
+        "--spec-draft-n-max", "2",
+        "--spec-draft-n-min", "1",
+        "--image-min-tokens", "1024",
+        "--temp", "0.3",
+        "--top-p", "0.95",
+        "--top-k", "20",
+        "--min-p", "0.05",
+        "-n", "-1"
+      ],
+      "api_params": {
+        "max_tokens": -1,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "reasoning_budget": 2048
+      }
+    },
+    {
+      "id": "nex_n25_vl",
+      "name": "Nex-N2.5-VL [512K·4槽·原生全模态MoE]",
+      "short_name": "Nex-N2.5-VL",
+      "quant": "Q4_K",
+      "ctx": "512K·4槽",
+      "vision": "原生多模",
+      "is_text": false,
+      "model_filename": "Nex-N2.5-VL-Q4_K_M.gguf",
+      "mmproj_filename": "mmproj-Nex-N2.5-VL-F16.gguf",
+      "args": [
+        "-ngl", "99",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
+        "-c", "524288",
+        "-b", "2048",
+        "--ubatch-size", "512",
+        "--parallel", "4",
+        "--flash-attn", "on",
+        "--image-min-tokens", "1024",
+        "--temp", "0.3",
+        "--top-p", "0.95",
+        "-n", "-1"
+      ],
+      "api_params": {
+        "max_tokens": -1,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "reasoning_budget": 4096
+      }
+    }
+  ]
+}

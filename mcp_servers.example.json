@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "comment": "MCP 常驻服务 (8087) 配置模板。出厂示例进 Git；本机特化复制为 mcp_servers.local.json（Git 自动忽略），同名 server 以 local 为准合并。占位符：${PYTHON} 本机 python，${BASE_DIR} 启动器根目录，${MODELS_DIR} 模型目录。",
+  "servers": [
+    {
+      "name": "ddg-search",
+      "enabled": false,
+      "category": "network",
+      "command": "uvx",
+      "args": ["--with", "duckduckgo-mcp-server[browser]", "duckduckgo-mcp-server"],
+      "env": {
+        "DDG_SAFE_SEARCH": "MODERATE",
+        "DDG_REGION": "cn-zh"
+      },
+      "timeout": 30,
+      "desc": "默认禁用：DDG 国内被墙。按需替换搜狗/360/Bing 后再启用"
+    },
+    {
+      "name": "anytxt",
+      "enabled": true,
+      "category": "workspace",
+      "command": "${PYTHON}",
+      "args": ["${BASE_DIR}/qidongqi/anytxt_mcp_bridge.py"],
+      "env": {},
+      "timeout": 30,
+      "desc": "AnyTxt 本地全文检索桥（stdio 子进程按需拉起）"
+    }
+  ]
+}

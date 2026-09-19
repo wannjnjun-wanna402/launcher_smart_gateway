@@ -7,6 +7,21 @@
   • Windows 内核级 Job Object 绑定，同生共死，100% 杜绝孤儿进程与显存残留
   • 严格遵循单日单一日志规范 (8083_llama_YYYYMMDD.log / 8085_sidecar_YYYYMMDD.log)
 ===============================================================================
+  📏 行宽铁律（永久规则 · 双击启动器命令行窗口）：
+  • 分隔线即最大行宽：===============================================================================
+  • 任何一行终端输出（含模型列表、横排菜单、提示文案）显示宽度严格 <= 79 列；
+  • 超长内容必须精简（截断 + …），严禁换行撑破窗口、严禁横向滚动条。
+  • 例：`[3] ⭐Nex-N2.5-VL Q4_K 512K·4槽 22G·原生多模 60~65 t/s ★原生多模态·8085副脑协同·512K四并发`
+    明显超长，必须精简为短列（模型名/量化/上下文/容量/速度/推荐各按列宽截断）。
+  📦 解耦铁律：
+  • 模型参数与启动器解耦：全部外置于 models_config.local.json（本机特化·Git忽略）
+    / models_config.example.json（出厂模板），启动器只读配置 + 硬件自适应，禁写死；
+  • 网关 MCP 与网关解耦：MCP 个数/启用项由独立 MCP 配置脚本管理，网关只做动态挂载。
+  🔢 模型列表排序铁律（先小后大）：
+  • 第一键：参数规模小→大（4B < 8B/9B < 27B < 30B < 35B）；
+  • 第二键：同规模按量化级别小→大（IQ3 < IQ4 < Q4 < Q5 < Q6 < Q8 < FP4/F16）；
+  • 第三键：仍相同按容积（speed_vram GB数）小→大。
+===============================================================================
 """
 
 import os
@@ -41,33 +56,54 @@ import re
 import threading
 from ctypes import wintypes
 
-# 智能解析 llama.cpp 核心运行与模型目录
+# 智能解析 llama.cpp 核心运行与模型目录（跨机器通用：环境变量 > 本机配置 > 自动发现，无硬编码）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+def _load_hardware_local():
+    """读取 hardware.local.json（本机特化·Git忽略），缺失返回空 dict"""
+    for _p in (os.path.join(SCRIPT_DIR, "hardware.local.json"),
+               os.path.join(SCRIPT_DIR, "config", "hardware.local.json")):
+        try:
+            if os.path.exists(_p):
+                with open(_p, "r", encoding="utf-8") as _f:
+                    _d = json.load(_f)
+                    if isinstance(_d, dict):
+                        return _d
+        except Exception:
+            pass
+    return {}
+
+_HW_LOCAL = _load_hardware_local()
+
 def resolve_llama_server_dir():
+    for _c in (os.environ.get("LLAMA_SERVER_DIR"),
+               (_HW_LOCAL.get("llama_server_path") or "").strip() or None):
+        if _c and os.path.exists(os.path.join(_c, "llama-server.exe")):
+            return _c
     if os.path.exists(os.path.join(SCRIPT_DIR, "llama-server.exe")):
         return SCRIPT_DIR
-    env_dir = os.environ.get("LLAMA_SERVER_DIR")
-    if env_dir and os.path.exists(os.path.join(env_dir, "llama-server.exe")):
-        return env_dir
-    default_dir = r"E:\llama-win-cuda-12.4-x64"
-    if os.path.exists(os.path.join(default_dir, "llama-server.exe")):
-        return default_dir
     return SCRIPT_DIR
 
 BASE_DIR = resolve_llama_server_dir()
 
 def resolve_models_dir():
-    # 优先检测包含真实有效 GGUF 模型文件的目录 (H:\models -> 本地 models -> E:\models -> D:\models -> C:\models)
+    # 本机配置优先，其次含 GGUF 的目录自动发现（跨机器通用，无盘符写死）
+    _cfg = (_HW_LOCAL.get("models_dir") or "").strip()
     candidates = [
         os.environ.get("MODELS_DIR"),
-        r"H:\models",
+        _cfg or None,
         os.path.join(SCRIPT_DIR, "models"),
         os.path.join(BASE_DIR, "models"),
-        r"E:\models",
-        r"D:\models",
-        r"C:\models",
     ]
+    # 兜底扫描本机所有盘符下的 models 目录（存在 GGUF 才认）
+    try:
+        import string
+        for _dl in string.ascii_uppercase:
+            _p = f"{_dl}:\\models"
+            if _p not in candidates:
+                candidates.append(_p)
+    except Exception:
+        pass
     for c in candidates:
         try:
             if c and os.path.exists(c) and any(f.lower().endswith(".gguf") for f in os.listdir(c)):
@@ -80,13 +116,57 @@ def resolve_models_dir():
     return os.path.join(BASE_DIR, "models")
 
 MODELS_DIR = resolve_models_dir()
-PYTHON_EXE = sys.executable
+PYTHON_EXE = (_HW_LOCAL.get("python_exe") or "").strip() or sys.executable
 LLAMA_SERVER = os.path.join(BASE_DIR, "llama-server.exe")
 TEMPLATE_FILE = os.path.join(SCRIPT_DIR, "chat_template_qwen_fixed.jinja")
 if not os.path.exists(TEMPLATE_FILE):
     TEMPLATE_FILE = os.path.join(BASE_DIR, "chat_template_qwen_fixed.jinja")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+def run_setup_wizard():
+    """新机器配置向导：交互生成 hardware.local.json + models.local.json（Git忽略），复制即用"""
+    print("=" * 79)
+    print("  🧭 新机器配置向导（配置只存本机 *.local.json，不进 Git）")
+    print("=" * 79)
+    print(f"  启动器目录: {SCRIPT_DIR}")
+    print(f"  llama-server: {LLAMA_SERVER} ({'找到' if os.path.exists(LLAMA_SERVER) else '未找到'})")
+    print(f"  模型目录: {MODELS_DIR}")
+    try:
+        _gg = [f for f in os.listdir(MODELS_DIR) if f.lower().endswith(".gguf")] if os.path.isdir(MODELS_DIR) else []
+    except Exception:
+        _gg = []
+    print(f"  发现 {len(_gg)} 个 GGUF 模型")
+    for _g in _gg[:10]:
+        print(f"    - {_g}")
+    hw = {
+        "version": "1.0",
+        "comment": "本机特化配置（Git忽略），向导生成，可手改",
+        "llama_server_path": BASE_DIR if os.path.exists(LLAMA_SERVER) else "",
+        "models_dir": MODELS_DIR if _gg else "",
+        "python_exe": "",
+        "gpu_memory_mb": 0,
+        "cpu_threads": 0,
+        "cuda_version": "auto",
+    }
+    try:
+        with open(os.path.join(SCRIPT_DIR, "hardware.local.json"), "w", encoding="utf-8") as _f:
+            json.dump(hw, _f, ensure_ascii=False, indent=2)
+        print("  ✅ 已生成 hardware.local.json（请按本机实际修改路径后重跑）")
+    except Exception as _e:
+        print(f"  ❌ 写入失败: {_e}")
+    if not os.path.exists(os.path.join(SCRIPT_DIR, "models_config.local.json")):
+        try:
+            import shutil
+            shutil.copy(os.path.join(SCRIPT_DIR, "models_config.example.json"),
+                        os.path.join(SCRIPT_DIR, "models_config.local.json"))
+            print("  ✅ 已从模板复制 models_config.local.json（请修改模型文件名与参数）")
+        except Exception as _e:
+            print(f"  ❌ 复制模板失败: {_e}")
+    else:
+        print("  ℹ️ models_config.local.json 已存在，未覆盖")
+    print("  下一步：按 config_template/README.md 修改 *.local.json 后重跑启动器")
+
 
 def cleanup_stale_session_logs():
     """启动前自动清理或合流既往异常残留的临时 session 日志文件，确保每个端口/模型单日仅呈现单一累加主日志"""
@@ -124,6 +204,7 @@ C_WHITE = "\033[97m"
 g_gateway_proc = None
 g_sidecar_proc = None
 g_embedding_proc = None
+g_mcp_proc = None
 g_main_proc = None
 g_is_cleaning = False
 g_tray_manager = None
@@ -578,6 +659,11 @@ def ensure_gateway_8081():
         return False
 
     log_fp = open(log_file, "a", encoding="utf-8")
+    try:
+        log_fp.write(f"\n--- [8081 Gateway Session at {time.strftime('%Y-%m-%d %H:%M:%S')}] ---\n")
+        log_fp.flush()
+    except Exception:
+        pass
     creationflags = (0x08000000 | 0x00000008) if sys.platform == "win32" else 0
 
     global g_gateway_proc
@@ -640,7 +726,7 @@ def ensure_sidecar_8085(wait=False, use_gpu=False):
         cur_mode = get_sidecar_8085_mode()
         if cur_mode == target_mode:
             mode_desc = "GPU加速 ~4.5G显存 · 0.5s极速识图" if use_gpu else "CPU纯内存 · 0显存安全防爆"
-            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在位 (Qwen3VL-4B · {mode_desc})！{C_RESET}\n\n")
+            sys.stdout.write(f"{C_GREEN}  ├─ 👁️ 8085 视觉眼睛已在位 (Qwen3VL-4B · {mode_desc})！{C_RESET}\n")
             sys.stdout.flush()
             return True
         else:
@@ -719,7 +805,7 @@ def ensure_sidecar_8085(wait=False, use_gpu=False):
     except Exception:
         pass
 
-    sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉正在后台预热 (Qwen3VL-4B · {mode_msg})...{C_RESET}\n\n")
+    sys.stdout.write(f"{C_PURPLE}  ├─ 👁️ 8085 视觉正在后台预热 (Qwen3VL-4B · {mode_msg})...{C_RESET}\n")
     sys.stdout.flush()
 
     if wait:
@@ -739,7 +825,7 @@ def ensure_embedding_8086(wait=False):
     """
     global g_embedding_proc
     if is_port_open(8086):
-        sys.stdout.write(f"{C_GREEN}  ├─ 🧮 8086 向量引擎已在位 (BGE-M3 · 8192长文本 · CPU 0显存)！{C_RESET}\n\n"[:79] + "\n")
+        sys.stdout.write(f"{C_GREEN}  ├─ 🧮 8086 向量引擎已在位 (BGE-M3 · 8192长文本 · CPU 0显存)！{C_RESET}\n")
         sys.stdout.flush()
         return True
 
@@ -787,7 +873,7 @@ def ensure_embedding_8086(wait=False):
     )
     apply_system_smoothness_armor(g_embedding_proc.pid, "8086向量引擎")
 
-    sys.stdout.write(f"{C_PURPLE}  ├─ 🧮 8086 向量引擎正在后台启动 ({model_name} · CPU 0显存)...{C_RESET}\n\n"[:79] + "\n")
+    sys.stdout.write(f"{C_PURPLE}  ├─ 🧮 8086 向量引擎正在后台启动 ({model_name} · CPU 0显存)...{C_RESET}\n")
     sys.stdout.flush()
 
     if wait:
@@ -795,6 +881,80 @@ def ensure_embedding_8086(wait=False):
             if is_port_open(8086):
                 return True
             time.sleep(0.3)
+    return True
+
+
+def get_mcp_server_count():
+    """📦 MCP 解耦：只读注册表统计启用的 server+skill 个数（local 覆盖 example），失败返回 -1"""
+    on = total = 0
+    found = False
+    for fname, key in (("mcp_servers.local.json", "servers"),
+                       ("mcp_servers.example.json", "servers"),
+                       ("skills_servers.local.json", "skills"),
+                       ("skills_servers.example.json", "skills")):
+        fpath = os.path.join(BASE_DIR, fname)
+        if not os.path.exists(fpath):
+            continue
+        # 同一类配置 local 优先：local 存在则跳过同类 example，避免重复计数
+        if fname.endswith(".example.json"):
+            local_twin = fname.replace(".example.json", ".local.json")
+            if os.path.exists(os.path.join(BASE_DIR, local_twin)):
+                continue
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                items = json.load(f).get(key, [])
+                on += sum(1 for s in items if s.get("enabled"))
+                total += len(items)
+                found = True
+        except Exception:
+            pass
+    return (on, total) if found else (-1, -1)
+
+
+def ensure_mcp_8087(wait=False):
+    """
+    启动并守护 8087 MCP 常驻统一网关 (mcp_gateway_8087.py · 纯 CPU 注册表)
+    - 📦 解耦：MCP 个数/启停由 mcp_servers.local.json 独立管理，启动器只读挂载；
+    - 单日单一日志汇流 (8087_mcp_YYYYMMDD.log · append 追加，零截断)；
+    - 与 8081/8083/8085/8086 同生共死，随启动器关闭而终结。
+    """
+    global g_mcp_proc
+    if is_port_open(8087):
+        sys.stdout.write(f"{C_GREEN}  ├─ 🔌 8087 MCP网关已在位 (注册表常驻 · 统一管理)！{C_RESET}\n")
+        sys.stdout.flush()
+        return True
+
+    mcp_script = os.path.join(BASE_DIR, "mcp_gateway_8087.py")
+    if not os.path.exists(mcp_script):
+        return False
+
+    today = get_today_str()
+    log_file = os.path.join(LOGS_DIR, f"8087_mcp_{today}.log")
+    log_fp = open(log_file, "a", encoding="utf-8", buffering=1)
+    try:
+        log_fp.write(f"\n--- [8087 MCP Session at {time.strftime('%Y-%m-%d %H:%M:%S')}] ---\n")
+        log_fp.flush()
+    except Exception:
+        pass
+
+    creationflags = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0
+    g_mcp_proc = subprocess.Popen(
+        [PYTHON_EXE, mcp_script, "--port", "8087"],
+        cwd=BASE_DIR,
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        creationflags=creationflags
+    )
+    apply_system_smoothness_armor(g_mcp_proc.pid, "8087MCP网关")
+
+    sys.stdout.write(f"{C_PURPLE}  ├─ 🔌 8087 MCP网关正在后台启动 (注册表常驻 · CPU 0显存)...{C_RESET}\n")
+    sys.stdout.flush()
+
+    if wait:
+        for _ in range(25):
+            if is_port_open(8087):
+                return True
+            time.sleep(0.2)
     return True
 
 
@@ -882,8 +1042,8 @@ def enable_kill_child_processes_on_exit():
 
 
 def cleanup_all(kill_everything=True):
-    """清理本启动器绑定的全部 AI 进程 (8081网关/8083主脑/8085视觉)，绝不留任何后台孤儿进程与 GPU 显存残留"""
-    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_main_proc, g_tray_manager, g_forwarder_stop
+    """清理本启动器绑定的全部 AI 进程 (8081网关/8083主脑/8085视觉/8086向量/8087MCP)，绝不留任何后台孤儿进程与 GPU 显存残留"""
+    global g_is_cleaning, g_gateway_proc, g_sidecar_proc, g_embedding_proc, g_mcp_proc, g_main_proc, g_tray_manager, g_forwarder_stop
     if g_is_cleaning:
         return
     g_is_cleaning = True
@@ -897,7 +1057,7 @@ def cleanup_all(kill_everything=True):
             g_tray_manager.stop()
         except Exception:
             pass
-    for proc in [g_main_proc, g_sidecar_proc, g_gateway_proc]:
+    for proc in [g_main_proc, g_sidecar_proc, g_embedding_proc, g_mcp_proc, g_gateway_proc]:
         if proc and proc.poll() is None:
             try:
                 proc.terminate()
@@ -912,6 +1072,7 @@ def cleanup_all(kill_everything=True):
         kill_port(8083)
         kill_port(8085)
         kill_port(8086)
+        kill_port(8087)
         kill_all_llama()
         try:
             active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
@@ -1690,6 +1851,12 @@ def build_models_menu(hw=None):
         except Exception:
             pass
 
+    # 🔢 模型列表排序铁律：规模小→大 → 同规模量化小→大 → 容积小→大（解耦：只排菜单顺序，不改 JSON 参数）
+    valid_menu = sort_models_menu(valid_menu)
+    # 排序后重排连续编号，保证 key 1..N 与显示顺序一致
+    for new_idx, _it in enumerate(valid_menu, start=1):
+        _it["key"] = str(new_idx)
+
     return valid_menu       
 
 
@@ -1790,8 +1957,121 @@ def str_display_width(s):
     return w
 
 
+def truncate_display(s, max_width, ellipsis="…"):
+    """📏 行宽铁律配套：按终端显示宽度截断超长内容，超长则精简并补 …，保证 <= max_width 列"""
+    s = str(s if s is not None else "-")
+    if str_display_width(s) <= max_width:
+        return s
+    reserve = str_display_width(ellipsis)
+    budget = max(0, max_width - reserve)
+    out = []
+    w = 0
+    for c in s:
+        code = ord(c)
+        if code in (0xFE0F, 0xFE0E):
+            continue
+        eaw = unicodedata.east_asian_width(c)
+        if eaw in ("F", "W") or (0x2600 <= code <= 0x27BF) or (0x1F300 <= code <= 0x1FAFF):
+            cw = 2
+        else:
+            cw = 1
+        if w + cw > budget:
+            break
+        out.append(c)
+        w += cw
+    return "".join(out) + ellipsis
+
+
+def _parse_param_size(item):
+    """🔢 排序第一键：参数规模（B数），取名称中所有 Bx 数字的最大值，避免 N2.5/Qwen3.5 前缀干扰"""
+    text = f"{item.get('short_name', '')} {item.get('name', '')} {item.get('id', '')}"
+    nums = []
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*[Bb]\b", text):
+        try:
+            nums.append(float(m.group(1)))
+        except Exception:
+            pass
+    if nums:
+        return max(nums)
+    # MoE 激活参数兜底（如 35B-A3B 取 35）
+    m2 = re.search(r"(\d+(?:\.\d+)?)\s*[-_]A\d", text)
+    if m2:
+        try:
+            return float(m2.group(1))
+        except Exception:
+            pass
+    return 999.0
+
+
+def _parse_quant_rank(item):
+    """🔢 排序第二键：量化级别小→大。IQ3 < IQ4 < Q4/UD-Q4 < UD-Q5/Q5 < Q6 < Q8 < NVFP4/F16/BF16"""
+    q = str(item.get("quant", "")).upper().replace(" ", "")
+    if not q or q in ("-", "自动", "AUTO"):
+        return 99
+    if "IQ3_S" in q or q == "IQ3":
+        return 30
+    if "IQ3_M" in q:
+        return 31
+    if "IQ4_XS" in q or "IQ4" in q:
+        return 40
+    if "Q4_K" in q or "UD-Q4" in q or q == "Q4":
+        return 44
+    if "UD-Q5" in q or "Q5_K" in q or q == "Q5":
+        return 50
+    if "Q6_K" in q or q == "Q6":
+        return 60
+    if "Q8_0" in q or q == "Q8":
+        return 80
+    if "NVFP4" in q:
+        return 85
+    if "F16" in q or "BF16" in q:
+        return 90
+    return 70
+
+
+def _parse_volume_gb(item):
+    """🔢 排序第三键：容积小→大。解析 speed_vram 中的 GB 数（如 22G·原生多模 → 22.0），解析失败返回 999"""
+    text = str(item.get("speed_vram", ""))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*G", text, re.I)
+    if m:
+        try:
+            return float(m.group(1))
+        except Exception:
+            pass
+    return 999.0
+
+
+def sort_models_menu(menu):
+    """🔢 模型列表排序铁律：规模小→大 → 同规模量化小→大 → 容积小→大 → 名称兜底，全程稳定排序"""
+    try:
+        return sorted(
+            menu,
+            key=lambda it: (
+                _parse_param_size(it),
+                _parse_quant_rank(it),
+                _parse_volume_gb(it),
+                str(it.get("short_name") or it.get("name") or "").lower(),
+            ),
+        )
+    except Exception:
+        return menu
+
+
 def pad_display(s, target_width, align="left"):
-    """按字符终端可见显示宽度进行精准中英文空格填充对齐"""
+    """按字符终端可见显示宽度进行精准中英文空格填充对齐（📏 行宽铁律：先截断再填充，永不超宽）"""
+    # ANSI 感知截断：保留首尾颜色码，中间按显示宽度截断
+    m_head = re.match(r"^(\033\[[0-9;]*m)+", s)
+    m_tail = re.search(r"(\033\[[0-9;]*m)+$", s)
+    head = m_head.group(0) if m_head else ""
+    tail = m_tail.group(0) if m_tail else ""
+    core = s
+    if head and core.startswith(head):
+        core = core[len(head):]
+    if tail and core.endswith(tail):
+        core = core[:-len(tail)] if len(tail) else core
+    # 去掉内嵌复位符后截断，避免颜色污染宽度计算
+    core = truncate_display(core, target_width)
+    s = f"{head}{core}{tail}"
     cur = str_display_width(s)
     pad = max(0, target_width - cur)
     if align == "right":
@@ -1804,7 +2084,12 @@ def pad_display(s, target_width, align="left"):
 
 
 def render_models_grid(menu, hw=None):
-    """一横排紧凑渲染模型列表，行宽严格 <= 79 列，动态打标契合当前硬件的推荐模型"""
+    """一横排紧凑渲染模型列表
+    📏 行宽铁律：分隔线(=*79)即最大行宽，任何一行显示宽度严格 <= 79 列，超长精简截断。
+    🔢 排序铁律：菜单已按 规模→量化→容积 排好序，本函数只负责等宽截断渲染，不重排。
+    📦 解耦：模型参数来自 models_config.*.json，MCP 由独立配置管理，此处仅展示。
+    列宽总和 4+13+5+9+9+9+23=72 + 6空格=78 <= 79，留 1 列安全边距。
+    """
     headers = ["序号", "模型名", "量化", "上下文/槽", "容量/加速", "推导速度", "推荐场景与定位"]
     widths  = [4,    13,       5,      9,         9,         9,         23]
 
@@ -1819,11 +2104,13 @@ def render_models_grid(menu, hw=None):
 
     for item in menu:
         col_key = pad_display(f"{C_BOLD}{C_CYAN}[{item['key']}]{C_RESET}", widths[0])
-        display_name = item.get("short_name") or item["name"]
+        # 📏 行宽铁律：先按列宽精简原文，再上色填充，永不超宽
+        # 例：Nex-N2.5-VL 超长 best_for `★原生多模态·8085副脑协同·512K四并发` 会被截为 23 列内
+        orig_name = str(item.get("short_name") or item["name"])
 
-        # 智能匹配算力推荐
+        # 智能匹配算力推荐（用原名匹配，避免截断影响判断）
         is_rec = False
-        s_lower = display_name.lower()
+        s_lower = orig_name.lower()
         if not has_nvidia or vram_mb < 9500:
             if "4b" in s_lower or "e4b" in s_lower or "8b" in s_lower:
                 is_rec = True
@@ -1835,12 +2122,15 @@ def render_models_grid(menu, hw=None):
                 is_rec = True
 
         name_prefix = "⭐" if is_rec else ""
-        col_name = pad_display(f"{C_GREEN}{name_prefix}{display_name}{C_RESET}", widths[1])
-        col_quant = pad_display(f"{C_YELLOW}{item.get('quant', '-')}{C_RESET}", widths[2])
-        col_ctx = pad_display(f"{C_CYAN}{item.get('ctx', '-')}{C_RESET}", widths[3])
-        col_vram = pad_display(f"{C_PURPLE}{item.get('speed_vram', '-')}{C_RESET}", widths[4])
-        col_speed = pad_display(f"{C_YELLOW}{item.get('speed', '-')}{C_RESET}", widths[5])
-        col_best = pad_display(f"{C_WHITE}{item.get('best_for', '-')}{C_RESET}", widths[6])
+        # ⭐ 占 2 列，带星时名字预算减 2，提前精简避免把星挤超宽
+        name_budget = widths[1] - (str_display_width(name_prefix) if name_prefix else 0)
+        raw_name = truncate_display(orig_name, max(1, name_budget))
+        col_name = pad_display(f"{C_GREEN}{name_prefix}{raw_name}{C_RESET}", widths[1])
+        col_quant = pad_display(f"{C_YELLOW}{truncate_display(item.get('quant', '-'), widths[2])}{C_RESET}", widths[2])
+        col_ctx = pad_display(f"{C_CYAN}{truncate_display(item.get('ctx', '-'), widths[3])}{C_RESET}", widths[3])
+        col_vram = pad_display(f"{C_PURPLE}{truncate_display(item.get('speed_vram', '-'), widths[4])}{C_RESET}", widths[4])
+        col_speed = pad_display(f"{C_YELLOW}{truncate_display(item.get('speed', '-'), widths[5])}{C_RESET}", widths[5])
+        col_best = pad_display(f"{C_WHITE}{truncate_display(item.get('best_for', '-'), widths[6])}{C_RESET}", widths[6])
 
         sys.stdout.write(f"{col_key} {col_name} {col_quant} {col_ctx} {col_vram} {col_speed} {col_best}\n")
 
@@ -1853,10 +2143,64 @@ def render_models_grid(menu, hw=None):
     else:
         sys.stdout.write("\n")
 
+def print_port_matrix(hw=None, ensure=False, refreshed=False):
+    """端口矩阵双列版式（用户定稿）：联动线 + 左列 端口[名称] : + 右列端点。
+    静态信息牌：右列永远是端点 URL，不分在线离线（在线离线只看板看）。
+    8081 占两行（看板一行，接口+对话续行）。全行恒 <= 79 列。"""
+    LEFT_W = 32
+    if refreshed:
+        sys.stdout.write(f"{C_BOLD}端口矩阵:{C_RESET}\n")
+    else:
+        sys.stdout.write(f"{C_BOLD}正在联动探测核心端口与 AI 服务矩阵...{C_RESET}\n")
+
+    if ensure:
+        ensure_gateway_8081()
+    rows = [("├─",
+        "8081 [智能协同网关] :",
+        [f"{C_CYAN}看板: http://127.0.0.1:8081/dashboard{C_RESET}",
+         f"{C_CYAN}接口: http://127.0.0.1:8081/v1{C_RESET}    {C_CYAN}对话: http://127.0.0.1:8081{C_RESET}"],
+    )]
+
+    # 🧠 8083 主脑推理底座（静态端点：信息牌只管对照，状态看板看）
+    # 🧠 8083 主脑推理底座（静态端点）
+    rows.append(("├─",
+        "8083 [主脑推理底座] :",
+        [f"{C_CYAN}端点: http://127.0.0.1:8083/v1{C_RESET}"],
+    ))
+
+    # 👁️ 8085 视觉侧挂眼睛
+    rows.append(("├─",
+        "8085 [视觉侧挂眼睛] :",
+        [f"{C_CYAN}端点: http://127.0.0.1:8085/v1{C_RESET}"],
+    ))
+
+    # 🧮 8086 向量检索引擎
+    rows.append(("├─",
+        "8086 [向量检索引擎] :",
+        [f"{C_CYAN}端点: http://127.0.0.1:8086/v1/embeddings{C_RESET}"],
+    ))
+
+    # 🔌 8087 工具平面网关
+    rows.append(("└─",
+        "8087 [工具平面网关] :",
+        [f"{C_CYAN}端点: http://127.0.0.1:8087/tools/list{C_RESET}"],
+    ))
+
+    for branch, left, rights in rows:
+        # 首行联动线 + 左列垫齐；8081 第二端点起续行配 │ 线顶格
+        sys.stdout.write(f"  {branch} " + pad_display(left, LEFT_W) + rights[0] + "\n")
+        for r in rights[1:]:
+            sys.stdout.write("  │  " + r + "\n")
+    sys.stdout.flush()
+
+
 def main():
     global g_main_proc
 
-    # 处理 CLI 选项 (例如 --list / --list-models / --help)
+    # 处理 CLI 选项 (例如 --setup / --list / --help)
+    if any(arg.lower() in ("--setup", "-setup", "setup") for arg in sys.argv[1:]):
+        run_setup_wizard()
+        return
     if any(arg.lower() in ("--help", "-h", "/?") for arg in sys.argv[1:]):
         sys.stdout.write("用法: python launcher_main.py [模型编号: 1-8 | 0(退出)]\n")
         return
@@ -1875,73 +2219,9 @@ def main():
     # 启动 Windows 任务栏通知区域状态托盘 (右键随时快捷操作与退出)
     init_system_tray()
 
-    # 1. 核心 AI 端口矩阵与服务协同感知 (8081 网关 · 8083 主脑 · 8085 视觉)
-    sys.stdout.write(f"{C_BOLD}正在联动探测核心端口与 AI 服务矩阵...{C_RESET}\n")
-
-    # 🌐 8081 智能协同网关
-    gw_ready = ensure_gateway_8081()
-    gw_tag = f"{C_GREEN}✅ 运行中{C_RESET}" if gw_ready else f"{C_RED}❌ 未就绪{C_RESET}"
-    sys.stdout.write(f"  ├─ 🌐 {C_BOLD}8081 [智能协同网关]{C_RESET} : {gw_tag}\n")
-    sys.stdout.write(f"  │    ├─ {C_GRAY}功能特性: 双协议转译 (Anthropic ↔ OpenAI) · GBNF净化{C_RESET}\n")
-    sys.stdout.write(f"  │    ├─ {C_GRAY}调度引擎: 任务自适应黄金采样矩阵 · Loop-Breaker 熔断{C_RESET}\n")
-    sys.stdout.write(f"  │    ├─ {C_CYAN}看板地址: http://127.0.0.1:8081/dashboard{C_RESET} {C_GRAY}(算力监控){C_RESET}\n")
-    sys.stdout.write(f"  │    ├─ {C_CYAN}API 接口: http://127.0.0.1:8081/v1{C_RESET} {C_GRAY}(Cursor/Claude){C_RESET}\n")
-    sys.stdout.write(f"  │    └─ {C_CYAN}Web 对话: http://127.0.0.1:8081{C_RESET} {C_GRAY}(原生网页交互){C_RESET}\n")
-    sys.stdout.write(f"  │\n")
-
-    # 🧠 8083 主脑推理底座
-    is_8083_up = is_port_open(8083)
-    current_running_name = ""
-    if is_8083_up:
-        try:
-            import urllib.request
-            req_p = urllib.request.Request("http://127.0.0.1:8083/props", headers={"Authorization": "Bearer llamacpp"})
-            with urllib.request.urlopen(req_p, timeout=0.6) as rp:
-                if rp.status == 200:
-                    p_data = json.loads(rp.read().decode("utf-8"))
-                    current_running_name = p_data.get("model_alias") or os.path.basename(p_data.get("model_path", ""))
-        except Exception:
-            pass
-        if not current_running_name:
-            active_state_file = os.path.join(LOGS_DIR, "active_backend.json")
-            if os.path.exists(active_state_file):
-                try:
-                    with open(active_state_file, "r", encoding="utf-8") as asf:
-                        current_running_name = json.load(asf).get("model_name", "")
-                except Exception:
-                    pass
-        if not current_running_name:
-            current_running_name = "8083 主脑引擎"
-        mb_tag = f"{C_GREEN}🟢 在位运行 [{current_running_name[:12]}]{C_RESET}{C_GRAY} (输入编号可平滑置换){C_RESET}"
-    else:
-        mb_tag = f"{C_YELLOW}⏳ 待命中 (从下方列表选择模型加载){C_RESET}"
-
-    sys.stdout.write(f"  ├─ 🧠 {C_BOLD}8083 [主脑推理底座]{C_RESET} : {mb_tag}\n")
-    sys.stdout.write(f"  │    ├─ {C_GRAY}定位功能: llama-server 推理底座 · 独占 {hw.get('gpu', 'GPU')} ({hw.get('vram', '')}) 算力{C_RESET}\n")
-    sys.stdout.write(f"  │    ├─ {C_GRAY}显存架构: 统一 Q8_0 KV Cache 池 (144K~256K) · MTP 投机加速{C_RESET}\n")
-    sys.stdout.write(f"  │    └─ {C_CYAN}原生端点: http://127.0.0.1:8083/v1{C_RESET} {C_GRAY}(底层原生推理接口){C_RESET}\n")
-    sys.stdout.write(f"  │\n")
-
-    # 👁️ 8085 视觉侧挂眼睛
-    is_8085_up = is_port_open(8085)
-    if is_8085_up:
-        cur_mode = get_sidecar_8085_mode()
-        mode_desc = "GPU加速" if cur_mode == "gpu" else "CPU 0显存常驻"
-        sc_tag = f"{C_GREEN}🟢 在位就绪 (Qwen3VL-4B · {mode_desc}){C_RESET}"
-    else:
-        sc_tag = f"{C_BLUE}💤 待命就绪 (CPU 0显存常驻，随用随开){C_RESET}"
-
-    sys.stdout.write(f"  ├─ 👁️ {C_BOLD}8085 [视觉侧挂眼睛]{C_RESET} : {sc_tag}\n")
-    sys.stdout.write(f"  │    ├─ {C_GRAY}定位功能: Qwen3VL-4B 视觉眼睛 · 专职 OCR 图表与多模态解析{C_RESET}\n")
-    sys.stdout.write(f"  │    └─ {C_CYAN}视觉端点: http://127.0.0.1:8085/v1{C_RESET} {C_GRAY}(外挂专用){C_RESET}\n")
-    sys.stdout.write(f"  │\n")
-
-    # 🧮 8086 向量检索引擎 (BGE-M3)
-    is_8086_up = is_port_open(8086)
-    emb_tag = f"{C_GREEN}🟢 在位就绪 (BGE-M3 · 8192长文本 · CPU 0显存){C_RESET}" if is_8086_up else f"{C_BLUE}💤 待命就绪 (BGE-M3 · CPU 0显存，自动拉起){C_RESET}"
-    sys.stdout.write(f"  └─ 🧮 {C_BOLD}8086 [向量检索引擎]{C_RESET} : {emb_tag}\n")
-    sys.stdout.write(f"       ├─ {C_GRAY}定位功能: BGE-M3 1024维高精语义向量 · 8192长文档/代码库RAG{C_RESET}\n")
-    sys.stdout.write(f"       └─ {C_CYAN}向量端点: http://127.0.0.1:8086/v1/embeddings{C_RESET}\n\n")
+    # 1. 核心 AI 端口矩阵与服务协同感知 (8081网关·8083主脑·8085视觉·8086向量·8087工具平面)
+    #    双列对齐渲染；模型就绪后 print_port_matrix(refreshed=True) 会再刷一次最新在位状态
+    print_port_matrix(hw, ensure=True)
 
     # 智能黄金底座默认选型：根据物理硬件档位推荐
     default_choice = "1"
@@ -2019,14 +2299,14 @@ def main():
     line_eq = "=" * 79
     sys.stdout.write(f"\n{C_CYAN}{line_eq}{C_RESET}\n")
     sys.stdout.write(f"  🚀 正在启动: {C_BOLD}{selected['name']}{C_RESET}\n")
-    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n\n")
+    sys.stdout.write(f"{C_CYAN}{line_eq}{C_RESET}\n")
 
     # 3. 视觉与多模态副脑组件适配 (全系标配 8085 CPU 智囊副脑，0显存常驻)
     if "8085" in selected.get("vision", ""):
         use_gpu_sidecar = bool(selected.get("sidecar_gpu", False))
         ensure_sidecar_8085(wait=False, use_gpu=use_gpu_sidecar)
         if not selected.get("is_text"):
-            sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生全模态 + 🧠 8085 CPU 智囊副脑已就绪 (双脑协同 MoA)！{C_RESET}\n\n")
+            sys.stdout.write(f"{C_GREEN}  ├─ 🖼️ 原生全模态 + 🧠 8085 CPU 智囊副脑已就绪 (双脑协同 MoA)！{C_RESET}\n")
     else:
         if is_port_open(8085):
             sys.stdout.write(f"{C_YELLOW}  ├─ 🧹 关闭未配置的 8085 侧挂释放 CPU/显存...{C_RESET}\n")
@@ -2034,6 +2314,9 @@ def main():
 
     # 3.1 向量检索引擎守护 (8086 BGE-M3，CPU 0显存常驻)
     ensure_embedding_8086(wait=False)
+
+    # 3.2 MCP 常驻统一网关守护 (8087 注册表，CPU 0显存常驻 · 打包同生共死)
+    ensure_mcp_8087(wait=False)
 
     # 4. 清理 8083 旧进程并校验显存安全与端口可绑定性
     ensure_port_available(8083)
@@ -2108,7 +2391,7 @@ def main():
     )
     apply_system_smoothness_armor(g_main_proc.pid, "8083主脑底座")
 
-    # 毫秒级极速高频轮询检测端口
+    # 毫秒级极速高频轮询检测端口（静默等就绪：主脑日志直出控制台，轮询点不抢日志行）
     ready = False
     for i in range(160):
         if is_port_open(8083):
@@ -2118,27 +2401,10 @@ def main():
         if g_main_proc.poll() is not None:
             break
         time.sleep(0.25)
-        if i % 4 == 0:
-            sys.stdout.write(".")
-            sys.stdout.flush()
 
     if ready:
         update_system_tray(model_name=selected["name"], status_text="运行中 (8081网关/8083主脑)", is_running=True, log_file=main_log_file)
-        line_eq = "=" * 79
-        sys.stdout.write(f"\n\n{C_BOLD}{C_GREEN}{line_eq}{C_RESET}\n")
-        sys.stdout.write(f"  🎉 8083 [主脑推理底座] : {C_CYAN}{C_BOLD}{selected['name']}{C_RESET} 已成功常驻\n")
-        sys.stdout.write(f"     ├─ 底层端点: http://127.0.0.1:8083/v1 (llama.cpp 原生深度推理底座)\n")
-        sys.stdout.write(f"     └─ 架构特性: 独占 Tesla V100 32GB · 统一共享 KV 池 · 支持 MTP\n")
-        if is_port_open(8085):
-            cur_mode = get_sidecar_8085_mode()
-            mode_desc = "GPU极速" if cur_mode == "gpu" else "CPU 0显存"
-            sys.stdout.write(f"  👁️ 8085 [视觉侧挂] : http://127.0.0.1:8085/v1 (Qwen3VL-4B · {mode_desc})\n")
-        sys.stdout.write(f"  📡 8081 [网关接口] : http://127.0.0.1:8081/v1 (供 Claude/Cursor 接入)\n")
-        sys.stdout.write(f"  📊 8081 [算力看板] : http://127.0.0.1:8081/dashboard (实时监控大屏)\n")
-        sys.stdout.write(f"  💬 8081 [网页对话] : http://127.0.0.1:8081 (原生 Web 交互界面)\n")
-        sys.stdout.write(f"  🔔 托盘图标已激活：位于屏幕右下角通知区域 (^ 展开可拖出图标)\n")
-        sys.stdout.write(f"{C_BOLD}{C_GREEN}{line_eq}{C_RESET}\n\n")
-        sys.stdout.write(f"{C_GRAY}系统处于锁定常驻托管状态，按 Ctrl+C 安全停止...{C_RESET}\n\n")
+        # 日志阶段保持纯净：不再二次重刷矩阵（上面一次为准；实时在位看网关看板端口矩阵）
     else:
         if g_main_proc.poll() is not None:
             sys.stdout.write(f"\n{C_RED}❌ 主脑进程启动即异常退出 (退出代码: {g_main_proc.returncode})！{C_RESET}\n")

@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "comment": "工具平面 local-skill 配置模板。出厂示例进 Git；本机特化复制为 skills_servers.local.json（Git 自动忽略），同名 skill 以 local 为准。网关内联技能（history-compact）不占表、不在此列。",
+  "skills": [
+    {
+      "name": "memory-recall",
+      "enabled": true,
+      "category": "memory",
+      "handler": "memory_recall",
+      "desc": "海马体召回（personal_memory + 8086 向量）；依赖缺失或 8086 未起时返回 503 明示"
+    },
+    {
+      "name": "billing-stats",
+      "enabled": true,
+      "category": "billing",
+      "handler": "billing_stats",
+      "desc": "token/费用账本只读查询；无账本文件时返回 503 明示"
+    },
+    {
+      "name": "clock",
+      "enabled": true,
+      "category": "time",
+      "handler": "clock",
+      "desc": "本机时间（ISO + 星期），消灭模型瞎编日期"
+    },
+    {
+      "name": "workspace-read",
+      "enabled": true,
+      "category": "workspace",
+      "handler": "workspace_read",
+      "desc": "沙盒只读文件（限根目录内、禁隐藏/.git、单文件≤64KB）"
+    }
+  ]
+}

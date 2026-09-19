@@ -4,3 +4,6 @@
 psutil>=5.9.0
 requests>=2.28.0
 pyyaml>=6.0
+# 系统托盘（launcher_main.py MiracleTrayManager 按需导入，缺失则跳过托盘不闪退）
+pillow>=10.0.0
+pystray>=0.19.0

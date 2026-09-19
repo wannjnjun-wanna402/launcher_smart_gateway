@@ -9,8 +9,8 @@
       }
     },
     "anytxt": {
-      "command": "C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe",
-      "args": ["H:\\llama-bin-win-cuda-13.3-x64\\qidongqi\\anytxt_mcp_bridge.py"]
+      "command": "${PYTHON}",
+      "args": ["${BASE_DIR}/qidongqi/anytxt_mcp_bridge.py"]
     }
   }
 }

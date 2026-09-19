@@ -204,10 +204,11 @@ def resolve_model_alias(requested_model="", default_model=None):
         "qwen3.8-27b-vision": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-a [原生多模态]": "Qwen3.8-27B-A [原生多模态]",
         "qwen3.8-27b-a [多模态]": "Qwen3.8-27B-A [原生多模态]",
-        "qwen3.8-27b-a-q6_k": "Qwen3.8-27B-A [双槽MTP]",
-        "qwen3.8-27b-a": "Qwen3.8-27B-A [双槽MTP]",
-        "qwen3.8-27b-abliterated-q6_k": "Qwen3.8-27B-A [双槽MTP]",
-        "qwen3.8-27b-a [双槽mtp]": "Qwen3.8-27B-A [双槽MTP]",
+        "qwen3.8-27b-a-q6_k": "Qwen3.8-27B-A [单槽MTP·多模]",
+        "qwen3.8-27b-a": "Qwen3.8-27B-A [单槽MTP·多模]",
+        "qwen3.8-27b-abliterated-q6_k": "Qwen3.8-27B-A [单槽MTP·多模]",
+        "qwen3.8-27b-a [双槽mtp]": "Qwen3.8-27B-A [单槽MTP·多模]",
+        "qwen3.8-27b-a [单槽mtp]": "Qwen3.8-27B-A [单槽MTP·多模]",
         "qwen3.8-27b-a [4并发]": "Qwen3.8-27B-A [4并发流水线]",
         "qwen3.8-27b-a [4并发流水线]": "Qwen3.8-27B-A [4并发流水线]",
         "双槽mtp": "Qwen3.8-27B-A [双槽MTP]",
@@ -1055,15 +1056,15 @@ class ConcurrencyQueue:
                             if len(slots_data) >= 4:
                                 display_model_name = "Qwen3.8-27B-A [全能底座]"
                             else:
-                                display_model_name = "Qwen3.8-27B-A [双槽MTP]"
+                                display_model_name = "Qwen3.8-27B-A [单槽MTP·多模]"
                         else:
                             tag = ""
                             if is_multimodal:
                                 tag = " [原生多模态]"
                             elif len(slots_data) >= 4:
                                 tag = " [4并发流水线]"
-                            elif len(slots_data) == 2:
-                                tag = " [双槽MTP]"
+                            elif len(slots_data) <= 2:
+                                tag = " [单槽MTP·多模]" if len(slots_data) == 1 else " [双槽MTP]"
                             display_model_name = f"{model_alias}{tag}" if tag else model_alias
 
                     with self.lock:
@@ -2340,15 +2341,18 @@ class BillingTracker:
                 "main_infer_label": main_label
             }
 
-            # 动态矫正当前形态指示：无 MTP 时不标 MTP_2SLOT
-            if not mtp_info.get("enabled"):
-                if st.get("concurrency", {}).get("is_multimodal"):
+            # 动态矫正当前形态指示（key 保留做账本兼容）：
+            # PIPELINE_4SLOT = 4并发批量档；MTP_2SLOT = 单槽MTP·原生多模日常档；
+            # VISION_27B = 纯视觉无MTP档；NATIVE_INFER = 纯文本无MTP
+            _cc = st.get("concurrency", {})
+            if _cc.get("text_max", 1) >= 4:
+                st["backend_state"] = "PIPELINE_4SLOT"
+            elif not mtp_info.get("enabled"):
+                if _cc.get("is_multimodal"):
                     st["backend_state"] = "VISION_27B"
-                elif st.get("concurrency", {}).get("text_max", 1) >= 4:
-                    st["backend_state"] = "PIPELINE_4SLOT"
                 else:
                     st["backend_state"] = "NATIVE_INFER"
-            elif not st.get("backend_state") or st.get("backend_state") == "MTP_2SLOT":
+            else:
                 st["backend_state"] = "MTP_2SLOT"
 
             # 2. 🌡️ Tesla V100 硬件体温与能效脉搏 (真实硬件探测，无数据时为 0)
@@ -2445,6 +2449,10 @@ class BillingTracker:
             return st
 
 tracker = BillingTracker()
+
+# 全文请求落盘调试开关（默认关闭，防隐私泄露+保 logs/ 纯度）：
+# 开启方式：启动参数 --debug-dump，或环境变量 MIRACLE_DEBUG_DUMP=1
+DEBUG_DUMP_REQUEST = (os.environ.get("MIRACLE_DEBUG_DUMP", "0") == "1")
 
 # ============================================================
 #  安全硬规则与防幻觉约束文本
@@ -4194,9 +4202,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:12px;color:var(--text-muted);">27B 自适应热切：</span>
         <div class="mode-seg">
-          <button class="mode-seg-btn" data-state="MTP_2SLOT" onclick="quickSwitch('MTP_2SLOT')">👑 双槽MTP</button>
+          <button class="mode-seg-btn" data-state="MTP_2SLOT" onclick="quickSwitch('MTP_2SLOT')">👑 单槽MTP·多模</button>
           <button class="mode-seg-btn" data-state="PIPELINE_4SLOT" onclick="quickSwitch('PIPELINE_4SLOT')">🚀 4并发流水线</button>
-          <button class="mode-seg-btn" data-state="VISION_27B" onclick="quickSwitch('VISION_27B')">👁️ 原生视觉</button>
+          <button class="mode-seg-btn" data-state="VISION_27B" onclick="quickSwitch('VISION_27B')">👁️ 纯视觉无MTP</button>
         </div>
       </div>
     </div>
@@ -4361,6 +4369,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
     <div class="slots-monitor-grid" id="slots-container">
       <!-- 动态注入各槽位卡片 -->
+    </div>
+  </div>
+
+  <!-- 🌟 端口矩阵：网关拉取的 5 端口结构（路由/推理/记忆/工具四平面），3s 轮询 /api/ports -->
+  <div class="table-card" id="ports-matrix-card">
+    <div class="table-title">
+      <div>
+        <span>🔌 端口矩阵 <span style="font-size:11px;color:var(--text-muted);">路由 · 推理 · 记忆 · 工具</span></span>
+      </div>
+      <span style="font-size: 12px; color: var(--text-muted);" id="ports-update-time">探测中...</span>
+    </div>
+    <div id="ports-matrix-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+      <!-- JS 注入 5 端口卡片 -->
     </div>
   </div>
 
@@ -5294,9 +5315,9 @@ async function updateStats() {
 
     function formatStateName(s) {
       if (!s) return '待命';
-      if (s === 'MTP_2SLOT') return '双槽MTP';
+      if (s === 'MTP_2SLOT') return '单槽MTP·多模';
       if (s === 'PIPELINE_4SLOT') return '4并发流水线';
-      if (s === 'VISION_27B') return '原生多模态';
+      if (s === 'VISION_27B') return '纯视觉无MTP';
       return s.replace('STATE_', '');
     }
 
@@ -5771,8 +5792,8 @@ async function updateStats() {
           modelBadge = '<span class="badge-vision">👁️ 原生多模态</span>';
         } else if (r.model && r.model.includes('全能底座')) {
           modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">👑 全能底座</span>';
-        } else if (r.model && (r.model.includes('双槽MTP') || r.model.includes('MTP'))) {
-          modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">⚡ 双槽MTP</span>';
+        } else if (r.model && (r.model.includes('单槽MTP') || r.model.includes('双槽MTP') || r.model.includes('MTP'))) {
+          modelBadge = '<span class="badge-text" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);">⚡ 单槽MTP·多模</span>';
         } else if (r.model && (r.model.includes('4并发') || r.model.includes('流水线'))) {
           modelBadge = '<span class="badge-text" style="background:rgba(251,146,60,0.18);color:#fb923c;border:1px solid rgba(251,146,60,0.4);">🚀 4并发流水线</span>';
         } else if (r.model && r.model.includes('[') && r.model.includes(']')) {
@@ -5860,9 +5881,9 @@ function showToast(text, isSuccess = false) {
 
 async function quickSwitch(targetState) {
   const descMap = {
-    'MTP_2SLOT': '👑 双槽MTP 极速态 (投机加速)',
+    'MTP_2SLOT': '👑 单槽MTP·多模日常态 (单槽独享+MTP+原生视觉)',
     'PIPELINE_4SLOT': '🚀 4并发流水线 (4槽并行高吞吐)',
-    'VISION_27B': '👁️ 原生多模态视觉态 (挂载 mmproj)'
+    'VISION_27B': '👁️ 纯视觉无MTP态 (单槽+mmproj，无投机最高保真)'
   };
   const targetDesc = descMap[targetState] || targetState;
   if (!confirm(`确认将 27B 主脑置换为【${targetDesc}】吗？\n(内存级自适应切换仅需约 4.5 秒)`)) return;
@@ -5878,7 +5899,11 @@ async function quickSwitch(targetState) {
       body: JSON.stringify({ target_state: targetState })
     });
     const d = await res.json();
-    if (d.success) {
+    // 8083 由启动器绝对专控：后端返回 MANUAL_CONTROL 时如实提示，不报假成功
+    if (d.current_state === 'MANUAL_CONTROL') {
+      showToast('🔒 8083 主脑由启动器专控，热切换已锁定（请在启动器菜单换模型）', true);
+      document.getElementById('switch-toast').style.display = 'none';
+    } else if (d.success) {
       showToast(`✅ 主模型已成功置换为【${targetDesc}】！`, true);
       updateStats();
     } else {
@@ -5893,9 +5918,35 @@ async function quickSwitch(targetState) {
   }
 }
 
+// 🌟 端口矩阵 3s 轮询（独立于 1.2s 计费轮询，互不阻塞）
+async function updatePorts() {
+  try {
+    const res = await fetch('/api/ports');
+    if (!res.ok) return;
+    const data = await res.json();
+    const grid = document.getElementById('ports-matrix-grid');
+    if (!grid || !data.ports) return;
+    const dot = (on) => on
+      ? '<span style="color:#4ade80;">🟢</span>'
+      : '<span style="color:#f87171;">🔴</span>';
+    grid.innerHTML = data.ports.map(p => `
+      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:8px 10px;">
+        <div style="font-size:13px;font-weight:700;color:#e2e8f0;">${dot(p.online)} ${p.port} <span style="font-weight:400;font-size:11px;color:var(--text-muted);">${p.plane || ''}</span></div>
+        <div style="font-size:12px;color:var(--accent);margin-top:2px;">${p.name}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${p.role}</div>
+        <div style="font-family:var(--font-mono);font-size:10.5px;color:#38bdf8;margin-top:2px;word-break:break-all;">${p.endpoint}</div>
+        <div style="font-size:11px;color:${p.online ? '#4ade80' : '#facc15'};margin-top:2px;">${p.detail || ''}</div>
+      </div>`).join('');
+    const t = document.getElementById('ports-update-time');
+    if (t) t.innerText = '更新于 ' + new Date().toLocaleTimeString();
+  } catch (e) { /* 离线只留旧数据，不弹错 */ }
+}
+
 // 🌟 1.2 秒高灵敏度实时刷新 (精准同步预填进度、瞬时吐字速度与槽位状态)
 setInterval(updateStats, 1200);
+setInterval(updatePorts, 3000);
 updateStats();
+updatePorts();
 </script>
 </body>
 </html>"""
@@ -6953,7 +7004,7 @@ class MCPDynamicRouter:
 
 # ====================================================================================
 #  👑 Qwen3.8-27B 终极全自动智能调度与热切换引擎 (Unified 27B Dynamic Hot-Swapper)
-#  3大形态：双槽MTP常驻基准态 · 4并发流水线态 · 原生多模态视觉态 · 0秒动态思考等级调控
+#  3大形态：单槽MTP多模日常态 · 4并发流水线态 · 纯视觉无MTP态 · 0秒动态思考等级调控
 # ====================================================================================
 class Qwen27BBackendManager:
     STATE_MTP_2SLOT = "MTP_2SLOT"
@@ -7066,33 +7117,36 @@ class Qwen27BBackendManager:
                     modalities = gen_settings.get("modalities", []) or []
                     spec_types = str(params.get("speculative.types", "")).lower()
 
-                    if "vision" in modalities or "image" in modalities or params.get("mmproj"):
-                        return self.STATE_VISION_27B
-                    if "draft-mtp" in spec_types or "draft" in spec_types or "mtp" in spec_types:
-                        return self.STATE_MTP_2SLOT
-                    
+                    # 形态语义（key 保留做账本兼容，含义已对齐单槽日常档）：
+                    # MTP_2SLOT = 单槽MTP·原生多模日常档（MTP+mmproj）
+                    # VISION_27B = 纯视觉无MTP档（mmproj 但无投机）
+                    _has_vision = ("vision" in modalities or "image" in modalities or params.get("mmproj"))
+                    _has_mtp = ("draft-mtp" in spec_types or "draft" in spec_types or "mtp" in spec_types)
+                    # 槽位数优先判定 4 并发（PIPELINE 预设自带 MTP，不能被 MTP 检查吞掉）
                     try:
                         req_slots = urllib.request.Request(f"http://127.0.0.1:{self.port}/slots", method="GET")
                         if getattr(self, "api_key", None):
                             req_slots.add_header("Authorization", f"Bearer {self.api_key}")
                         with urllib.request.urlopen(req_slots, timeout=1.0) as sresp:
                             sdata = json.loads(sresp.read().decode("utf-8"))
-                            if len(sdata) == 4:
+                            if len(sdata) >= 4:
                                 return self.STATE_PIPELINE_4SLOT
-                            elif len(sdata) == 2:
-                                return self.STATE_MTP_2SLOT
                     except Exception:
                         pass
+                    if _has_vision and not _has_mtp:
+                        return self.STATE_VISION_27B
+                    if _has_mtp:
+                        return self.STATE_MTP_2SLOT
         except Exception:
             pass
         return None
 
     def ensure_state(self, target_state=None, force=False, on_heartbeat=None):
         """【27B 自适应热切换引擎 (纯 Python 原生驱动)】
-        支持前端看板与自适应启动器热切换形态：
-        - STATE_MTP_2SLOT (双槽MTP极速态)
-        - STATE_PIPELINE_4SLOT (4并发流水线态)
-        - STATE_VISION_27B (原生多模态视觉态)
+        支持前端看板与自适应启动器热切换形态（key 保留做账本兼容）：
+        - STATE_MTP_2SLOT (单槽MTP·原生多模日常档：parallel 1 + mmproj + draft-mtp)
+        - STATE_PIPELINE_4SLOT (4并发流水线态：parallel 4 + draft-mtp，无 mmproj)
+        - STATE_VISION_27B (纯视觉无MTP态：parallel 1 + mmproj，无投机)
         """
         self.last_activity_time = time.time()
         
@@ -7164,7 +7218,10 @@ class Qwen27BBackendManager:
                     pass
                 time.sleep(0.3)
 
-            # 3. 组装参数
+            # 3. 组装参数（一态一配置，与启动器 models_config.local.json 对齐；key 保留做账本兼容）
+            # MTP_2SLOT   = 单槽MTP·原生多模日常档（parallel 1 + mmproj + draft-mtp）
+            # PIPELINE_4SLOT = 4并发批量档（parallel 4 + draft-mtp，无 mmproj）
+            # VISION_27B  = 纯视觉无MTP档（parallel 1 + mmproj，无投机）
             daily_log = self.get_today_log()
             model_file = self.model_path
             if not os.path.exists(model_file):
@@ -7179,9 +7236,10 @@ class Qwen27BBackendManager:
                 "--fit", "off",
                 "--cache-type-k", "q8_0",
                 "--cache-type-v", "q8_0",
+                "-c", "147456",
                 "-b", "2048",
                 "--ubatch-size", "2048",
-                "-t", "6",
+                "-t", "4",
                 "--kv-unified",
                 "--flash-attn", "on",
                 "--ctx-checkpoints", "4",
@@ -7205,19 +7263,35 @@ class Qwen27BBackendManager:
                 "--chat-template-file", self.template_file,
                 "--alias", "27B-A,Qwen3.8-27B-A,Qwen3.8-27B-A-Q6_K,default",
                 "--port", str(self.port),
-                "--host", "127.0.0.1"
+                "--host", "127.0.0.1",
+                "-n", "-1"
             ]
 
-            # 纯文本全能主力：4 槽位高并发 + 144K 统一池 + 恢复 512 缓存复用 + MTP 投机加速
-            base_args.extend([
-                "-c", "147456",
-                "--parallel", "4",
-                "-sps", "0.2",
-                "--cache-reuse", "512",
-                "--spec-type", "draft-mtp",
-                "--spec-draft-n-max", "2",
-                "--spec-draft-n-min", "1"
-            ])
+            _has_mmproj = bool(getattr(self, "mmproj_path", "") and os.path.exists(self.mmproj_path))
+            if target_state == self.STATE_PIPELINE_4SLOT:
+                base_args.extend([
+                    "--parallel", "4",
+                    "-sps", "0.2",
+                    "--cache-reuse", "512",
+                    "--spec-type", "draft-mtp",
+                    "--spec-draft-n-max", "2",
+                    "--spec-draft-n-min", "1"
+                ])
+            elif target_state == self.STATE_VISION_27B:
+                base_args.extend(["--parallel", "1", "-sps", "0.05"])
+                if _has_mmproj:
+                    base_args.extend(["--mmproj", self.mmproj_path,
+                                      "--image-min-tokens", "1024"])
+            else:  # STATE_MTP_2SLOT：单槽日常档
+                base_args.extend(["--parallel", "1", "-sps", "0.05"])
+                if _has_mmproj:
+                    base_args.extend(["--mmproj", self.mmproj_path,
+                                      "--image-min-tokens", "1024"])
+                base_args.extend([
+                    "--spec-type", "draft-mtp",
+                    "--spec-draft-n-max", "2",
+                    "--spec-draft-n-min", "1"
+                ])
 
             creationflags = 0x08000000 if sys.platform == "win32" else 0
             try:
@@ -7459,6 +7533,79 @@ class TransparentProxyHandler(BaseHTTPRequestHandler):
                 "today_cost": tracker.get_stats().get("today", {}).get("cost_cny", 0.0)
             }
             resp_bytes = json.dumps(st_data, ensure_ascii=False, indent=2).encode("utf-8")
+            self.send_response(200)
+            self._send_cors_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+            return
+
+        # 0.1b 端口矩阵实时探针 (/api/ports) —— 看板「端口结构」面板数据源
+        # 解耦：纯 HTTP 短超时探测 8083/8085/8086/8087，不 import 任何工具平面代码；
+        # 任一端口离线只标红，不断整个接口（看板 3s 轮询，单点超时 <0.6s）。
+        if path in ("/api/ports", "/v1/api/ports"):
+            def _probe(url, timeout=0.5, headers=None):
+                try:
+                    req = urllib.request.Request(url, headers=headers or {})
+                    with urllib.request.urlopen(req, timeout=timeout) as r:
+                        if r.status == 200:
+                            try:
+                                return True, json.loads(r.read().decode("utf-8"))
+                            except Exception:
+                                return True, {}
+                except Exception:
+                    pass
+                return False, {}
+            _auth = {"Authorization": "Bearer llamacpp"}
+            _ok83, _p83 = _probe("http://127.0.0.1:8083/props", 0.6, _auth)
+            _ok85, _p85 = _probe("http://127.0.0.1:8085/props", 0.3, _auth)
+            _ok86, _p86 = _probe("http://127.0.0.1:8086/health", 0.3)
+            _ok87, _p87 = _probe("http://127.0.0.1:8087/health", 0.5)
+            _m83 = (_p83.get("model_alias") if isinstance(_p83, dict) else "") or ""
+            if not _m83 and isinstance(_p83, dict) and _p83.get("model_path"):
+                _m83 = os.path.basename(str(_p83.get("model_path")))
+            _m85 = ""
+            if isinstance(_p85, dict):
+                _m85 = str(_p85.get("model_alias") or _p85.get("model_path") or "")
+                _m85 = os.path.basename(_m85) if _m85 else ""
+            _e87 = _t87 = 0
+            _cats87, _srv87 = {}, []
+            if isinstance(_p87, dict):
+                try:
+                    _e87 = int(_p87.get("servers_enabled", 0))
+                    _t87 = int(_p87.get("servers_total", 0))
+                except Exception:
+                    pass
+                if isinstance(_p87.get("by_category"), dict):
+                    _cats87 = _p87.get("by_category")
+                if isinstance(_p87.get("servers"), list):
+                    _srv87 = [str(s) for s in _p87.get("servers")]
+            ports_data = {"status": "ok", "ports": [
+                {"port": 8081, "name": "智能协同网关", "plane": "路由平面",
+                 "role": "双协议转译 · 任务调度 · 看板",
+                 "endpoint": "http://127.0.0.1:8081/v1",
+                 "online": True, "detail": "本页看板即 8081 提供"},
+                {"port": 8083, "name": "主脑推理底座", "plane": "推理平面",
+                 "role": "大模型推理 · 独占 GPU",
+                 "endpoint": "http://127.0.0.1:8083/v1",
+                 "online": _ok83, "detail": _m83[:28] if _m83 else ("待命（选模型加载）" if not _ok83 else "在线")},
+                {"port": 8085, "name": "视觉侧挂眼睛", "plane": "推理平面",
+                 "role": "OCR 图表 · 多模态解析 · CPU 0显存",
+                 "endpoint": "http://127.0.0.1:8085/v1",
+                 "online": _ok85, "detail": _m85[:28] if _m85 else ("离线（随用随开）" if not _ok85 else "在线")},
+                {"port": 8086, "name": "向量检索引擎", "plane": "记忆平面",
+                 "role": "BGE-M3 1024维 · 8192长文本RAG",
+                 "endpoint": "http://127.0.0.1:8086/v1/embeddings",
+                 "online": _ok86, "detail": "BGE-M3 在位" if _ok86 else "离线（自动拉起）"},
+                {"port": 8087, "name": "工具平面网关", "plane": "工具平面",
+                 "role": "MCP插件 + 本地技能统一注册表",
+                 "endpoint": "http://127.0.0.1:8087/tools/list",
+                 "online": _ok87, "detail": f"{_e87}/{_t87}启用" if _ok87 else "离线（自动拉起）",
+                 "servers_enabled": _e87, "servers_total": _t87,
+                 "by_category": _cats87, "servers": _srv87},
+            ]}
+            resp_bytes = json.dumps(ports_data, ensure_ascii=False, indent=2).encode("utf-8")
             self.send_response(200)
             self._send_cors_headers()
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -8023,9 +8170,17 @@ p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 16px 0; }
                 estimated_prompt_tokens = estimate_tokens(forward_body.decode("utf-8", errors="ignore"))
 
                 try:
-                    debug_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "debug_last_request.json")
-                    with open(debug_p, "w", encoding="utf-8") as df:
-                        json.dump(cleaned_json, df, ensure_ascii=False, indent=2)
+                    # 全文对话落盘默认关闭（隐私+日志纯度）：仅 --debug-dump 或
+                    # MIRACLE_DEBUG_DUMP=1 时写入，且落在 scratch/（已忽略），不进 logs/
+                    if globals().get("DEBUG_DUMP_REQUEST"):
+                        try:
+                            _dbg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch")
+                            os.makedirs(_dbg_dir, exist_ok=True)
+                            debug_p = os.path.join(_dbg_dir, "debug_last_request.json")
+                            with open(debug_p, "w", encoding="utf-8") as df:
+                                json.dump(cleaned_json, df, ensure_ascii=False, indent=2)
+                        except Exception:
+                            pass
                 except Exception:
                     pass
             else:
@@ -8717,7 +8872,10 @@ if __name__ == "__main__":
     parser.add_argument("--vision-ocr", type=int, default=0, help="Legacy vision OCR port (deprecated)")
     parser.add_argument("--api-key", type=str, default="llamacpp", help="Backend API Key")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host interface (default: 127.0.0.1)")
+    parser.add_argument("--debug-dump", action="store_true", help="将清洗后请求全文落盘到 scratch/debug_last_request.json（默认关闭）")
     args = parser.parse_args()
+    if args.debug_dump:
+        DEBUG_DUMP_REQUEST = True
 
     run_proxy(
         listen_port=args.listen,

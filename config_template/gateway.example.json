@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "comment": "网关参数配置 - 复制为 gateway.local.json 修改。端口冲突时修改此处，核心代码自动读取。",
+  "listen_port": 8081,
+  "target_port": 8083,
+  "vision_port": 8085,
+  "embedding_port": 8086,
+  "mcp_port": 8087,
+  "api_key": "llamacpp",
+  "pricing": {
+    "standard": {
+      "input_per_m": 1.5,
+      "output_per_m": 4.5,
+      "cache_miss_per_m": 0.05,
+      "image_per_item": 0.0015
+    }
+  },
+  "cors": {
+    "enabled": true,
+    "origins": ["*"]
+  },
+  "rate_limit": {
+    "enabled": false,
+    "requests_per_minute": 60
+  }
+}
